@@ -1,29 +1,22 @@
-"use server";
-
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 
 export async function getCurrentUser() {
   const cookieStore = await cookies();
-  const currentUserId = cookieStore.get("current_user_id")?.value;
+  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
-  if (currentUserId) {
-    const user = await prisma.user.findUnique({
-      where: { id: currentUserId },
-      include: { channel: true },
-    });
-    if (user) return user;
+  if (sessionToken) {
+    const session = await verifySessionToken(sessionToken);
+    if (session?.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: session.userId },
+        include: { channel: true },
+      });
+      if (user) return user;
+    }
   }
 
-  // 默认管理员
-  const defaultAdmin = await prisma.user.findFirst({
-    where: { role: "ADMIN" },
-    include: { channel: true },
-  });
-  return defaultAdmin!;
+  return null;
 }
 
-export async function switchUserAction(userId: string) {
-  const cookieStore = await cookies();
-  cookieStore.set("current_user_id", userId, { path: "/", maxAge: 86400 * 30 });
-}

@@ -13,6 +13,7 @@ import {
   BookOpen,
   FileSearch,
   Building2,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserRoleSwitcher } from "./UserRoleSwitcher";
@@ -27,7 +28,15 @@ const NAV_ITEMS = [
   { href: "/approvals", label: "审批中心", icon: CheckSquare },
   { href: "/ledgers", label: "四大台账", icon: BookOpen },
   { href: "/trace", label: "全链路追溯", icon: FileSearch },
+  { href: "/users", label: "用户管理", icon: UserCog },
 ];
+
+const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
+  QA_DIRECTOR: ["/", "/batches", "/pools", "/tags", "/outbound", "/approvals", "/ledgers", "/trace"],
+  WAREHOUSE_ADMIN: ["/", "/batches", "/pools", "/tags", "/outbound", "/ledgers", "/trace"],
+  FARMER_ADMIN: ["/", "/farmers", "/ledgers", "/trace"],
+  CHANNEL_VIEWER: ["/", "/ledgers", "/trace"],
+};
 
 export function Navbar({
   users,
@@ -40,24 +49,28 @@ export function Navbar({
 }) {
   const pathname = usePathname();
 
-  // 如果是渠道审计人员 (CHANNEL_VIEWER)，仅展示看板、四大台账与全链路追溯
-  const visibleNavItems =
-    currentRole === "CHANNEL_VIEWER"
-      ? NAV_ITEMS.filter((item) => ["/", "/ledgers", "/trace"].includes(item.href))
-      : NAV_ITEMS;
+  // 登录页不渲染导航栏
+  if (pathname === "/login") {
+    return null;
+  }
+
+  const allowedRoutes = ROLE_ALLOWED_ROUTES[currentRole];
+  const visibleNavItems = allowedRoutes ? NAV_ITEMS.filter((i) => allowedRoutes.includes(i.href)) : NAV_ITEMS;
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-      <div className="flex h-16 items-center justify-between px-6 gap-4">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 font-bold text-lg tracking-tight">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-black shadow-sm">
-              阳澄
+    <header className="sticky top-0 z-40 border-b border-border/80 bg-background/80 backdrop-blur-xl transition-all">
+      <div className="flex h-14 items-center justify-between px-6 gap-4">
+        <div className="flex items-center gap-4">
+          <Link href="/" className="flex items-center gap-2.5 font-bold tracking-tight group">
+            <div className="flex size-7 items-center justify-center rounded-md bg-foreground text-background text-xs font-black shadow-xs tracking-tighter group-hover:opacity-90 transition-opacity">
+              YC
             </div>
-            <span className="hidden sm:inline">大闸蟹全链路溯源品控系统</span>
+            <span className="hidden sm:inline text-sm font-semibold text-foreground">
+              阳澄品控溯源
+            </span>
           </Link>
-          <Badge variant="outline" className="hidden lg:inline-flex text-xs">
-            V1.3
+          <Badge variant="outline" className="hidden lg:inline-flex text-[10px] font-mono px-1.5 py-0 text-muted-foreground border-border/60">
+            v1.3
           </Badge>
         </div>
 
@@ -70,11 +83,13 @@ export function Navbar({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors hover:bg-muted whitespace-nowrap",
-                  isActive ? "bg-primary text-primary-foreground hover:bg-primary/90" : "text-muted-foreground"
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all whitespace-nowrap",
+                  isActive
+                    ? "bg-secondary text-foreground font-semibold shadow-xs border border-border/80"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                 )}
               >
-                <Icon className="size-3.5" data-icon="inline-start" />
+                <Icon className={cn("size-3.5", isActive ? "text-primary" : "text-muted-foreground")} data-icon="inline-start" />
                 {item.label}
               </Link>
             );

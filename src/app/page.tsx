@@ -43,75 +43,81 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* 顶部标题与合规声明 */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b pb-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b border-border/80 pb-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">数量闭环管控与品控总览</h1>
-          <p className="text-sm text-muted-foreground">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl font-bold tracking-tight text-foreground">数量闭环管控与品控总览</h1>
+            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+              AUDIT READY
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
             大闸蟹全链路溯源品控系统 · 阳澄股份 × 山姆会员商店合规审计看板
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-medium text-xs">
             <CheckCircle2 className="size-3.5 mr-1" />
             数量守恒正常
           </Badge>
           {pendingApprovals > 0 && (
-            <Badge variant="destructive">
+            <Badge variant="destructive" className="font-mono text-xs">
               {pendingApprovals} 笔待审批
             </Badge>
           )}
         </div>
       </div>
 
-      {/* 四大核心数量卡片 */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">1. 年度签约总额度</CardTitle>
-            <Scale className="text-muted-foreground size-4" />
+      {/* 四大核心数量卡片 (Linear 风格: 等宽高对比数据 + 极细微边框) */}
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="p-5">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 p-0">
+            <CardTitle className="text-xs font-medium text-muted-foreground">1. 年度签约总额度</CardTitle>
+            <Scale className="text-muted-foreground/70 size-4" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalQuota.toLocaleString()} 只</div>
-            <p className="text-xs text-muted-foreground mt-1">
+          <CardContent className="p-0 pt-3">
+            <div className="text-2xl font-bold font-mono text-foreground tracking-tight">{totalQuota.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">只</span></div>
+            <p className="text-[11px] text-muted-foreground mt-1">
               签约养殖户 {farmers.length} 户 · 核定上限
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">2. 累计原料入池数</CardTitle>
-            <Waves className="text-muted-foreground size-4" />
+        <Card className="p-5">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 p-0">
+            <CardTitle className="text-xs font-medium text-muted-foreground">2. 累计原料入池数</CardTitle>
+            <Waves className="text-muted-foreground/70 size-4" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalInPool.toLocaleString()} 只</div>
-            <p className="text-xs text-muted-foreground mt-1">
+          <CardContent className="p-0 pt-3">
+            <div className="text-2xl font-bold font-mono text-foreground tracking-tight">{totalInPool.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">只</span></div>
+            <p className="text-[11px] text-muted-foreground mt-1">
               额度使用率 {totalQuota > 0 ? ((totalInPool / totalQuota) * 100).toFixed(1) : 0}% · 在池存活 {totalLiveInPool.toLocaleString()} 只
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">3. 蟹扣累计领用/核销</CardTitle>
-            <Tag className="text-muted-foreground size-4" />
+        <Card className="p-5">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 p-0">
+            <CardTitle className="text-xs font-medium text-muted-foreground">3. 蟹扣累计领用/核销</CardTitle>
+            <Tag className="text-muted-foreground/70 size-4" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalTagsClaimed.toLocaleString()} 只</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              已绑扣 {totalTagsBound.toLocaleString()} 只 · 未轧平单 {unBalancedClaims} 笔
+          <CardContent className="p-0 pt-3">
+            <div className="text-2xl font-bold font-mono text-foreground tracking-tight">{totalTagsClaimed.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">只</span></div>
+            <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1.5">
+              <span className="inline-block size-1.5 rounded-full bg-emerald-500"></span>
+              已绑扣 {totalTagsBound.toLocaleString()} 只 · 未轧平 {unBalancedClaims} 笔
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">4. 累计出库发运数</CardTitle>
-            <Truck className="text-muted-foreground size-4" />
+        <Card className="p-5">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 p-0">
+            <CardTitle className="text-xs font-medium text-muted-foreground">4. 累计出库发运数</CardTitle>
+            <Truck className="text-muted-foreground/70 size-4" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalOutPool.toLocaleString()} 只</div>
-            <p className="text-xs text-muted-foreground mt-1">
+          <CardContent className="p-0 pt-3">
+            <div className="text-2xl font-bold font-mono text-foreground tracking-tight">{totalOutPool.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">只</span></div>
+            <p className="text-[11px] text-muted-foreground mt-1">
               已完成发运 {outboundOrders.filter((o) => o.status === "APPROVED").length} 批次
             </p>
           </CardContent>
@@ -119,37 +125,37 @@ export default async function DashboardPage() {
       </div>
 
       {/* 核心数量闭环证明等式 */}
-      <Card className="border-primary/20 bg-primary/5">
-        <CardHeader>
+      <Card className="border-border/80 bg-card p-5">
+        <CardHeader className="p-0 pb-4">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="size-5 text-primary" />
-            <CardTitle className="text-base">全链路数量守恒公理证明链条 (闭环不可打破)</CardTitle>
+            <ShieldCheck className="size-4.5 text-primary" />
+            <CardTitle className="text-sm font-semibold text-foreground">全链路数量守恒公理证明链条 (闭环不可打破)</CardTitle>
           </div>
-          <CardDescription>
+          <CardDescription className="text-xs">
             根据阳澄品控 PRD V1.3 规范，任一节点超出阈值将由数据库事务强制拦截
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="p-0 flex flex-col gap-4">
           <div className="grid gap-3 md:grid-cols-4 font-mono text-xs">
-            <div className="rounded-md border bg-background p-3 flex flex-col gap-1">
-              <span className="text-muted-foreground">累计出库数</span>
-              <span className="text-base font-bold text-foreground">{totalOutPool} 只</span>
-              <span className="text-[10px] text-emerald-600">≤ 领扣核销数</span>
+            <div className="rounded-md border border-border/80 bg-secondary/50 p-3.5 flex flex-col gap-1">
+              <span className="text-muted-foreground text-[11px]">累计出库数</span>
+              <span className="text-base font-bold text-foreground">{totalOutPool.toLocaleString()} 只</span>
+              <span className="text-[10px] text-emerald-500 font-sans">≤ 领扣核销数</span>
             </div>
-            <div className="rounded-md border bg-background p-3 flex flex-col gap-1">
-              <span className="text-muted-foreground">累计核销蟹扣数</span>
-              <span className="text-base font-bold text-foreground">{totalTagsBound} 只</span>
-              <span className="text-[10px] text-emerald-600">≤ 累计领扣数</span>
+            <div className="rounded-md border border-border/80 bg-secondary/50 p-3.5 flex flex-col gap-1">
+              <span className="text-muted-foreground text-[11px]">累计核销蟹扣数</span>
+              <span className="text-base font-bold text-foreground">{totalTagsBound.toLocaleString()} 只</span>
+              <span className="text-[10px] text-emerald-500 font-sans">≤ 累计领扣数</span>
             </div>
-            <div className="rounded-md border bg-background p-3 flex flex-col gap-1">
-              <span className="text-muted-foreground">累计原料入池数</span>
-              <span className="text-base font-bold text-foreground">{totalInPool} 只</span>
-              <span className="text-[10px] text-emerald-600">≤ 年度签约额度</span>
+            <div className="rounded-md border border-border/80 bg-secondary/50 p-3.5 flex flex-col gap-1">
+              <span className="text-muted-foreground text-[11px]">累计原料入池数</span>
+              <span className="text-base font-bold text-foreground">{totalInPool.toLocaleString()} 只</span>
+              <span className="text-[10px] text-emerald-500 font-sans">≤ 年度签约额度</span>
             </div>
-            <div className="rounded-md border bg-background p-3 flex flex-col gap-1">
-              <span className="text-muted-foreground">签约理论额度</span>
-              <span className="text-base font-bold text-foreground">{totalQuota} 只</span>
-              <span className="text-[10px] text-muted-foreground">源头绝对上限</span>
+            <div className="rounded-md border border-border/80 bg-secondary/50 p-3.5 flex flex-col gap-1">
+              <span className="text-muted-foreground text-[11px]">签约理论额度</span>
+              <span className="text-base font-bold text-foreground">{totalQuota.toLocaleString()} 只</span>
+              <span className="text-[10px] text-muted-foreground font-sans">源头绝对上限</span>
             </div>
           </div>
         </CardContent>

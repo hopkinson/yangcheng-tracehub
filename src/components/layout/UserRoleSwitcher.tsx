@@ -2,10 +2,11 @@
 
 import { useTransition } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { switchUserAction } from "@/lib/auth";
+import { logoutAction, switchUserAction } from "@/actions/auth";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { UserCheck } from "lucide-react";
+import { UserCheck, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface UserOption {
   id: string;
@@ -19,7 +20,7 @@ export function UserRoleSwitcher({
   currentUserId,
 }: {
   users: UserOption[];
-  currentUserId: string;
+  currentUserId?: string | null;
 }) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -34,10 +35,10 @@ export function UserRoleSwitcher({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <UserCheck className="size-3.5 text-muted-foreground hidden sm:inline" />
-      <Select value={currentUserId} onValueChange={handleSelect} disabled={isPending}>
-        <SelectTrigger className="h-8 text-xs w-[190px] bg-background">
+      <Select value={currentUserId || ""} onValueChange={handleSelect} disabled={isPending}>
+        <SelectTrigger className="h-8 text-xs w-[175px] bg-background">
           <SelectValue placeholder="切换用户角色" />
         </SelectTrigger>
         <SelectContent>
@@ -48,6 +49,17 @@ export function UserRoleSwitcher({
           ))}
         </SelectContent>
       </Select>
+      <form action={logoutAction}>
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          title="退出登录"
+        >
+          <LogOut className="size-3.5" />
+        </Button>
+      </form>
     </div>
   );
 }

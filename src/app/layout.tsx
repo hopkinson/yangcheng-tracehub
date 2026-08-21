@@ -37,10 +37,10 @@ export default async function RootLayout({
       <body className="min-h-screen bg-background font-sans antialiased">
         <Navbar
           users={userOptions}
-          currentUserId={currentUser.id}
-          currentRole={currentUser.role}
+          currentUserId={currentUser?.id || ""}
+          currentRole={currentUser?.role || ""}
         />
-        <main className="container mx-auto p-4 md:p-6">{children}</main>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-8">{children}</main>
         <Toaster position="top-right" richColors />
       </body>
     </html>

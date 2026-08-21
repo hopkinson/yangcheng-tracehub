@@ -51,9 +51,9 @@ export default async function TracePage({
   });
 
   // 渠道隔离判断
-  const isChannelViewer = currentUser.role === "CHANNEL_VIEWER";
+  const isChannelViewer = currentUser?.role === "CHANNEL_VIEWER";
   const isCrossChannelForbidden =
-    isChannelViewer && currentUser.channelId && order && order.channelId !== currentUser.channelId;
+    isChannelViewer && currentUser?.channelId && order && order.channelId !== currentUser?.channelId;
 
   return (
     <div className="flex flex-col gap-6">
@@ -62,7 +62,7 @@ export default async function TracePage({
           <h1 className="text-2xl font-bold tracking-tight">渠道批次级全链路反向追溯与合规验真</h1>
           {isChannelViewer && (
             <Badge variant="outline" className="text-primary font-medium">
-              当前视图: {currentUser.channel?.name || "渠道专属视角"}
+              当前视图: {currentUser?.channel?.name || "渠道专属视角"}
             </Badge>
           )}
         </div>
