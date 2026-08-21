@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { OutboundOrderDialog } from "@/components/forms/OutboundOrderDialog";
 import { LogisticsBackfillDialog } from "@/components/forms/LogisticsBackfillDialog";
+import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,13 @@ export default async function OutboundPage() {
                           order={order}
                           userId={defaultUser.id}
                           userName={defaultUser.fullName}
+                        />
+                      )}
+                      {order.status === "REJECTED" && (
+                        <ResubmitOutboundDialog
+                          order={order}
+                          stores={stores}
+                          userId={defaultUser.id}
                         />
                       )}
                     </TableCell>

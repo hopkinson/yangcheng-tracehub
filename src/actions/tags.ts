@@ -63,6 +63,65 @@ export async function requestTagClaimAction(data: {
   });
 }
 
+export async function resubmitTagClaimAction(data: {
+  claimId: string;
+  claimCount: number;
+  applicantId: string;
+}) {
+  return await prisma.$transaction(async (tx) => {
+    const claim = await tx.tagClaim.findUniqueOrThrow({
+      where: { id: data.claimId },
+      include: {
+        farmer: {
+          include: {
+            batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+            tagClaims: { where: { status: "APPROVED" } },
+          },
+        },
+      },
+    });
+
+    const activeInPool = claim.farmer.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
+    const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+
+    const tagCheck = Invariants.checkTagClaim({
+      farmerQuota: claim.farmer.quota,
+      cumulativeClaimed,
+      activeInPoolCount: activeInPool,
+      requestedCount: data.claimCount,
+    });
+
+    if (!tagCheck.valid) {
+      throw new Error(tagCheck.reason);
+    }
+
+    const updated = await tx.tagClaim.update({
+      where: { id: data.claimId },
+      data: {
+        claimCount: data.claimCount,
+        status: "PENDING",
+        approvalComment: null,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: data.applicantId,
+        action: "RESUBMIT_TAG_CLAIM",
+        entityType: "TAG_CLAIM",
+        entityId: claim.id,
+        details: JSON.stringify({ farmerCode: claim.farmer.code, claimCount: data.claimCount }),
+      },
+    });
+
+    try {
+      revalidatePath("/tags");
+      revalidatePath("/approvals");
+    } catch {}
+    return updated;
+  });
+}
+
 export async function settleDailyTagClaimAction(data: {
   tagClaimId: string;
   boundCount: number;

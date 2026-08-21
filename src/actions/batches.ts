@@ -14,6 +14,8 @@ export async function createBatchAction(data: {
   createdById: string;
   allowSpecialApproval?: boolean;
   specialReason?: string;
+  reportUrl?: string;
+  reportName?: string;
 }) {
   return await prisma.$transaction(async (tx) => {
     const farmer = await tx.farmer.findUniqueOrThrow({
@@ -83,6 +85,9 @@ export async function createBatchAction(data: {
         weightTier: data.weightTier,
         inPoolCount: data.inPoolCount,
         createdById: data.createdById,
+        reportUrl: data.reportUrl || null,
+        reportName: data.reportName || null,
+        reportUploadedAt: data.reportUrl ? new Date() : null,
       },
     });
 
@@ -92,16 +97,49 @@ export async function createBatchAction(data: {
         action: "BATCH_INTAKE",
         entityType: "BATCH",
         entityId: batch.id,
-        details: JSON.stringify({ batchCode, inPoolCount: data.inPoolCount, poolCode: pool.code }),
+        details: JSON.stringify({ batchCode, inPoolCount: data.inPoolCount, poolCode: pool.code, hasReport: !!data.reportUrl }),
       },
     });
 
     try {
       revalidatePath("/batches");
       revalidatePath("/pools");
+      revalidatePath("/ledgers");
     } catch {}
     return batch;
   });
+}
+
+export async function uploadBatchReportAction(data: {
+  batchId: string;
+  reportUrl: string;
+  reportName: string;
+  userId: string;
+}) {
+  const batch = await prisma.batch.update({
+    where: { id: data.batchId },
+    data: {
+      reportUrl: data.reportUrl,
+      reportName: data.reportName,
+      reportUploadedAt: new Date(),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      operatorId: data.userId,
+      action: "BATCH_REPORT_UPLOAD",
+      entityType: "BATCH",
+      entityId: batch.id,
+      details: JSON.stringify({ batchCode: batch.code, reportName: data.reportName }),
+    },
+  });
+
+  try {
+    revalidatePath("/batches");
+    revalidatePath("/ledgers");
+  } catch {}
+  return batch;
 }
 
 export async function registerLossAction(data: {
@@ -169,3 +207,43 @@ export async function registerLossAction(data: {
     return { record, updatedBatch };
   });
 }
+
+export async function toggleBatchFreezeAction(data: {
+  batchId: string;
+  freeze: boolean;
+  reason?: string;
+  userId: string;
+}) {
+  const batch = await prisma.batch.findUniqueOrThrow({
+    where: { id: data.batchId },
+  });
+
+  const newStatus = data.freeze ? "FROZEN" : (batch.outPoolCount > 0 ? "PARTIALLY_OUTBOUND" : "TEMPORARY_HOLDING");
+
+  const updated = await prisma.batch.update({
+    where: { id: data.batchId },
+    data: {
+      status: newStatus,
+      isException: data.freeze,
+      exceptionReason: data.freeze ? data.reason || "品控争议冻结" : null,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      operatorId: data.userId,
+      action: data.freeze ? "FREEZE_BATCH" : "UNFREEZE_BATCH",
+      entityType: "BATCH",
+      entityId: batch.id,
+      details: JSON.stringify({ batchCode: batch.code, status: newStatus, reason: data.reason }),
+    },
+  });
+
+  try {
+    revalidatePath("/batches");
+    revalidatePath("/outbound");
+    revalidatePath("/pools");
+  } catch {}
+  return updated;
+}
+

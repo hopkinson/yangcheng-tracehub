@@ -16,6 +16,10 @@ export async function createOutboundOrderAction(data: {
       where: { id: data.batchId },
     });
 
+    if (batch.status === "FROZEN") {
+      throw new Error("该原料批次已被品控部门冻结，解冻前严禁申请出库！");
+    }
+
     const store = await tx.store.findUniqueOrThrow({
       where: { id: data.storeId },
       include: { channel: true },
@@ -65,6 +69,67 @@ export async function createOutboundOrderAction(data: {
       revalidatePath("/approvals");
     } catch {}
     return order;
+  });
+}
+
+export async function resubmitOutboundOrderAction(data: {
+  orderId: string;
+  storeId: string;
+  outboundCount: number;
+  applicantId: string;
+}) {
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.outboundOrder.findUniqueOrThrow({
+      where: { id: data.orderId },
+      include: { batch: true },
+    });
+
+    if (order.batch.status === "FROZEN") {
+      throw new Error("该批次已被品控冻结，禁止重新提报出库！");
+    }
+
+    const store = await tx.store.findUniqueOrThrow({
+      where: { id: data.storeId },
+    });
+
+    const bookInPool = order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount;
+    const outboundCheck = Invariants.checkOutbound({
+      bookInPool,
+      outboundCount: data.outboundCount,
+      channelOrderCount: data.outboundCount,
+    });
+
+    if (!outboundCheck.valid) {
+      throw new Error(outboundCheck.reason);
+    }
+
+    const updated = await tx.outboundOrder.update({
+      where: { id: data.orderId },
+      data: {
+        storeId: data.storeId,
+        channelId: store.channelId,
+        outboundCount: data.outboundCount,
+        channelOrderCount: data.outboundCount,
+        status: "PENDING",
+        rejectReason: null,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: data.applicantId,
+        action: "RESUBMIT_OUTBOUND",
+        entityType: "OUTBOUND_ORDER",
+        entityId: order.id,
+        details: JSON.stringify({ orderCode: order.code, count: data.outboundCount }),
+      },
+    });
+
+    try {
+      revalidatePath("/outbound");
+      revalidatePath("/approvals");
+    } catch {}
+    return updated;
   });
 }
 

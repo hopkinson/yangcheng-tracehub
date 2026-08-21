@@ -32,6 +32,7 @@ interface Channel {
 interface UserItem {
   id: string;
   username: string;
+  phone: string;
   fullName: string;
   role: string;
   channelId: string | null;
@@ -63,18 +64,20 @@ export function UserManagementView({
   const filteredUsers = users.filter((u) => {
     const matchQuery =
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.phone && u.phone.includes(searchTerm)) ||
       u.fullName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchRole = selectedRole === "ALL" || u.role === selectedRole;
     return matchQuery && matchRole;
   });
 
   const handleResetPassword = async (user: UserItem) => {
-    if (!confirm(`确认将用户 "${user.fullName}" (${user.username}) 的密码重置为 "123456" 吗？`)) {
+    const expectedReset = user.phone ? user.phone.slice(-6) : "123456";
+    if (!confirm(`确认将用户 "${user.fullName}" (${user.phone || user.username}) 的密码重置为手机后6位 "${expectedReset}" 吗？`)) {
       return;
     }
     try {
-      await resetPasswordAction({ id: user.id, operatorId: currentUserId });
-      toast.success(`用户 "${user.fullName}" 密码已重置为 123456`);
+      const res = await resetPasswordAction({ id: user.id, operatorId: currentUserId });
+      toast.success(`用户 "${user.fullName}" 密码已重置为: ${res.newPassword}`);
     } catch (err: any) {
       toast.error(err.message || "重置密码失败");
     }
@@ -140,7 +143,7 @@ export function UserManagementView({
             <div className="relative flex-1 w-full">
               <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
               <Input
-                placeholder="搜索用户名、真实姓名..."
+                placeholder="搜索手机号、真实姓名、用户名..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8 text-sm"
@@ -167,7 +170,7 @@ export function UserManagementView({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[180px]">用户账号 / 姓名</TableHead>
+                  <TableHead className="w-[200px]">用户姓名 / 手机号</TableHead>
                   <TableHead>系统角色</TableHead>
                   <TableHead>归属销售渠道</TableHead>
                   <TableHead>关联业务记录</TableHead>
@@ -206,7 +209,10 @@ export function UserManagementView({
                                   </Badge>
                                 )}
                               </div>
-                              <span className="text-xs font-mono text-muted-foreground">@{user.username}</span>
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
+                                <span>{user.phone || "-"}</span>
+                                <span className="text-[10px] text-muted-foreground/60">(@{user.username})</span>
+                              </div>
                             </div>
                           </div>
                         </TableCell>
@@ -240,6 +246,7 @@ export function UserManagementView({
                               user={{
                                 id: user.id,
                                 username: user.username,
+                                phone: user.phone,
                                 fullName: user.fullName,
                                 role: user.role,
                                 channelId: user.channelId,
@@ -269,7 +276,7 @@ export function UserManagementView({
                               size="sm"
                               className="h-8 px-2 text-xs text-muted-foreground hover:text-amber-600"
                               onClick={() => handleResetPassword(user)}
-                              title="重置初始密码为 123456"
+                              title={`重置初始密码为手机后6位 (${user.phone ? user.phone.slice(-6) : "123456"})`}
                             >
                               <KeyRound className="size-3.5 mr-1" />
                               重置密码

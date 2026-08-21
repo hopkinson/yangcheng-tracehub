@@ -4,25 +4,53 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExportLedgerButton } from "@/components/ledgers/ExportLedgerButton";
+import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
+import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { Users, Tag, Waves, Truck, CheckCircle2, AlertTriangle } from "lucide-react";
+import { startOfDay, endOfDay, parseISO } from "date-fns";
 
 export const dynamic = "force-dynamic";
 
-export default async function LedgersPage() {
+export default async function LedgersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const params = await searchParams;
+  const selectedDateStr = params.date?.trim();
+
+  let dateFilter: { gte: Date; lte: Date } | undefined = undefined;
+  if (selectedDateStr) {
+    try {
+      const parsed = parseISO(selectedDateStr);
+      dateFilter = {
+        gte: startOfDay(parsed),
+        lte: endOfDay(parsed),
+      };
+    } catch {}
+  }
+
   const [farmers, tagClaims, batches, outboundOrders] = await Promise.all([
+    // 台账一为主档，展示全量
     prisma.farmer.findMany({
       include: { enclosures: true, batches: true },
       orderBy: { code: "asc" },
     }),
+    // 台账二：蟹扣领用按天过滤
     prisma.tagClaim.findMany({
+      where: dateFilter ? { claimDate: dateFilter } : undefined,
       include: { farmer: true },
       orderBy: { claimDate: "desc" },
     }),
+    // 台账三：暂养池入池/损耗按天过滤
     prisma.batch.findMany({
+      where: dateFilter ? { inPoolTime: dateFilter } : undefined,
       include: { farmer: true, pool: true, enclosure: true },
       orderBy: { inPoolTime: "desc" },
     }),
+    // 台账四：出库发货按天过滤
     prisma.outboundOrder.findMany({
+      where: dateFilter ? { createdAt: dateFilter } : undefined,
       include: {
         batch: { include: { farmer: true, pool: true } },
         store: true,
@@ -96,6 +124,7 @@ export default async function LedgersPage() {
     "已出池数(只)",
     "累计损耗数(只)",
     "当前账面在池(只)",
+    "检测报告",
   ];
   const ledger3Rows = batches.map((b) => [
     new Date(b.inPoolTime).toISOString().slice(0, 10),
@@ -108,6 +137,7 @@ export default async function LedgersPage() {
     b.outPoolCount,
     b.lossCount,
     b.inPoolCount - b.outPoolCount - b.lossCount,
+    b.reportUrl ? b.reportName || "已上传" : "未上传",
   ]);
 
   // 台账四数据
@@ -138,11 +168,14 @@ export default async function LedgersPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">企业供应链与渠道审核四大合规台账</h1>
-        <p className="text-sm text-muted-foreground">
-          根据品控管理体系要求输出四本标准台账，以数字化流水证明带扣大闸蟹出厂总量与源头产量守恒。支持一键导出 CSV/Excel。
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">企业供应链与渠道审核四大合规台账</h1>
+          <p className="text-sm text-muted-foreground">
+            根据品控管理体系要求输出四本标准台账，支持按天过滤查询流水；台账一为主档展示全量。
+          </p>
+        </div>
+        <LedgerDateFilter selectedDate={selectedDateStr} />
       </div>
 
       <Tabs defaultValue="ledger1" className="flex flex-col gap-4">
@@ -153,15 +186,15 @@ export default async function LedgersPage() {
           </TabsTrigger>
           <TabsTrigger value="ledger2" className="flex items-center gap-1.5 text-xs">
             <Tag className="size-3.5" />
-            台账二·蟹扣领用对账
+            台账二·蟹扣领用对账 {dateFilter && `(${tagClaims.length})`}
           </TabsTrigger>
           <TabsTrigger value="ledger3" className="flex items-center gap-1.5 text-xs">
             <Waves className="size-3.5" />
-            台账三·暂养池出入库
+            台账三·暂养池出入库 {dateFilter && `(${batches.length})`}
           </TabsTrigger>
           <TabsTrigger value="ledger4" className="flex items-center gap-1.5 text-xs">
             <Truck className="size-3.5" />
-            台账四·出库与订单
+            台账四·出库与订单 {dateFilter && `(${outboundOrders.length})`}
           </TabsTrigger>
         </TabsList>
 
@@ -240,11 +273,12 @@ export default async function LedgersPage() {
               <div>
                 <CardTitle>台账二 · 蟹扣领用与日结轧平台账</CardTitle>
                 <CardDescription>
-                  展示每日领用数量、绑扣出库数、退回数、作废数与轧平闭环状态。
+                  展示领用数量、绑扣出库数、退回数、作废数与轧平闭环状态。
+                  {selectedDateStr && <span className="ml-1 font-medium text-primary">(当前筛选: {selectedDateStr})</span>}
                 </CardDescription>
               </div>
               <ExportLedgerButton
-                filename="阳澄股份_台账二_蟹扣领用与日结轧平台账"
+                filename={`阳澄股份_台账二_蟹扣领用台账_${selectedDateStr || "全量"}`}
                 headers={ledger2Headers}
                 rows={ledger2Rows}
               />
@@ -264,45 +298,53 @@ export default async function LedgersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tagClaims.map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-mono text-xs">
-                          {new Date(c.claimDate).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {c.farmer.name} ({c.farmer.code})
-                        </TableCell>
-                        <TableCell className="font-mono font-bold">{c.claimCount.toLocaleString()} 只</TableCell>
-                        <TableCell className="font-mono">{c.boundCount.toLocaleString()} 只</TableCell>
-                        <TableCell className="font-mono">
-                          {c.returnedCount > 0 ? (
-                            <span title={c.returnReason || ""}>{c.returnedCount} 只</span>
-                          ) : (
-                            "0"
-                          )}
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          {c.scrappedCount > 0 ? (
-                            <span title={c.scrapReason || ""}>{c.scrappedCount} 只</span>
-                          ) : (
-                            "0"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {c.isBalanced ? (
-                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/30">
-                              <CheckCircle2 className="size-3 mr-1" />
-                              已轧平
-                            </Badge>
-                          ) : (
-                            <Badge variant="destructive">
-                              <AlertTriangle className="size-3 mr-1" />
-                              未轧平
-                            </Badge>
-                          )}
+                    {tagClaims.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                          {selectedDateStr ? `未查询到 ${selectedDateStr} 当日的蟹扣领用记录` : "暂无蟹扣领用记录"}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      tagClaims.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell className="font-mono text-xs">
+                            {new Date(c.claimDate).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {c.farmer.name} ({c.farmer.code})
+                          </TableCell>
+                          <TableCell className="font-mono font-bold">{c.claimCount.toLocaleString()} 只</TableCell>
+                          <TableCell className="font-mono">{c.boundCount.toLocaleString()} 只</TableCell>
+                          <TableCell className="font-mono">
+                            {c.returnedCount > 0 ? (
+                              <span title={c.returnReason || ""}>{c.returnedCount} 只</span>
+                            ) : (
+                              "0"
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono">
+                            {c.scrappedCount > 0 ? (
+                              <span title={c.scrapReason || ""}>{c.scrappedCount} 只</span>
+                            ) : (
+                              "0"
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {c.isBalanced ? (
+                              <Badge variant="outline" className="text-emerald-600 border-emerald-500/30">
+                                <CheckCircle2 className="size-3 mr-1" />
+                                已轧平
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive">
+                                <AlertTriangle className="size-3 mr-1" />
+                                未轧平
+                              </Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -317,11 +359,12 @@ export default async function LedgersPage() {
               <div>
                 <CardTitle>台账三 · 暂养池出入库与损耗台账</CardTitle>
                 <CardDescription>
-                  记录各池批次流动：入池数、出池数、损耗数及账面在池存活。
+                  记录各池批次流动：入池数、出池数、损耗数及账面在池存活与检测报告。
+                  {selectedDateStr && <span className="ml-1 font-medium text-primary">(当前筛选: {selectedDateStr})</span>}
                 </CardDescription>
               </div>
               <ExportLedgerButton
-                filename="阳澄股份_台账三_暂养池出入库与损耗台账"
+                filename={`阳澄股份_台账三_暂养池出入库台账_${selectedDateStr || "全量"}`}
                 headers={ledger3Headers}
                 rows={ledger3Rows}
               />
@@ -340,31 +383,51 @@ export default async function LedgersPage() {
                       <TableHead>出池数</TableHead>
                       <TableHead>损耗数</TableHead>
                       <TableHead>账面在池</TableHead>
+                      <TableHead>检测报告</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {batches.map((b) => {
-                      const live = b.inPoolCount - b.outPoolCount - b.lossCount;
-                      return (
-                        <TableRow key={b.id}>
-                          <TableCell className="font-mono text-xs">
-                            {new Date(b.inPoolTime).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell className="font-mono font-medium">{b.code}</TableCell>
-                          <TableCell className="font-mono">{b.pool.code}</TableCell>
-                          <TableCell>{b.farmer.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">
-                              {b.gender === "MALE" ? "公" : "母"} · {b.weightTier}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono font-medium">{b.inPoolCount} 只</TableCell>
-                          <TableCell className="font-mono text-muted-foreground">{b.outPoolCount} 只</TableCell>
-                          <TableCell className="font-mono">{b.lossCount} 只</TableCell>
-                          <TableCell className="font-mono font-bold text-emerald-600">{live} 只</TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {batches.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-6 text-muted-foreground">
+                          {selectedDateStr ? `未查询到 ${selectedDateStr} 当日的暂养池出入库记录` : "暂无批次记录"}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      batches.map((b) => {
+                        const live = b.inPoolCount - b.outPoolCount - b.lossCount;
+                        return (
+                          <TableRow key={b.id}>
+                            <TableCell className="font-mono text-xs">
+                              {new Date(b.inPoolTime).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="font-mono font-medium">{b.code}</TableCell>
+                            <TableCell className="font-mono">{b.pool.code}</TableCell>
+                            <TableCell>{b.farmer.name}</TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {b.gender === "MALE" ? "公" : "母"} · {b.weightTier}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono font-medium">{b.inPoolCount} 只</TableCell>
+                            <TableCell className="font-mono text-muted-foreground">{b.outPoolCount} 只</TableCell>
+                            <TableCell className="font-mono">{b.lossCount} 只</TableCell>
+                            <TableCell className="font-mono font-bold text-emerald-600">{live} 只</TableCell>
+                            <TableCell>
+                              {b.reportUrl ? (
+                                <BatchReportViewDialog
+                                  batchCode={b.code}
+                                  reportName={b.reportName || "检测报告"}
+                                  reportUrl={b.reportUrl}
+                                />
+                              ) : (
+                                <span className="text-xs text-muted-foreground">未上传</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -380,10 +443,11 @@ export default async function LedgersPage() {
                 <CardTitle>台账四 · 出库与销售订单台账</CardTitle>
                 <CardDescription>
                   记录发货单号、对应批次、门店全称、所属渠道、订单数、出库数及物流单号。
+                  {selectedDateStr && <span className="ml-1 font-medium text-primary">(当前筛选: {selectedDateStr})</span>}
                 </CardDescription>
               </div>
               <ExportLedgerButton
-                filename="阳澄股份_台账四_出库与销售订单台账"
+                filename={`阳澄股份_台账四_出库与销售订单台账_${selectedDateStr || "全量"}`}
                 headers={ledger4Headers}
                 rows={ledger4Rows}
               />
@@ -406,38 +470,46 @@ export default async function LedgersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {outboundOrders.map((o) => (
-                      <TableRow key={o.id}>
-                        <TableCell className="font-mono text-xs">
-                          {new Date(o.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell className="font-mono font-medium">{o.code}</TableCell>
-                        <TableCell className="font-mono text-xs">{o.batch.code}</TableCell>
-                        <TableCell>{o.batch.farmer.name}</TableCell>
-                        <TableCell>{o.store.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{o.channel.name}</Badge>
-                        </TableCell>
-                        <TableCell className="font-mono font-bold text-primary">
-                          {o.outboundCount.toLocaleString()} 只
-                        </TableCell>
-                        <TableCell className="font-mono">{o.channelOrderCount.toLocaleString()} 只</TableCell>
-                        <TableCell className="font-mono text-xs">{o.logisticsNo || "待生成"}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              o.status === "APPROVED"
-                                ? "default"
-                                : o.status === "REJECTED"
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {o.status === "APPROVED" ? "已出库" : o.status === "REJECTED" ? "已驳回" : "待审"}
-                          </Badge>
+                    {outboundOrders.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-6 text-muted-foreground">
+                          {selectedDateStr ? `未查询到 ${selectedDateStr} 当日的出库发货记录` : "暂无出库单记录"}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      outboundOrders.map((o) => (
+                        <TableRow key={o.id}>
+                          <TableCell className="font-mono text-xs">
+                            {new Date(o.createdAt).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell className="font-mono font-medium">{o.code}</TableCell>
+                          <TableCell className="font-mono text-xs">{o.batch.code}</TableCell>
+                          <TableCell>{o.batch.farmer.name}</TableCell>
+                          <TableCell>{o.store.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{o.channel.name}</Badge>
+                          </TableCell>
+                          <TableCell className="font-mono font-bold text-primary">
+                            {o.outboundCount.toLocaleString()} 只
+                          </TableCell>
+                          <TableCell className="font-mono">{o.channelOrderCount.toLocaleString()} 只</TableCell>
+                          <TableCell className="font-mono text-xs">{o.logisticsNo || "待生成"}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                o.status === "APPROVED"
+                                  ? "default"
+                                  : o.status === "REJECTED"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {o.status === "APPROVED" ? "已出库" : o.status === "REJECTED" ? "已驳回" : "待审"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>

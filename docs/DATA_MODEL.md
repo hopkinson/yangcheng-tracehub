@@ -186,6 +186,11 @@ model Batch {
   isException      Boolean         @default(false) // 损耗 > 5% 标记
   exceptionReason  String?
   
+  // 监测报告管理 (PRD V1.4)
+  reportUrl        String?         // 药残/产地准出检测报告文件 URL / DataURL
+  reportName       String?         // 报告文件名 (PDF/JPG/PNG)
+  reportUploadedAt DateTime?       // 上传时间留痕
+  
   createdById      String
   createdBy        User            @relation("BatchCreator", fields: [createdById], references: [id])
   createdAt        DateTime        @default(now())

@@ -48,21 +48,52 @@ async function main() {
     },
   });
 
-  // 3. 用户与角色
+  // 3. 用户与角色 (初始密码为手机号后6位)
   const admin = await prisma.user.create({
-    data: { username: "admin", fullName: "系统超级管理员", role: "ADMIN" },
+    data: {
+      username: "admin",
+      phone: "13800000001",
+      passwordHash: "000001",
+      fullName: "系统超级管理员",
+      role: "ADMIN",
+    },
   });
   const farmerAdmin = await prisma.user.create({
-    data: { username: "farmer_mgr", fullName: "王建国 (养殖户专员)", role: "FARMER_ADMIN" },
+    data: {
+      username: "farmer_mgr",
+      phone: "13800000002",
+      passwordHash: "000002",
+      fullName: "王建国 (养殖户专员)",
+      role: "FARMER_ADMIN",
+    },
   });
   const warehouseAdmin = await prisma.user.create({
-    data: { username: "warehouse_mgr", fullName: "李仓管 (仓库主管)", role: "WAREHOUSE_ADMIN" },
+    data: {
+      username: "warehouse_mgr",
+      phone: "13800000003",
+      passwordHash: "000003",
+      fullName: "李仓管 (仓库主管)",
+      role: "WAREHOUSE_ADMIN",
+    },
   });
   const qaDirector = await prisma.user.create({
-    data: { username: "qa_lead", fullName: "赵品控 (品控总监)", role: "QA_DIRECTOR" },
+    data: {
+      username: "qa_lead",
+      phone: "13800000004",
+      passwordHash: "000004",
+      fullName: "赵品控 (品控总监)",
+      role: "QA_DIRECTOR",
+    },
   });
   const samsViewer = await prisma.user.create({
-    data: { username: "sams_audit", fullName: "陈审计 (山姆品控代表)", role: "CHANNEL_VIEWER", channelId: sams.id },
+    data: {
+      username: "sams_audit",
+      phone: "13800000005",
+      passwordHash: "000005",
+      fullName: "陈审计 (山姆品控代表)",
+      role: "CHANNEL_VIEWER",
+      channelId: sams.id,
+    },
   });
 
   // 4. 养殖户与围网
@@ -130,6 +161,9 @@ async function main() {
       outPoolCount: 2000,
       lossCount: 50,
       status: "PARTIALLY_OUTBOUND",
+      reportUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='400' viewBox='0 0 600 400'><rect width='600' height='400' fill='%23f8fafc'/><rect x='20' y='20' width='560' height='360' fill='none' stroke='%230284c7' stroke-width='3'/><text x='300' y='80' font-size='22' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%230f172a'>阳澄湖大闸蟹药残专项检测合格报告</text><text x='300' y='120' font-size='14' font-family='sans-serif' text-anchor='middle' fill='%2364748b'>苏州市农业检验检测中心 · 产地准出合格证</text><line x1='50' y1='140' x2='550' y2='140' stroke='%23cbd5e1'/><text x='70' y='180' font-size='14' font-family='sans-serif' fill='%23334155'>送检批次：PC-20260901-001</text><text x='70' y='210' font-size='14' font-family='sans-serif' fill='%23334155'>养殖来源：周阿二 (阳澄湖东湖核心区)</text><text x='70' y='240' font-size='14' font-family='sans-serif' fill='%23334155'>检测项目：氯霉素、孔雀石绿、呋喃唑酮代谢物</text><text x='70' y='270' font-size='14' font-family='sans-serif' font-weight='bold' fill='%2316a34a'>检测结论：未检出超标残留，全部符合国家无公害水产食品标准 (合格)</text><circle cx='480' cy='300' r='45' fill='none' stroke='%23dc2626' stroke-width='2'/><text x='480' y='305' font-size='14' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%23dc2626'>检验合格章</text></svg>",
+      reportName: "PC-20260901-001_药残检测合格报告.png",
+      reportUploadedAt: new Date("2026-09-01T08:45:00Z"),
       createdById: warehouseAdmin.id,
     },
   });

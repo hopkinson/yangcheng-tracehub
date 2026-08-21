@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Navbar } from "@/components/layout/Navbar";
+import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/components/theme-provider";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -33,15 +34,23 @@ export default async function RootLayout({
   }));
 
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
-        <Navbar
-          users={userOptions}
-          currentUserId={currentUser?.id || ""}
-          currentRole={currentUser?.role || ""}
-        />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-8">{children}</main>
-        <Toaster position="top-right" richColors />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AppShell
+            users={userOptions}
+            currentUserId={currentUser?.id || ""}
+            currentRole={currentUser?.role || ""}
+          >
+            {children}
+          </AppShell>
+          <Toaster position="top-right" richColors />
+        </ThemeProvider>
       </body>
     </html>
   );

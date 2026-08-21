@@ -14,6 +14,7 @@ import {
   Truck,
   ShieldX,
 } from "lucide-react";
+import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -169,6 +170,15 @@ export default async function TracePage({
                   <div className="text-[11px] text-muted-foreground">
                     入池时间: {new Date(order.batch.inPoolTime).toLocaleString()}
                   </div>
+                  {order.batch.reportUrl && (
+                    <div className="pt-1">
+                      <BatchReportViewDialog
+                        batchCode={order.batch.code}
+                        reportName={order.batch.reportName || "检测报告"}
+                        reportUrl={order.batch.reportUrl}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* 节点 4: 暂养池 */}

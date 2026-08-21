@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { UserCheck, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChangePasswordDialog } from "@/components/forms/ChangePasswordDialog";
 
 interface UserOption {
   id: string;
@@ -49,6 +50,10 @@ export function UserRoleSwitcher({
           ))}
         </SelectContent>
       </Select>
+
+      {/* 修改个人密码 */}
+      {currentUserId && <ChangePasswordDialog userId={currentUserId} />}
+
       <form action={logoutAction}>
         <Button
           type="submit"

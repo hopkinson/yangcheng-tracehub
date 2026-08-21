@@ -4,6 +4,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { BatchIntakeDialog } from "@/components/forms/BatchIntakeDialog";
 import { LossRegisterDialog } from "@/components/forms/LossRegisterDialog";
+import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
+import { BatchReportUploadDialog } from "@/components/batches/BatchReportUploadDialog";
+import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { AlertTriangle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +66,7 @@ export default async function BatchesPage() {
                   <TableHead>已出库数</TableHead>
                   <TableHead>累计损耗</TableHead>
                   <TableHead>当前账面在池</TableHead>
+                  <TableHead>检测报告</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -104,6 +108,25 @@ export default async function BatchesPage() {
                         {liveInPool} 只
                       </TableCell>
                       <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {batch.reportUrl ? (
+                            <BatchReportViewDialog
+                              batchCode={batch.code}
+                              reportName={batch.reportName || "检测报告"}
+                              reportUrl={batch.reportUrl}
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">未上传</span>
+                          )}
+                          <BatchReportUploadDialog
+                            batchId={batch.id}
+                            batchCode={batch.code}
+                            currentReportName={batch.reportName}
+                            userId={defaultUser.id}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <Badge
                           variant={
                             batch.status === "COMPLETED"
@@ -123,9 +146,19 @@ export default async function BatchesPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {batch.status !== "COMPLETED" && (
-                          <LossRegisterDialog batch={batch} userId={defaultUser.id} />
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {batch.status !== "COMPLETED" && (
+                            <>
+                              <LossRegisterDialog batch={batch} userId={defaultUser.id} />
+                              <BatchFreezeButton
+                                batchId={batch.id}
+                                batchCode={batch.code}
+                                isFrozen={batch.status === "FROZEN"}
+                                userId={defaultUser.id}
+                              />
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

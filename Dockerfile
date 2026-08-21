@@ -3,7 +3,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 FROM base AS dependencies
-COPY package.json pnpm-lock.yaml* .npmrc ./
+COPY package.json pnpm-lock.yaml* .npmrc* ./
 COPY prisma ./prisma/
 RUN pnpm install --frozen-lockfile || pnpm install
 RUN npx prisma generate

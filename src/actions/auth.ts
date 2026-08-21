@@ -10,7 +10,7 @@ import {
 } from "@/lib/session";
 
 export async function loginAction(formData: FormData) {
-  const username = (formData.get("username") as string)?.trim();
+  const phone = (formData.get("phone") as string)?.trim();
   const password = (formData.get("password") as string)?.trim();
   const redirectUrl = (formData.get("redirect") as string)?.trim();
 
@@ -18,19 +18,19 @@ export async function loginAction(formData: FormData) {
     ? `/login?redirect=${encodeURIComponent(redirectUrl)}&error=`
     : "/login?error=";
 
-  if (!username) {
-    redirect(failRedirectBase + encodeURIComponent("请输入用户名"));
+  if (!phone) {
+    redirect(failRedirectBase + encodeURIComponent("请输入手机号"));
   }
 
   const user = await prisma.user.findUnique({
-    where: { username },
+    where: { phone },
     include: { channel: true },
   });
 
-  if (!user || user.passwordHash !== (password || "123456")) {
+  if (!user || user.passwordHash !== password) {
     redirect(
       failRedirectBase +
-        encodeURIComponent("用户名或密码错误 (默认初始密码: 123456)")
+        encodeURIComponent("手机号或密码错误 (初始密码为手机号后6位)")
     );
   }
 
@@ -45,6 +45,56 @@ export async function loginAction(formData: FormData) {
       : "/";
 
   redirect(targetUrl);
+}
+
+export async function changePasswordAction(data: {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}) {
+  const { userId, currentPassword, newPassword, confirmPassword } = data;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    throw new Error("所有密码字段均为必填");
+  }
+
+  if (newPassword.length < 6) {
+    throw new Error("新密码长度不能少于 6 位");
+  }
+
+  if (newPassword !== confirmPassword) {
+    throw new Error("两次输入的新密码不一致");
+  }
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+  });
+
+  if (user.passwordHash !== currentPassword) {
+    throw new Error("原密码输入错误");
+  }
+
+  if (currentPassword === newPassword) {
+    throw new Error("新密码不能与原密码相同");
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: newPassword },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      operatorId: userId,
+      action: "CHANGE_PASSWORD",
+      entityType: "USER",
+      entityId: userId,
+      details: JSON.stringify({ message: "用户自主修改密码" }),
+    },
+  });
+
+  return { success: true };
 }
 
 export async function logoutAction() {

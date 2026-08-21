@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createBatchAction } from "@/actions/batches";
 import { toast } from "sonner";
-import { Plus, Waves } from "lucide-react";
+import { Plus, Waves, Upload, FileText, X } from "lucide-react";
 
 export function BatchIntakeDialog({
   farmers,
@@ -29,7 +29,28 @@ export function BatchIntakeDialog({
   const [weightTier, setWeightTier] = useState("4.0两");
   const [inPoolCount, setInPoolCount] = useState("1000");
 
+  const [reportName, setReportName] = useState("");
+  const [reportUrl, setReportUrl] = useState("");
+
   const currentFarmer = farmers.find((f) => f.id === selectedFarmerId);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("文件不能超过 10MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setReportUrl(reader.result as string);
+      setReportName(file.name);
+      toast.success(`已选择监测报告: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,10 +67,14 @@ export function BatchIntakeDialog({
         weightTier,
         inPoolCount: count,
         createdById: userId,
+        reportUrl: reportUrl || undefined,
+        reportName: reportName || undefined,
       });
 
       toast.success("批次创建与入池登记成功！");
       setOpen(false);
+      setReportName("");
+      setReportUrl("");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "入池失败";
       toast.error(msg);
@@ -66,7 +91,7 @@ export function BatchIntakeDialog({
           原料入池登记 (创建批次)
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Waves className="size-5 text-primary" />
@@ -175,6 +200,46 @@ export function BatchIntakeDialog({
               min="1"
               required
             />
+          </div>
+
+          {/* 监测报告上传 */}
+          <div className="flex flex-col gap-1.5 border-t pt-3">
+            <Label className="flex items-center justify-between text-xs">
+              <span>批次监测报告 (药残/产地准出证明) - 可选</span>
+              <span className="text-[11px] text-muted-foreground">支持 PDF/JPG/PNG</span>
+            </Label>
+
+            {reportName ? (
+              <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                <div className="flex items-center gap-2 truncate">
+                  <FileText className="size-4 text-primary shrink-0" />
+                  <span className="truncate font-medium">{reportName}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => {
+                    setReportName("");
+                    setReportUrl("");
+                  }}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center rounded-md border border-dashed p-3 hover:bg-muted/50 cursor-pointer transition-colors">
+                <Upload className="size-4 text-muted-foreground mb-1" />
+                <span className="text-xs text-muted-foreground font-medium">点击上传批次检测报告文件</span>
+                <input
+                  type="file"
+                  accept=".pdf,image/png,image/jpeg"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

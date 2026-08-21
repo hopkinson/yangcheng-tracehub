@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 export async function createUserAction(data: {
   username: string;
+  phone: string;
   fullName: string;
   role: string;
   channelId?: string;
@@ -12,29 +13,44 @@ export async function createUserAction(data: {
   operatorId?: string;
 }) {
   const username = data.username.trim();
+  const phone = data.phone.trim();
   const fullName = data.fullName.trim();
   const role = data.role;
   const channelId = role === "CHANNEL_VIEWER" ? data.channelId || null : null;
-  const passwordHash = data.password?.trim() || "123456";
 
-  if (!username || !fullName || !role) {
-    throw new Error("用户名、姓名和角色均为必填项");
+  if (!username || !phone || !fullName || !role) {
+    throw new Error("用户名、手机号、姓名和角色均为必填项");
+  }
+
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    throw new Error("请输入合法的 11 位大陆手机号码");
   }
 
   if (role === "CHANNEL_VIEWER" && !channelId) {
     throw new Error("渠道人员角色必须绑定所属销售渠道！");
   }
 
-  const existing = await prisma.user.findUnique({
+  const existingUsername = await prisma.user.findUnique({
     where: { username },
   });
-  if (existing) {
+  if (existingUsername) {
     throw new Error(`用户名 "${username}" 已被占用，请更换`);
   }
+
+  const existingPhone = await prisma.user.findUnique({
+    where: { phone },
+  });
+  if (existingPhone) {
+    throw new Error(`手机号 "${phone}" 已被注册，请更换`);
+  }
+
+  const defaultPassword = phone.slice(-6);
+  const passwordHash = data.password?.trim() || defaultPassword;
 
   const user = await prisma.user.create({
     data: {
       username,
+      phone,
       fullName,
       role,
       channelId,
@@ -49,17 +65,20 @@ export async function createUserAction(data: {
         action: "CREATE_USER",
         entityType: "USER",
         entityId: user.id,
-        details: JSON.stringify({ username, fullName, role, channelId }),
+        details: JSON.stringify({ username, phone, fullName, role, channelId }),
       },
     });
   }
 
-  revalidatePath("/users");
+  try {
+    revalidatePath("/users");
+  } catch {}
   return user;
 }
 
 export async function updateUserAction(data: {
   id: string;
+  phone?: string;
   fullName: string;
   role: string;
   channelId?: string;
@@ -68,6 +87,20 @@ export async function updateUserAction(data: {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: data.id },
   });
+
+  const phone = data.phone?.trim() || user.phone;
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    throw new Error("请输入合法的 11 位大陆手机号码");
+  }
+
+  if (phone !== user.phone) {
+    const existingPhone = await prisma.user.findUnique({
+      where: { phone },
+    });
+    if (existingPhone && existingPhone.id !== data.id) {
+      throw new Error(`手机号 "${phone}" 已被其他账号绑定`);
+    }
+  }
 
   const channelId = data.role === "CHANNEL_VIEWER" ? data.channelId || null : null;
 
@@ -86,6 +119,7 @@ export async function updateUserAction(data: {
   const updated = await prisma.user.update({
     where: { id: data.id },
     data: {
+      phone,
       fullName: data.fullName.trim(),
       role: data.role,
       channelId,
@@ -100,14 +134,16 @@ export async function updateUserAction(data: {
         entityType: "USER",
         entityId: updated.id,
         details: JSON.stringify({
-          prev: { fullName: user.fullName, role: user.role, channelId: user.channelId },
-          next: { fullName: updated.fullName, role: updated.role, channelId: updated.channelId },
+          prev: { phone: user.phone, fullName: user.fullName, role: user.role, channelId: user.channelId },
+          next: { phone: updated.phone, fullName: updated.fullName, role: updated.role, channelId: updated.channelId },
         }),
       },
     });
   }
 
-  revalidatePath("/users");
+  try {
+    revalidatePath("/users");
+  } catch {}
   return updated;
 }
 
@@ -116,14 +152,15 @@ export async function resetPasswordAction(data: {
   newPassword?: string;
   operatorId?: string;
 }) {
-  const newPassword = data.newPassword?.trim() || "123456";
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: data.id },
   });
 
+  const resetPassword = data.newPassword?.trim() || (user.phone ? user.phone.slice(-6) : "123456");
+
   const updated = await prisma.user.update({
     where: { id: data.id },
-    data: { passwordHash: newPassword },
+    data: { passwordHash: resetPassword },
   });
 
   if (data.operatorId) {
@@ -133,12 +170,12 @@ export async function resetPasswordAction(data: {
         action: "RESET_PASSWORD",
         entityType: "USER",
         entityId: updated.id,
-        details: JSON.stringify({ username: user.username }),
+        details: JSON.stringify({ username: user.username, phone: user.phone }),
       },
     });
   }
 
-  return { success: true, username: user.username };
+  return { success: true, username: user.username, newPassword: resetPassword };
 }
 
 export async function deleteUserAction(data: {

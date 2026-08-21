@@ -27,6 +27,7 @@ interface ChannelOption {
 interface UserData {
   id?: string;
   username?: string;
+  phone?: string;
   fullName?: string;
   role?: string;
   channelId?: string | null;
@@ -50,6 +51,7 @@ export function UserDialog({
   const isEditing = Boolean(user?.id);
 
   const [username, setUsername] = useState(user?.username || "");
+  const [phone, setPhone] = useState(user?.phone || "");
   const [fullName, setFullName] = useState(user?.fullName || "");
   const [role, setRole] = useState(user?.role || "WAREHOUSE_ADMIN");
   const [channelId, setChannelId] = useState(user?.channelId || "");
@@ -58,6 +60,7 @@ export function UserDialog({
   useEffect(() => {
     if (open) {
       setUsername(user?.username || "");
+      setPhone(user?.phone || "");
       setFullName(user?.fullName || "");
       setRole(user?.role || "WAREHOUSE_ADMIN");
       setChannelId(user?.channelId || "");
@@ -69,6 +72,10 @@ export function UserDialog({
     e.preventDefault();
     if (!username.trim()) {
       toast.error("请输入账号用户名");
+      return;
+    }
+    if (!phone.trim() || !/^1[3-9]\d{9}$/.test(phone.trim())) {
+      toast.error("请输入合法的 11 位手机号码");
       return;
     }
     if (!fullName.trim()) {
@@ -85,6 +92,7 @@ export function UserDialog({
       if (isEditing && user?.id) {
         await updateUserAction({
           id: user.id,
+          phone: phone.trim(),
           fullName,
           role,
           channelId: role === "CHANNEL_VIEWER" ? channelId : undefined,
@@ -94,13 +102,14 @@ export function UserDialog({
       } else {
         await createUserAction({
           username,
+          phone: phone.trim(),
           fullName,
           role,
           channelId: role === "CHANNEL_VIEWER" ? channelId : undefined,
           password: password || undefined,
           operatorId,
         });
-        toast.success(`新用户 "${fullName}" (${username}) 创建成功`);
+        toast.success(`新用户 "${fullName}" (${phone.trim()}) 创建成功`);
       }
       setOpen(false);
       onSuccess?.();
@@ -137,7 +146,7 @@ export function UserDialog({
             </DialogTitle>
             <DialogDescription>
               {isEditing
-                ? "修改用户的姓名、所属角色或绑定的渠道主体。"
+                ? "修改用户的手机号、姓名、所属角色或绑定的渠道主体。"
                 : "创建新的系统操作账号，并分配对应的业务角色与访问权限。"}
             </DialogDescription>
           </DialogHeader>
@@ -160,6 +169,26 @@ export function UserDialog({
                 {isEditing && (
                   <p className="text-[11px] text-muted-foreground mt-1">账号名为主键标识，创建后不可更改</p>
                 )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="phone" className="text-right text-xs">
+                手机号码
+              </Label>
+              <div className="col-span-3">
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="如: 13800000001"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  disabled={loading}
+                  maxLength={11}
+                  className="font-mono text-sm"
+                  required
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">用于系统登录认证与密码重置</p>
               </div>
             </div>
 
@@ -237,13 +266,13 @@ export function UserDialog({
                   <Input
                     id="password"
                     type="password"
-                    placeholder="留空则默认为 123456"
+                    placeholder="留空则默认为手机号后6位"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
                     className="text-sm"
                   />
-                  <p className="text-[11px] text-muted-foreground mt-1">默认初始密码：123456</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">默认初始密码：手机号后6位</p>
                 </div>
               </div>
             )}

@@ -2,26 +2,33 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { FarmerDialog } from "@/components/forms/FarmerDialog";
 import { Scale, MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function FarmersPage() {
-  const farmers = await prisma.farmer.findMany({
-    include: {
-      enclosures: true,
-      batches: true,
-    },
-    orderBy: { code: "asc" },
-  });
+  const [farmers, defaultUser] = await Promise.all([
+    prisma.farmer.findMany({
+      include: {
+        enclosures: true,
+        batches: true,
+      },
+      orderBy: { code: "asc" },
+    }),
+    prisma.user.findFirstOrThrow({ where: { role: "ADMIN" } }),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">养殖户档案与核定额度管理</h1>
-        <p className="text-sm text-muted-foreground">
-          额度核定规则：蟹扣额度 = 养殖面积（亩） × 600 只/亩，按自然年度核定，作为全年入池与领扣的双重硬上限。
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">养殖户档案与核定额度管理</h1>
+          <p className="text-sm text-muted-foreground">
+            额度核定规则：蟹扣额度 = 养殖面积（亩） × 600 只/亩，按自然年度核定，作为全年入池与领扣的双重硬上限。
+          </p>
+        </div>
+        <FarmerDialog userId={defaultUser.id} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -32,7 +39,7 @@ export default async function FarmersPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{farmers.length} 户</div>
-            <p className="text-xs text-muted-foreground">全部处于正常合作状态</p>
+            <p className="text-xs text-muted-foreground">正常合作中</p>
           </CardContent>
         </Card>
 
@@ -45,7 +52,7 @@ export default async function FarmersPage() {
             <div className="text-2xl font-bold">
               {farmers.reduce((sum, f) => sum + f.area, 0).toFixed(1)} 亩
             </div>
-            <p className="text-xs text-muted-foreground">阳澄湖签约专属水域</p>
+            <p className="text-xs text-muted-foreground">签约水域面积</p>
           </CardContent>
         </Card>
 
@@ -86,13 +93,14 @@ export default async function FarmersPage() {
                   <TableHead>下属围网</TableHead>
                   <TableHead>信用评级</TableHead>
                   <TableHead>状态</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {farmers.map((farmer) => {
                   const cumulativeInPool = farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
                   const remainingQuota = Math.max(0, farmer.quota - cumulativeInPool);
-                  const usageRate = ((cumulativeInPool / farmer.quota) * 100).toFixed(1);
+                  const usageRate = farmer.quota > 0 ? ((cumulativeInPool / farmer.quota) * 100).toFixed(1) : 0;
 
                   return (
                     <TableRow key={farmer.id}>
@@ -132,6 +140,9 @@ export default async function FarmersPage() {
                         <Badge variant={farmer.status === "ACTIVE" ? "outline" : "destructive"}>
                           {farmer.status === "ACTIVE" ? "正常合作" : "暂停"}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <FarmerDialog farmer={farmer} userId={defaultUser.id} />
                       </TableCell>
                     </TableRow>
                   );

@@ -13,6 +13,7 @@ generator client {
 model User {
   id              String           @id @default(cuid())
   username        String           @unique
+  phone           String           @unique
   passwordHash    String           @default("123456")
   fullName        String
   role            String           // ADMIN, FARMER_ADMIN, WAREHOUSE_ADMIN, QA_DIRECTOR, CHANNEL_VIEWER
@@ -109,6 +110,11 @@ model Batch {
   status           String          @default("TEMPORARY_HOLDING") // TEMPORARY_HOLDING, PARTIALLY_OUTBOUND, COMPLETED, FROZEN
   isException      Boolean         @default(false)
   exceptionReason  String?
+  
+  // 监测报告 (PRD V1.4)
+  reportUrl        String?
+  reportName       String?
+  reportUploadedAt DateTime?
   
   createdById      String
   createdBy        User            @relation("BatchCreator", fields: [createdById], references: [id])

@@ -1,28 +1,35 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PoolDialog } from "@/components/forms/PoolDialog";
 import { Waves, Lock, Unlock, CheckCircle2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function PoolsPage() {
-  const pools = await prisma.holdingPool.findMany({
-    include: {
-      batches: {
-        where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-        include: { farmer: true },
+  const [pools, defaultUser] = await Promise.all([
+    prisma.holdingPool.findMany({
+      include: {
+        batches: {
+          where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+          include: { farmer: true },
+        },
       },
-    },
-    orderBy: { code: "asc" },
-  });
+      orderBy: { code: "asc" },
+    }),
+    prisma.user.findFirstOrThrow({ where: { role: "WAREHOUSE_ADMIN" } }),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">暂养池全景监控看板</h1>
-        <p className="text-sm text-muted-foreground">
-          暂养池管理原则：按规格复用。在养池可继续接收同公母、同重量档位的原料批次入池；不同公母或不同规格禁止混池；批次暂养期间不换池。
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">暂养池配置与全景看板</h1>
+          <p className="text-sm text-muted-foreground">
+            管理暂养池清单与在养规格锁定。同公母同规格可复用入池；不同规格禁止混池；有在养活蟹的池子禁止删除。
+          </p>
+        </div>
+        <PoolDialog userId={defaultUser.id} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -39,12 +46,15 @@ export default async function PoolsPage() {
                 <div className="flex items-center gap-2">
                   <Waves className="size-5 text-primary" />
                   <div>
-                    <CardTitle className="text-base">{pool.name}</CardTitle>
+                    <div className="flex items-center gap-1.5">
+                      <CardTitle className="text-base">{pool.name}</CardTitle>
+                      <PoolDialog pool={pool} userId={defaultUser.id} />
+                    </div>
                     <span className="font-mono text-xs text-muted-foreground">{pool.code}</span>
                   </div>
                 </div>
-                <Badge variant={isOccupied ? "default" : "secondary"}>
-                  {isOccupied ? "在养使用中" : "空闲待命中"}
+                <Badge variant={pool.status === "MAINTENANCE" ? "destructive" : isOccupied ? "default" : "secondary"}>
+                  {pool.status === "MAINTENANCE" ? "维护停用" : isOccupied ? "在养使用中" : "空闲待命中"}
                 </Badge>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
