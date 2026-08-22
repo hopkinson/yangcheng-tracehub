@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { uploadBatchReportAction } from "@/actions/batches";
+import { uploadBatchReportAction, deleteBatchReportAction } from "@/actions/batches";
 import { uploadFileAction } from "@/actions/upload";
 import { toast } from "sonner";
-import { Upload, FileText, X } from "lucide-react";
+import { Upload, FileText, X, Trash2 } from "lucide-react";
 
 export function BatchReportUploadDialog({
   batchId,
@@ -21,7 +21,7 @@ export function BatchReportUploadDialog({
   userId: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [reportName, setReportName] = useState(currentReportName || "");
   const [reportUrl, setReportUrl] = useState("");
 
@@ -34,6 +34,7 @@ export function BatchReportUploadDialog({
       return;
     }
 
+    setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -44,34 +45,38 @@ export function BatchReportUploadDialog({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "文件上传失败";
       toast.error(msg);
+    } finally {
+      setUploading(false);
     }
   };
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleDelete = () => {
+    if (!confirm("确定要删除该批次的检测报告文件吗？")) return;
+    toast.promise(deleteBatchReportAction({ batchId, userId }), {
+      loading: "正在删除...",
+      success: () => {
+        setReportName("");
+        setReportUrl("");
+        setOpen(false);
+        return "检测报告已成功删除";
+      },
+      error: (err) => (err instanceof Error ? err.message : "删除失败"),
+    });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reportUrl) {
-      toast.error("请先选择要上传的报告文件");
-      return;
-    }
+    if (!reportUrl) return toast.error("请先选择要上传的报告文件");
 
-    setLoading(true);
-    try {
-      await uploadBatchReportAction({
-        batchId,
-        reportUrl,
-        reportName,
-        userId,
-      });
-
-      toast.success("监测报告上传成功！");
-      setOpen(false);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "上传失败";
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }
+    toast.promise(uploadBatchReportAction({ batchId, reportUrl, reportName, userId }), {
+      loading: "上传中...",
+      success: () => {
+        setOpen(false);
+        return "监测报告上传成功！";
+      },
+      error: (err) => (err instanceof Error ? err.message : "上传失败"),
+    });
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -123,13 +128,29 @@ export function BatchReportUploadDialog({
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button type="submit" disabled={loading || !reportUrl}>
-              {loading ? "上传中..." : "确认上传"}
-            </Button>
+          <div className="flex justify-between items-center pt-2">
+            <div>
+              {currentReportName && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDelete}
+                  className="text-destructive hover:bg-destructive/10 text-xs gap-1 h-8"
+                >
+                  <Trash2 className="size-3.5" />
+                  删除当前报告
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={uploading || !reportUrl}>
+                {uploading ? "处理中..." : "确认上传"}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

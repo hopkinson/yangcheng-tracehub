@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
+import { deleteFileFromStorage } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
 
 export async function createBatchAction(data: {
@@ -126,6 +127,11 @@ export async function uploadBatchReportAction(data: {
   userId: string;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const prevBatch = await prisma.batch.findUnique({
+    where: { id: data.batchId },
+    select: { reportUrl: true },
+  });
+
   const batch = await prisma.batch.update({
     where: { id: data.batchId },
     data: {
@@ -134,6 +140,10 @@ export async function uploadBatchReportAction(data: {
       reportUploadedAt: new Date(),
     },
   });
+
+  if (prevBatch?.reportUrl && prevBatch.reportUrl !== data.reportUrl) {
+    await deleteFileFromStorage(prevBatch.reportUrl);
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -150,6 +160,46 @@ export async function uploadBatchReportAction(data: {
     revalidatePath("/ledgers");
   } catch {}
   return batch;
+}
+
+export async function deleteBatchReportAction(data: {
+  batchId: string;
+  userId: string;
+}) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const batch = await prisma.batch.findUniqueOrThrow({
+    where: { id: data.batchId },
+    select: { id: true, code: true, reportUrl: true, reportName: true },
+  });
+
+  if (batch.reportUrl) {
+    await deleteFileFromStorage(batch.reportUrl);
+  }
+
+  const updated = await prisma.batch.update({
+    where: { id: data.batchId },
+    data: {
+      reportUrl: null,
+      reportName: null,
+      reportUploadedAt: null,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      operatorId: data.userId,
+      action: "BATCH_REPORT_DELETE",
+      entityType: "BATCH",
+      entityId: batch.id,
+      details: JSON.stringify({ batchCode: batch.code, prevReportName: batch.reportName }),
+    },
+  });
+
+  try {
+    revalidatePath("/batches");
+    revalidatePath("/ledgers");
+  } catch {}
+  return updated;
 }
 
 export async function registerLossAction(data: {

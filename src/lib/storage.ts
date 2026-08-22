@@ -55,6 +55,41 @@ async function uploadToAliyunOss(
 }
 
 /**
+ * 阿里云 OSS REST DELETE (原生 HMAC-SHA1 签名)
+ */
+async function deleteFromAliyunOss(objectKey: string): Promise<void> {
+  const bucket = process.env.OSS_BUCKET!;
+  const endpoint = process.env.OSS_ENDPOINT!.replace(/^https?:\/\//, "");
+  const accessKeyId = process.env.OSS_ACCESS_KEY_ID!;
+  const accessKeySecret = process.env.OSS_ACCESS_KEY_SECRET!;
+
+  const date = new Date().toUTCString();
+  const canonicalizedResource = `/${bucket}/${objectKey}`;
+
+  const stringToSign = `DELETE\n\n\n${date}\n${canonicalizedResource}`;
+  const signature = crypto
+    .createHmac("sha1", accessKeySecret)
+    .update(stringToSign)
+    .digest("base64");
+
+  const host = `${bucket}.${endpoint}`;
+  const deleteUrl = `https://${host}/${objectKey}`;
+
+  const res = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      Date: date,
+      Authorization: `OSS ${accessKeyId}:${signature}`,
+    },
+  });
+
+  if (!res.ok && res.status !== 404) {
+    const errorText = await res.text();
+    console.error(`[OSS_DELETE_ERROR] [${res.status}]: ${errorText}`);
+  }
+}
+
+/**
  * 本地开发存储 (保存至 public/uploads 静态目录)
  */
 async function uploadToLocalStorage(buffer: Buffer, originalName: string): Promise<string> {
@@ -96,5 +131,30 @@ export async function uploadFileToStorage(file: File): Promise<UploadResult> {
     url: localUrl,
     name: file.name,
   };
+}
+
+export async function deleteFileFromStorage(fileUrl: string): Promise<void> {
+  if (!fileUrl) return;
+
+  // 1. 本地存储路径 /uploads/...
+  if (fileUrl.startsWith("/uploads/")) {
+    const filename = path.basename(fileUrl);
+    return fs.unlink(path.join(process.cwd(), "public", "uploads", filename)).catch(() => {});
+  }
+
+  // 2. 云端 OSS 路径
+  if (
+    process.env.OSS_BUCKET &&
+    process.env.OSS_ACCESS_KEY_ID &&
+    process.env.OSS_ACCESS_KEY_SECRET &&
+    process.env.OSS_ENDPOINT
+  ) {
+    try {
+      const objectKey = new URL(fileUrl).pathname.replace(/^\//, "");
+      if (objectKey) await deleteFromAliyunOss(objectKey);
+    } catch (err) {
+      console.error("[OSS_DELETE_ERROR]", err);
+    }
+  }
 }
 

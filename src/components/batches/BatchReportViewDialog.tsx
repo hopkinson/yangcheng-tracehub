@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { FileCheck, ExternalLink } from "lucide-react";
+import { FileCheck, ExternalLink, Download } from "lucide-react";
 
 interface BatchReportViewDialogProps {
   batchCode: string;
@@ -60,24 +60,18 @@ export function BatchReportViewDialog({
           )}
         </div>
 
-        <div className="flex justify-end pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1"
-            onClick={() => {
-              const win = window.open();
-              if (win) {
-                if (isPdf) {
-                  win.document.write(`<iframe src="${reportUrl}" style="width:100%;height:100%;border:none;"></iframe>`);
-                } else {
-                  win.document.write(`<img src="${reportUrl}" style="max-width:100%;margin:auto;display:block;" />`);
-                }
-              }
-            }}
-          >
-            <ExternalLink className="size-3.5" />
-            新窗口查看原件
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" className="text-xs gap-1" asChild>
+            <a href={reportUrl} download={reportName || `${batchCode}-report`} target="_blank" rel="noopener noreferrer">
+              <Download className="size-3.5" />
+              下载原件
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs gap-1" asChild>
+            <a href={reportUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="size-3.5" />
+              新窗口打开
+            </a>
           </Button>
         </div>
       </DialogContent>
