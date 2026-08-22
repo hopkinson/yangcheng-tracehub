@@ -62,7 +62,8 @@ jobs:
       - name: Save & Compress Docker Image
         if: github.event_name != 'pull_request'
         run: |
-          docker save yangcheng-tracehub:latest | gzip -9 > image.tar.gz
+          docker pull nginx:alpine
+          docker save yangcheng-tracehub:latest nginx:alpine | gzip -9 > image.tar.gz
           echo "Compressed image size:"
           ls -lh image.tar.gz
 
