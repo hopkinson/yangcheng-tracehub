@@ -73,36 +73,6 @@ export default async function TracePage({
       })
     );
 
-  // 3. 空状态下获取示范出库单据供快速点击体验
-  const recentSampleOrders = !searchTerm
-    ? await prisma.outboundOrder.findMany({
-        take: 4,
-        where: isChannelViewer && currentUser?.channelId ? { channelId: currentUser.channelId } : {},
-        include: {
-          store: true,
-          channel: true,
-          batch: {
-            include: {
-              farmer: true,
-            },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
-
-  const formattedRecentSamples = recentSampleOrders.map((o) => ({
-    code: o.code,
-    storeName: o.store.name,
-    channelName: o.channel.name,
-    outboundCount: o.outboundCount,
-    batchCode: o.batch.code,
-    weightTier: o.batch.weightTier,
-    gender: o.batch.gender,
-    farmerName: o.batch.farmer.name,
-    createdAt: o.createdAt,
-  }));
-
   return (
     <div className="flex flex-col gap-6 pb-12">
       {/* 1. 顶部全链路溯源 Search Hero 区域 */}
@@ -115,7 +85,7 @@ export default async function TracePage({
       {/* 2. 状态呈现分发 */}
       {!searchTerm ? (
         /* 未检索时：高质感引导与四大验真保障空状态 */
-        <TraceEmptyState recentOrders={formattedRecentSamples} />
+        <TraceEmptyState />
       ) : isCrossChannelForbidden ? (
         /* 渠道隔离拦截 */
         <Card className="border-destructive/40 bg-destructive/5 shadow-xs">

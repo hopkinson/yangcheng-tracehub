@@ -7,9 +7,7 @@ export interface LogoProps {
   className?: string;
   iconClassName?: string;
   collapsed?: boolean;
-  showSubtitle?: boolean;
-  subtitle?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md";
 }
 
 /**
@@ -200,21 +198,9 @@ export function Logo({
   className,
   iconClassName,
   collapsed = false,
-  showSubtitle = false,
-  subtitle = "全链路合规系统",
   size = "md",
 }: LogoProps) {
-  const iconSizes = {
-    sm: "size-6",
-    md: "size-6.5",
-    lg: "size-11",
-  };
-
-  const titleSizes = {
-    sm: "text-xs",
-    md: "text-xs",
-    lg: "text-2xl",
-  };
+  const iconSize = size === "sm" ? "size-6" : "size-6.5";
 
   return (
     <div
@@ -226,33 +212,16 @@ export function Logo({
     >
       <CrabLogoIcon
         className={cn(
-          iconSizes[size],
+          iconSize,
           "shadow-xs transition-transform duration-200 group-hover:scale-105",
           iconClassName
         )}
       />
 
       {!collapsed && (
-        <div className="flex flex-col min-w-0 leading-tight">
-          <span
-            className={cn(
-              "font-bold tracking-tight text-foreground truncate",
-              titleSizes[size]
-            )}
-          >
-            {size === "lg" ? "阳澄大闸蟹溯源品控系统" : "阳澄品控溯源"}
-          </span>
-          {showSubtitle && (
-            <span
-              className={cn(
-                "text-muted-foreground/80 font-medium tracking-normal truncate",
-                size === "lg" ? "text-xs mt-1" : "text-[9.5px]"
-              )}
-            >
-              {subtitle}
-            </span>
-          )}
-        </div>
+        <span className="text-xs font-bold tracking-tight text-foreground truncate">
+          阳澄品控溯源
+        </span>
       )}
     </div>
   );
