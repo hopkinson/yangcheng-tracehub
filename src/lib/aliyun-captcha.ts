@@ -9,8 +9,9 @@ function getCaptchaClient(): Client | null {
     process.env.ALIYUN_ACCESS_KEY_ID || process.env.OSS_ACCESS_KEY_ID;
   const accessKeySecret =
     process.env.ALIYUN_ACCESS_KEY_SECRET || process.env.OSS_ACCESS_KEY_SECRET;
+  // 优先使用用户配置的端点，默认使用阿里云验证码 2.0 全国/全球统一接入点 captcha.aliyuncs.com
   const endpoint =
-    process.env.ALIYUN_CAPTCHA_ENDPOINT || "captcha.cn-hangzhou.aliyuncs.com";
+    process.env.ALIYUN_CAPTCHA_ENDPOINT || "captcha.aliyuncs.com";
 
   if (!accessKeyId || !accessKeySecret) {
     return null;
@@ -21,6 +22,8 @@ function getCaptchaClient(): Client | null {
       accessKeyId,
       accessKeySecret,
       endpoint,
+      // 避免本地代理拦截 aliyuncs 域名导致的 TLS socket 断开
+      noProxy: "aliyuncs.com,aliyun.com",
     });
     captchaClient = new Client(config);
   }
@@ -51,37 +54,90 @@ export async function verifyAliyunCaptcha(
   }
 
   try {
-    const sceneId =
-      process.env.ALIYUN_CAPTCHA_SCENE_ID ||
-      process.env.NEXT_PUBLIC_ALIYUN_CAPTCHA_SCENE_ID;
-
-    const request = new $Captcha.VerifyIntelligentCaptchaRequest({
-      captchaVerifyParam,
-      sceneId: sceneId || undefined,
+    const runtime = new $Util.RuntimeOptions({
+      connectTimeout: 8000,
+      readTimeout: 8000,
+      autoretry: true,
+      maxAttempts: 2,
     });
 
-    const runtime = new $Util.RuntimeOptions({});
-    const response = await client.verifyIntelligentCaptchaWithOptions(
-      request,
-      runtime
-    );
+    // 1. 优先调用阿里云验证码 2.0 滑块/行为验证标准接口 VerifyCaptcha
+    try {
+      const captchaReq = new $Captcha.VerifyCaptchaRequest({
+        captchaVerifyParam,
+      });
+      const res = await client.verifyCaptchaWithOptions(captchaReq, runtime);
+      if (res?.body?.result?.verifyResult === true) {
+        return { success: true };
+      }
+      if (res?.body?.result?.verifyResult === false) {
+        return {
+          success: false,
+          message: res?.body?.message || "安全验证失败，请重新尝试",
+        };
+      }
+    } catch (e: any) {
+      // 若非普通校验不通过，尝试智能核验接口兜底
+      const sceneId =
+        process.env.ALIYUN_CAPTCHA_SCENE_ID ||
+        process.env.NEXT_PUBLIC_ALIYUN_CAPTCHA_SCENE_ID;
 
-    const body = response?.body;
-
-    // VerifyResult: true 表示验证通过；false 表示验证未通过
-    if (body?.result?.verifyResult === true) {
-      return { success: true };
+      const intelligentReq = new $Captcha.VerifyIntelligentCaptchaRequest({
+        captchaVerifyParam,
+        sceneId: sceneId || undefined,
+      });
+      const intelRes = await client.verifyIntelligentCaptchaWithOptions(
+        intelligentReq,
+        runtime
+      );
+      if (intelRes?.body?.result?.verifyResult === true) {
+        return { success: true };
+      }
+      return {
+        success: false,
+        message: intelRes?.body?.result?.verifyCode || "安全验证失败，请重新尝试",
+      };
     }
 
     return {
       success: false,
-      message: body?.result?.verifyCode || "安全验证失败，请重新尝试",
+      message: "安全验证失败，请重新尝试",
     };
-  } catch (error) {
-    console.error("[Aliyun Captcha] Verification error:", error);
+  } catch (error: any) {
+    console.error("[Aliyun Captcha] Verification error:", {
+      message: error?.message,
+      code: error?.code,
+      data: error?.data,
+    });
+
+    const isRamAuthError =
+      error?.code === "Forbidden.RAM" ||
+      error?.message?.includes("AccessDenied") ||
+      error?.message?.includes("Forbidden");
+
+    const isNetworkError =
+      error?.message?.includes("socket disconnected") ||
+      error?.message?.includes("ECONNRESET") ||
+      error?.message?.includes("ETIMEDOUT") ||
+      error?.message?.includes("TLS");
+
+    if (isRamAuthError) {
+      return {
+        success: false,
+        message: "阿里云 RAM 账号未授权验证码权限 (AliyunYundunCaptchaFullAccess)",
+      };
+    }
+
+    if (isNetworkError) {
+      return {
+        success: false,
+        message: "无法连接阿里云验证码服务 (请检查本地网络代理/VPN)",
+      };
+    }
+
     return {
       success: false,
-      message: "验证码服务异常，请稍后重试",
+      message: error?.message || "验证码服务异常，请稍后重试",
     };
   }
 }

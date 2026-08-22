@@ -26,6 +26,7 @@ declare global {
       captchaVerifyCallback?: (captchaVerifyParam: string) => Promise<any> | any;
       onBizResultCallback?: (bizResult: boolean) => void;
       getInstance?: (instance: AliyunCaptchaInstance) => void;
+      immediate?: boolean;
     }) => void;
   }
 }
@@ -40,9 +41,9 @@ export default function LoginPage({
   const [password, setPassword] = useState("000001");
   const [showPassword, setShowPassword] = useState(false);
   const [captchaVerifyParam, setCaptchaVerifyParam] = useState("");
+  const [clientError, setClientError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const formRef = useRef<HTMLFormElement>(null);
   const captchaInstanceRef = useRef<AliyunCaptchaInstance | null>(null);
   const captchaInitializedRef = useRef(false);
 
@@ -65,12 +66,12 @@ export default function LoginPage({
       window.initAliyunCaptcha({
         SceneId: sceneId,
         prefix: prefix || undefined,
-        mode: "popup",
+        mode: "embed",
         element: "#captcha-element",
         button: "#captcha-trigger-btn",
         captchaVerifyCallback: async (param: string) => {
           setCaptchaVerifyParam(param);
-          queueMicrotask(() => formRef.current?.requestSubmit());
+          setClientError("");
           return {
             captchaResult: true,
             bizResult: true,
@@ -81,11 +82,19 @@ export default function LoginPage({
           captchaInstanceRef.current = instance;
           captchaInitializedRef.current = true;
         },
+        immediate: true,
       });
     } catch (e) {
       console.warn("[Aliyun Captcha] Init failed, fallback to normal login", e);
     }
   };
+
+  // 页面挂载时兜底初始化（防止脚本已缓存导致 onLoad 不触发）
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.initAliyunCaptcha) {
+      initCaptcha();
+    }
+  }, []);
 
   // 当登录报错重定向回来时，重置验证码状态
   useEffect(() => {
@@ -97,13 +106,12 @@ export default function LoginPage({
   }, [params?.error]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    // 若开启了阿里云验证码，且尚未取得验证凭证，则拦截并唤起验证码
-    if (isCaptchaConfigured && captchaInstanceRef.current && !captchaVerifyParam) {
+    if (isCaptchaConfigured && !captchaVerifyParam) {
       e.preventDefault();
-      captchaInstanceRef.current.verify();
+      setClientError("请先完成下方滑块验证");
       return;
     }
-
+    setClientError("");
     setIsSubmitting(true);
   };
 
@@ -154,9 +162,6 @@ export default function LoginPage({
         </svg>
       </div>
 
-      {/* 阿里云验证码弹窗容器挂载点 */}
-      <div id="captcha-element" />
-
       {/* 登录卡片主体 */}
       <div className="w-full max-w-sm space-y-5 relative z-10">
         {/* 顶部品牌标语 */}
@@ -180,7 +185,7 @@ export default function LoginPage({
         {/* 登录表单卡片 */}
         <Card className="border-border/80 bg-card/90 dark:bg-card/80 backdrop-blur-xl shadow-xl shadow-sky-950/5">
           <CardContent className="pt-6 pb-6">
-            <form ref={formRef} action={loginAction} onSubmit={handleSubmit} className="space-y-4">
+            <form action={loginAction} onSubmit={handleSubmit} className="space-y-4">
               {params?.redirect && (
                 <input type="hidden" name="redirect" value={params.redirect} />
               )}
@@ -191,9 +196,9 @@ export default function LoginPage({
                 value={captchaVerifyParam}
               />
 
-              {params?.error && (
+              {(clientError || params?.error) && (
                 <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs leading-relaxed">
-                  {params.error}
+                  {clientError || params?.error}
                 </div>
               )}
 
@@ -250,6 +255,11 @@ export default function LoginPage({
                   </button>
                 </div>
               </div>
+
+              {/* 嵌入式验证码容器 */}
+              {isCaptchaConfigured && (
+                <div id="captcha-element" className="w-full flex justify-center py-0.5" />
+              )}
 
               {/* 登录按钮 */}
               <Button
