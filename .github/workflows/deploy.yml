@@ -82,7 +82,7 @@ jobs:
           username: ${{ secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            mkdir -p /data/yangcheng-tracehub/data/prisma /data/yangcheng-tracehub/data/uploads
+            mkdir -p /data/yangcheng-tracehub/data/db /data/yangcheng-tracehub/data/uploads
             cd /data/yangcheng-tracehub
 
             # 导入镜像并清理临时包
@@ -94,7 +94,7 @@ jobs:
               cat << 'EOF' > .env.production
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="file:./dev.db"
+            DATABASE_URL="file:./data/dev.db"
             AUTH_SECRET="yangcheng-tracehub-secret-2026"
             EOF
             fi
@@ -102,4 +102,3 @@ jobs:
             # 启动容器
             docker compose down || true
             docker compose up -d --remove-orphans
-
