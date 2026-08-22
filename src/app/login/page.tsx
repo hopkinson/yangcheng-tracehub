@@ -1,26 +1,121 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect, useRef } from "react";
+import Script from "next/script";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginAction } from "@/actions/auth";
-import { ArrowRight, Phone, Lock, Eye, EyeOff } from "lucide-react";
+import { ArrowRight, Phone, Lock, Eye, EyeOff, ShieldCheck, Loader2 } from "lucide-react";
 import { CrabLogoIcon } from "@/components/layout/Logo";
+
+interface AliyunCaptchaInstance {
+  verify: () => void;
+  reset: () => void;
+}
+
+declare global {
+  interface Window {
+    initAliyunCaptcha?: (config: {
+      SceneId: string;
+      prefix?: string;
+      mode?: "popup" | "embed";
+      element?: string | HTMLElement;
+      button?: string | HTMLElement;
+      captchaVerifyCallback?: (captchaVerifyParam: string) => Promise<any> | any;
+      onBizResultCallback?: (bizResult: boolean) => void;
+      getInstance?: (instance: AliyunCaptchaInstance) => void;
+    }) => void;
+  }
+}
 
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; redirect?: string }>;
 }) {
   const params = use(searchParams);
   const [phone, setPhone] = useState("13800000001");
   const [password, setPassword] = useState("000001");
   const [showPassword, setShowPassword] = useState(false);
+  const [captchaVerifyParam, setCaptchaVerifyParam] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const formRef = useRef<HTMLFormElement>(null);
+  const captchaInstanceRef = useRef<AliyunCaptchaInstance | null>(null);
+  const captchaInitializedRef = useRef(false);
+
+  const sceneId = process.env.NEXT_PUBLIC_ALIYUN_CAPTCHA_SCENE_ID;
+  const prefix = process.env.NEXT_PUBLIC_ALIYUN_CAPTCHA_PREFIX;
+  const isCaptchaConfigured = Boolean(sceneId);
+
+  // 初始化阿里云验证码 2.0
+  const initCaptcha = () => {
+    if (
+      typeof window === "undefined" ||
+      !window.initAliyunCaptcha ||
+      !sceneId ||
+      captchaInitializedRef.current
+    ) {
+      return;
+    }
+
+    try {
+      window.initAliyunCaptcha({
+        SceneId: sceneId,
+        prefix: prefix || undefined,
+        mode: "popup",
+        element: "#captcha-element",
+        button: "#captcha-trigger-btn",
+        captchaVerifyCallback: async (param: string) => {
+          setCaptchaVerifyParam(param);
+          queueMicrotask(() => formRef.current?.requestSubmit());
+          return {
+            captchaResult: true,
+            bizResult: true,
+          };
+        },
+        onBizResultCallback: () => {},
+        getInstance: (instance: AliyunCaptchaInstance) => {
+          captchaInstanceRef.current = instance;
+          captchaInitializedRef.current = true;
+        },
+      });
+    } catch (e) {
+      console.warn("[Aliyun Captcha] Init failed, fallback to normal login", e);
+    }
+  };
+
+  // 当登录报错重定向回来时，重置验证码状态
+  useEffect(() => {
+    if (params?.error) {
+      setCaptchaVerifyParam("");
+      setIsSubmitting(false);
+      captchaInstanceRef.current?.reset();
+    }
+  }, [params?.error]);
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    // 若开启了阿里云验证码，且尚未取得验证凭证，则拦截并唤起验证码
+    if (isCaptchaConfigured && captchaInstanceRef.current && !captchaVerifyParam) {
+      e.preventDefault();
+      captchaInstanceRef.current.verify();
+      return;
+    }
+
+    setIsSubmitting(true);
+  };
 
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center p-4 bg-slate-950/2 dark:bg-background overflow-hidden selection:bg-sky-500/20">
+      {/* 异步引入阿里云验证码 2.0 官方 SDK */}
+      <Script
+        src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"
+        strategy="afterInteractive"
+        onLoad={initCaptcha}
+      />
+
       {/* 1. 阳澄湖水系与自然光晕渐变背景 */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         {/* 顶部中央湖蓝主光晕 */}
@@ -59,6 +154,9 @@ export default function LoginPage({
         </svg>
       </div>
 
+      {/* 阿里云验证码弹窗容器挂载点 */}
+      <div id="captcha-element" />
+
       {/* 登录卡片主体 */}
       <div className="w-full max-w-sm space-y-5 relative z-10">
         {/* 顶部品牌标语 */}
@@ -71,12 +169,28 @@ export default function LoginPage({
           <h1 className="text-xl font-bold tracking-tight text-foreground">
             阳澄大闸蟹溯源品控系统
           </h1>
+          {isCaptchaConfigured && (
+            <div className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 bg-muted/40 px-2 py-0.5 rounded-full border border-border/50">
+              <ShieldCheck className="size-3 text-sky-500" />
+              <span>已启用阿里云智能风控防御</span>
+            </div>
+          )}
         </div>
 
         {/* 登录表单卡片 */}
         <Card className="border-border/80 bg-card/90 dark:bg-card/80 backdrop-blur-xl shadow-xl shadow-sky-950/5">
           <CardContent className="pt-6 pb-6">
-            <form action={loginAction} className="space-y-4">
+            <form ref={formRef} action={loginAction} onSubmit={handleSubmit} className="space-y-4">
+              {params?.redirect && (
+                <input type="hidden" name="redirect" value={params.redirect} />
+              )}
+              {/* 隐藏的验证码凭证域 */}
+              <input
+                type="hidden"
+                name="captchaVerifyParam"
+                value={captchaVerifyParam}
+              />
+
               {params?.error && (
                 <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs leading-relaxed">
                   {params.error}
@@ -138,9 +252,23 @@ export default function LoginPage({
               </div>
 
               {/* 登录按钮 */}
-              <Button type="submit" className="w-full h-9 text-xs font-medium mt-2 gap-1.5 shadow-sm hover:shadow transition-all">
-                <span>登录系统</span>
-                <ArrowRight className="size-3.5" />
+              <Button
+                id="captcha-trigger-btn"
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full h-9 text-xs font-medium mt-2 gap-1.5 shadow-sm hover:shadow transition-all"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    <span>正在登录...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>登录系统</span>
+                    <ArrowRight className="size-3.5" />
+                  </>
+                )}
               </Button>
             </form>
           </CardContent>

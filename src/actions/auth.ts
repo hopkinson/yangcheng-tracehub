@@ -8,11 +8,13 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_OPTIONS,
 } from "@/lib/session";
+import { verifyAliyunCaptcha } from "@/lib/aliyun-captcha";
 
 export async function loginAction(formData: FormData) {
   const phone = (formData.get("phone") as string)?.trim();
   const password = (formData.get("password") as string)?.trim();
   const redirectUrl = (formData.get("redirect") as string)?.trim();
+  const captchaVerifyParam = (formData.get("captchaVerifyParam") as string)?.trim();
 
   const failRedirectBase = redirectUrl
     ? `/login?redirect=${encodeURIComponent(redirectUrl)}&error=`
@@ -20,6 +22,15 @@ export async function loginAction(formData: FormData) {
 
   if (!phone) {
     redirect(failRedirectBase + encodeURIComponent("请输入手机号"));
+  }
+
+  // 阿里云验证码 2.0 二次核验
+  const captchaResult = await verifyAliyunCaptcha(captchaVerifyParam);
+  if (!captchaResult.success) {
+    redirect(
+      failRedirectBase +
+        encodeURIComponent(captchaResult.message || "安全验证失败，请重新尝试")
+    );
   }
 
   const user = await prisma.user.findUnique({
