@@ -28,8 +28,8 @@ systemctl daemon-reload
 systemctl restart docker
 
 echo "=== 3. 初始化项目目录 ==="
-mkdir -p /data/yangcheng-tracehub/data/db
-mkdir -p /data/yangcheng-tracehub/data/uploads
-chmod -R 777 /data/yangcheng-tracehub/data
+mkdir -p /opt/yangcheng-tracehub/data/db
+mkdir -p /opt/yangcheng-tracehub/data/uploads
+chmod -R 777 /opt/yangcheng-tracehub/data
 
 echo "=== 服务器初始化完成 ==="

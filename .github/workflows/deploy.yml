@@ -64,26 +64,33 @@ jobs:
           echo "Compressed image size:"
           ls -lh image.tar.gz
 
-      - name: Transfer Image & Deploy via SSH
+      # =========================================================================
+      # 部署到服务器 1 (Server 1)
+      # =========================================================================
+      - name: Transfer Image & Deploy to Server 1 via SSH
         if: github.event_name != 'pull_request'
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER || 'root' }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "image.tar.gz,docker-compose.yml"
-          target: "/data/yangcheng-tracehub"
+          host: ${{ secrets.SERVER_HOST_1 || secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+          key: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
+          source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
+          target: "/opt/yangcheng-tracehub"
 
-      - name: Load Image and Restart Container on ECS
+      - name: Load Image and Restart Container on Server 1
         if: github.event_name != 'pull_request'
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER || 'root' }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          host: ${{ secrets.SERVER_HOST_1 || secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+          key: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           script: |
-            mkdir -p /data/yangcheng-tracehub/data/db /data/yangcheng-tracehub/data/uploads
-            cd /data/yangcheng-tracehub
+            mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx
+            cd /opt/yangcheng-tracehub
 
             # 导入镜像并清理临时包
             gunzip -c image.tar.gz | docker load
@@ -94,7 +101,53 @@ jobs:
               cat << 'EOF' > .env.production
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="file:./data/dev.db"
+            DATABASE_URL="file:/app/data/prod.db"
+            AUTH_SECRET="yangcheng-tracehub-secret-2026"
+            EOF
+            fi
+
+            # 启动容器
+            docker compose down || true
+            docker compose up -d --remove-orphans
+
+      # =========================================================================
+      # 部署到服务器 2 (Server 2) - 仅在配置了 SERVER_HOST_2 时执行
+      # =========================================================================
+      - name: Transfer Image & Deploy to Server 2 via SSH
+        if: github.event_name != 'pull_request' && (secrets.SERVER_HOST_2 != '' || secrets.SERVER_2_HOST != '')
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST }}
+          username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
+          key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
+          source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
+          target: "/opt/yangcheng-tracehub"
+
+      - name: Load Image and Restart Container on Server 2
+        if: github.event_name != 'pull_request' && (secrets.SERVER_HOST_2 != '' || secrets.SERVER_2_HOST != '')
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST }}
+          username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
+          key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
+          script: |
+            mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx
+            cd /opt/yangcheng-tracehub
+
+            # 导入镜像并清理临时包
+            gunzip -c image.tar.gz | docker load
+            rm -f image.tar.gz
+
+            # 如果不存在生产环境变量文件，则自动创建默认配置
+            if [ ! -f .env.production ]; then
+              cat << 'EOF' > .env.production
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="file:/app/data/prod.db"
             AUTH_SECRET="yangcheng-tracehub-secret-2026"
             EOF
             fi
