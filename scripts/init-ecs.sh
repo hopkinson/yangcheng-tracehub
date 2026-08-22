@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -e
 
 echo "=== 1. 安装 Docker & Docker Compose ==="
@@ -28,7 +28,8 @@ systemctl daemon-reload
 systemctl restart docker
 
 echo "=== 3. 初始化项目目录 ==="
-mkdir -p /data/yangcheng-tracehub/data/prisma
+mkdir -p /data/yangcheng-tracehub/data/db
 mkdir -p /data/yangcheng-tracehub/data/uploads
+chmod -R 777 /data/yangcheng-tracehub/data
 
 echo "=== 服务器初始化完成 ==="

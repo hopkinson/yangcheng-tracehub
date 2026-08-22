@@ -1,6 +1,9 @@
-﻿services:
+services:
   app:
-    image: 
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yangcheng-tracehub:latest
     container_name: yangcheng-tracehub
     restart: always
     ports:
@@ -8,5 +11,5 @@
     env_file:
       - .env.production
     volumes:
-      - ./data/prisma:/app/prisma
+      - ./data/db:/app/data
       - ./data/uploads:/app/public/uploads

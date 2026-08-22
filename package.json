@@ -12,7 +12,10 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "tsx prisma/seed.ts",
-    "test": "tsx tests/invariants.test.ts"
+    "test": "tsx tests/invariants.test.ts && tsx tests/e2e-workflow.test.ts && tsx tests/smoke-routes.test.ts",
+    "test:unit": "tsx tests/invariants.test.ts",
+    "test:e2e": "tsx tests/e2e-workflow.test.ts",
+    "test:smoke": "tsx tests/smoke-routes.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
