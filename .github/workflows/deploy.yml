@@ -14,6 +14,8 @@ on:
 jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -114,10 +116,10 @@ jobs:
       # 部署到服务器 2 (Server 2) - 仅在配置了 SERVER_HOST_2 时执行
       # =========================================================================
       - name: Transfer Image & Deploy to Server 2 via SSH
-        if: github.event_name != 'pull_request' && (secrets.SERVER_HOST_2 != '' || secrets.SERVER_2_HOST != '')
+        if: github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST }}
+          host: ${{ env.SERVER_HOST_2 }}
           username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
@@ -126,10 +128,10 @@ jobs:
           target: "/opt/yangcheng-tracehub"
 
       - name: Load Image and Restart Container on Server 2
-        if: github.event_name != 'pull_request' && (secrets.SERVER_HOST_2 != '' || secrets.SERVER_2_HOST != '')
+        if: github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST }}
+          host: ${{ env.SERVER_HOST_2 }}
           username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
