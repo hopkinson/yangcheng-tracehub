@@ -33,8 +33,12 @@ jobs:
         run: pnpm typecheck
 
       - name: Setup DB & Run Tests
+        env:
+          DATABASE_URL: "file:./dev.db"
+          AUTH_SECRET: "test-secret-key-123456"
         run: |
           npx prisma db push
+          npx tsx prisma/seed.ts
           npx tsx test/invariants.test.ts
           npx tsx test/actions.test.ts
           npx tsx test/channel-isolation.test.ts
