@@ -1,70 +1,99 @@
 "use client";
 
-import { useTransition } from "react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { logoutAction, switchUserAction } from "@/actions/auth";
-import { toast } from "sonner";
-import { useRouter } from "next/navigation";
-import { UserCheck, LogOut } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { logoutAction } from "@/actions/auth";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChangePasswordDialog } from "@/components/forms/ChangePasswordDialog";
+import { KeyRound, LogOut, Shield } from "lucide-react";
 
-interface UserOption {
+export interface CurrentUser {
   id: string;
   fullName: string;
   role: string;
+  username?: string;
   channelName?: string | null;
 }
 
-export function UserRoleSwitcher({
-  users,
-  currentUserId,
-}: {
-  users: UserOption[];
-  currentUserId?: string | null;
-}) {
-  const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+const ROLE_MAP: Record<string, string> = {
+  ADMIN: "超级管理员",
+  QA_DIRECTOR: "品控主管",
+  WAREHOUSE_ADMIN: "仓库管理员",
+  FARMER_ADMIN: "养殖户管理员",
+  CHANNEL_VIEWER: "渠道审计员",
+};
 
-  function handleSelect(userId: string) {
-    startTransition(async () => {
-      await switchUserAction(userId);
-      const selected = users.find((u) => u.id === userId);
-      toast.success(`已切换当前登录视角为: ${selected?.fullName} (${selected?.role})`);
-      router.refresh();
-    });
-  }
+export function UserRoleSwitcher({
+  user,
+}: {
+  user?: CurrentUser | null;
+}) {
+  if (!user) return null;
+
+  const firstChar = (user.fullName || user.username || "用")[0];
+  const roleName = ROLE_MAP[user.role] || user.role;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <UserCheck className="size-3.5 text-muted-foreground hidden sm:inline" />
-      <Select value={currentUserId || ""} onValueChange={handleSelect} disabled={isPending}>
-        <SelectTrigger className="h-8 text-xs w-[175px] bg-background">
-          <SelectValue placeholder="切换用户角色" />
-        </SelectTrigger>
-        <SelectContent>
-          {users.map((u) => (
-            <SelectItem key={u.id} value={u.id} className="text-xs">
-              {u.fullName} {u.channelName ? `[${u.channelName}]` : ""}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {/* 修改个人密码 */}
-      {currentUserId && <ChangePasswordDialog userId={currentUserId} />}
-
-      <form action={logoutAction}>
-        <Button
-          type="submit"
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-          title="退出登录"
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-full py-1 px-2 hover:bg-muted/70 transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <LogOut className="size-3.5" />
-        </Button>
-      </form>
-    </div>
+          <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold select-none ring-1 ring-primary/20">
+            {firstChar}
+          </div>
+          <span className="text-xs font-medium text-foreground max-w-[110px] truncate">
+            {user.fullName || user.username}
+          </span>
+        </button>
+      </PopoverTrigger>
+
+      <PopoverContent align="end" className="w-52 p-2 text-xs">
+        {/* 用户基本信息 */}
+        <div className="flex items-center gap-2.5 p-2 rounded-md bg-muted/40 mb-1">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+            {firstChar}
+          </div>
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="font-semibold text-foreground truncate text-xs">
+              {user.fullName}
+            </span>
+            <div className="flex items-center gap-1 text-[11px] text-muted-foreground truncate mt-0.5">
+              <Shield className="size-3 shrink-0 text-primary/70" />
+              <span className="truncate">
+                {roleName}
+                {user.channelName ? ` · ${user.channelName}` : ""}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="my-1 h-px bg-border/60" />
+
+        {/* 修改密码 */}
+        <ChangePasswordDialog
+          userId={user.id}
+          trigger={
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted transition-colors cursor-pointer"
+            >
+              <KeyRound className="size-3.5 text-muted-foreground" />
+              <span>修改密码</span>
+            </button>
+          }
+        />
+
+        {/* 退出登录 */}
+        <form action={logoutAction} className="w-full">
+          <button
+            type="submit"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+          >
+            <LogOut className="size-3.5" />
+            <span>退出登录</span>
+          </button>
+        </form>
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -90,7 +90,7 @@ export const Invariants = {
         totalLoss: 0,
         lossRate: 0,
         isException: true,
-        reason: "实盘数量大于账面在池，严禁登记为负损耗，请先排查出入库与盘点误差",
+        reason: "实盘数量大于账面在池，请核查盘点数量",
       };
     }
     const lossDelta = bookInPool - physicalCount;
@@ -104,7 +104,7 @@ export const Invariants = {
       totalLoss,
       lossRate,
       isException,
-      reason: isException ? `累计损耗率已达 ${lossRate}%（超过5%阈值），损耗原因必填并触发品控报警` : "损耗登记正常",
+      reason: isException ? `累计损耗率已达 ${lossRate}%（超 5%），请填写损耗原因` : "损耗登记正常",
     };
   },
 
@@ -112,10 +112,10 @@ export const Invariants = {
   checkOutbound: ({ bookInPool, outboundCount, channelOrderCount }: OutboundCheck) => {
     if (outboundCount <= 0) return { valid: false, reason: "出库数量必须大于0" };
     if (outboundCount > bookInPool) {
-      return { valid: false, reason: `在池存活不足: 申请出库 ${outboundCount} 只，当前批次账面在池仅剩 ${bookInPool} 只` };
+      return { valid: false, reason: `在池存活不足: 申请出库 ${outboundCount} 只，当前批次在池仅剩 ${bookInPool} 只` };
     }
     if (outboundCount !== channelOrderCount) {
-      return { valid: false, reason: `单票数量不一致: 出库数量 (${outboundCount}) 与渠道订单数量 (${channelOrderCount}) 不符` };
+      return { valid: false, reason: `出库数量 (${outboundCount}) 与渠道订单数量 (${channelOrderCount}) 不一致` };
     }
     return { valid: true, remainingInPool: bookInPool - outboundCount, reason: "出库校验通过" };
   },
@@ -129,7 +129,7 @@ export const Invariants = {
       isBalanced,
       diff,
       reason: isBalanced
-        ? "当日蟹扣数量完全轧平，允许结单"
+        ? "当日蟹扣数量已轧平"
         : `数量未轧平: 当日领扣 ${claimedCount} 只，已核销 ${accounted} 只（绑扣 ${boundCount} + 退回 ${returnedCount} + 作废 ${scrappedCount}），差额 ${diff} 只`,
     };
   },

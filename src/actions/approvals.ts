@@ -2,15 +2,19 @@
 
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
+import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 // 审批蟹扣领用
 export async function approveTagClaimAction(data: {
   claimId: string;
-  approverId: string;
   approved: boolean;
   comment?: string;
+  approverId?: string;
 }) {
+  const operator = await requireRole(["QA_DIRECTOR", "ADMIN"]);
+  const approverId = operator.id;
+
   return await prisma.$transaction(async (tx) => {
     const claim = await tx.tagClaim.findUniqueOrThrow({
       where: { id: data.claimId },
@@ -51,7 +55,7 @@ export async function approveTagClaimAction(data: {
       where: { id: claim.id },
       data: {
         status: data.approved ? "APPROVED" : "REJECTED",
-        approverId: data.approverId,
+        approverId,
         approvalComment: data.comment,
         approvedAt: new Date(),
       },
@@ -59,7 +63,7 @@ export async function approveTagClaimAction(data: {
 
     await tx.auditLog.create({
       data: {
-        operatorId: data.approverId,
+        operatorId: approverId,
         action: data.approved ? "APPROVE_TAG_CLAIM" : "REJECT_TAG_CLAIM",
         entityType: "TAG_CLAIM",
         entityId: claim.id,
@@ -78,11 +82,14 @@ export async function approveTagClaimAction(data: {
 // 审批出库单 (强校验批次在池存活)
 export async function approveOutboundOrderAction(data: {
   orderId: string;
-  approverId: string;
   approved: boolean;
   comment?: string;
   rejectReason?: string;
+  approverId?: string;
 }) {
+  const operator = await requireRole(["QA_DIRECTOR", "ADMIN"]);
+  const approverId = operator.id;
+
   return await prisma.$transaction(async (tx) => {
     const order = await tx.outboundOrder.findUniqueOrThrow({
       where: { id: data.orderId },
@@ -118,6 +125,36 @@ export async function approveOutboundOrderAction(data: {
         },
       });
 
+      // 联动绑扣核销：自动归集扣减该养殖户当日已审批的蟹扣领用
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayClaims = await tx.tagClaim.findMany({
+        where: {
+          farmerId: order.batch.farmerId,
+          status: "APPROVED",
+        },
+        orderBy: { claimDate: "asc" },
+      });
+
+      let remainingToBind = order.outboundCount;
+      for (const claim of todayClaims) {
+        if (remainingToBind <= 0) break;
+        const availableInClaim = claim.claimCount - claim.boundCount - claim.returnedCount - claim.scrappedCount;
+        if (availableInClaim > 0) {
+          const delta = Math.min(remainingToBind, availableInClaim);
+          const newBound = claim.boundCount + delta;
+          const isBalanced = claim.claimCount === (newBound + claim.returnedCount + claim.scrappedCount);
+          await tx.tagClaim.update({
+            where: { id: claim.id },
+            data: {
+              boundCount: newBound,
+              isBalanced,
+            },
+          });
+          remainingToBind -= delta;
+        }
+      }
+
       // 检查池子是否全部清空，若清空则释放池子规格锁定
       const activeBatchesInPool = await tx.batch.findMany({
         where: {
@@ -144,7 +181,7 @@ export async function approveOutboundOrderAction(data: {
       data: {
         status: data.approved ? "APPROVED" : "REJECTED",
         rejectReason: data.approved ? null : data.rejectReason,
-        approverId: data.approverId,
+        approverId,
         approvalComment: data.comment,
         approvedAt: new Date(),
       },
@@ -152,7 +189,7 @@ export async function approveOutboundOrderAction(data: {
 
     await tx.auditLog.create({
       data: {
-        operatorId: data.approverId,
+        operatorId: approverId,
         action: data.approved ? "APPROVE_OUTBOUND" : "REJECT_OUTBOUND",
         entityType: "OUTBOUND_ORDER",
         entityId: order.id,

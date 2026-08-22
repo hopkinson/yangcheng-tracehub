@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
+import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 export async function createBatchAction(data: {
@@ -17,6 +18,7 @@ export async function createBatchAction(data: {
   reportUrl?: string;
   reportName?: string;
 }) {
+  const operator = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
@@ -36,6 +38,9 @@ export async function createBatchAction(data: {
 
     if (!quotaCheck.valid) {
       if (data.allowSpecialApproval && data.specialReason) {
+        if (operator.role !== "ADMIN") {
+          throw new Error("仅超级管理员可执行特批放行");
+        }
         await tx.specialApproval.create({
           data: {
             actionType: "OVER_QUOTA_INTAKE",
@@ -45,7 +50,7 @@ export async function createBatchAction(data: {
           },
         });
       } else {
-        throw new Error(`入池超额拦截: 当年累计入池 ${cumulativeInPool} 只，本批 ${data.inPoolCount} 只，超出年度总额度 ${farmer.quota} 只（超出 ${quotaCheck.excess} 只）`);
+        throw new Error(`超出年度额度: 当年已入池 ${cumulativeInPool} 只，本批 ${data.inPoolCount} 只，总额度 ${farmer.quota} 只（超 ${quotaCheck.excess} 只）`);
       }
     }
 
@@ -72,7 +77,11 @@ export async function createBatchAction(data: {
     }
 
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const countToday = await tx.batch.count();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const countToday = await tx.batch.count({
+      where: { createdAt: { gte: todayStart } },
+    });
     const batchCode = `PC-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
 
     const batch = await tx.batch.create({
@@ -116,6 +125,7 @@ export async function uploadBatchReportAction(data: {
   reportName: string;
   userId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const batch = await prisma.batch.update({
     where: { id: data.batchId },
     data: {
@@ -148,6 +158,7 @@ export async function registerLossAction(data: {
   reason: string;
   inspectorId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const batch = await tx.batch.findUniqueOrThrow({
       where: { id: data.batchId },
@@ -166,7 +177,7 @@ export async function registerLossAction(data: {
     }
 
     if (lossResult.isException && (!data.reason || data.reason.trim() === "")) {
-      throw new Error("损耗率超过 5% 告警红线，损耗原因必须详细填写并上报品控！");
+      throw new Error("累计损耗率超 5%，请填写损耗原因");
     }
 
     const record = await tx.lossRecord.create({
@@ -182,14 +193,33 @@ export async function registerLossAction(data: {
       },
     });
 
+    const remaining = batch.inPoolCount - batch.outPoolCount - lossResult.totalLoss;
+    const newStatus = remaining === 0 ? "COMPLETED" : batch.status;
+
     const updatedBatch = await tx.batch.update({
       where: { id: batch.id },
       data: {
         lossCount: lossResult.totalLoss,
+        status: newStatus,
         isException: lossResult.isException,
         exceptionReason: lossResult.isException ? data.reason : batch.exceptionReason,
       },
     });
+
+    if (remaining === 0) {
+      const activeInPool = await tx.batch.count({
+        where: {
+          poolId: batch.poolId,
+          status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] },
+        },
+      });
+      if (activeInPool === 0) {
+        await tx.holdingPool.update({
+          where: { id: batch.poolId },
+          data: { currentGender: null, currentWeightTier: null },
+        });
+      }
+    }
 
     await tx.auditLog.create({
       data: {
@@ -203,7 +233,9 @@ export async function registerLossAction(data: {
 
     try {
       revalidatePath("/batches");
+      revalidatePath("/pools");
     } catch {}
+
     return { record, updatedBatch };
   });
 }
@@ -214,6 +246,7 @@ export async function toggleBatchFreezeAction(data: {
   reason?: string;
   userId: string;
 }) {
+  await requireRole(["QA_DIRECTOR", "ADMIN"]);
   const batch = await prisma.batch.findUniqueOrThrow({
     where: { id: data.batchId },
   });

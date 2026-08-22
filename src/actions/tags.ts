@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
+import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 export async function requestTagClaimAction(data: {
@@ -9,6 +10,7 @@ export async function requestTagClaimAction(data: {
   claimCount: number;
   applicantId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
@@ -34,6 +36,19 @@ export async function requestTagClaimAction(data: {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // 校验该养殖户是否存在历史未轧平的蟹扣（不得隔日留存）
+    const unBalancedPrevious = await tx.tagClaim.findFirst({
+      where: {
+        farmerId: data.farmerId,
+        status: "APPROVED",
+        isBalanced: false,
+        claimDate: { lt: today },
+      },
+    });
+    if (unBalancedPrevious) {
+      throw new Error("该养殖户存在前日未轧平的蟹扣记录，须先完成退废核销方可再次领用");
+    }
 
     const claim = await tx.tagClaim.create({
       data: {
@@ -68,6 +83,7 @@ export async function resubmitTagClaimAction(data: {
   claimCount: number;
   applicantId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const claim = await tx.tagClaim.findUniqueOrThrow({
       where: { id: data.claimId },
@@ -124,21 +140,24 @@ export async function resubmitTagClaimAction(data: {
 
 export async function settleDailyTagClaimAction(data: {
   tagClaimId: string;
-  boundCount: number;
+  boundCount?: number;
   returnedCount: number;
   returnReason?: string;
   scrappedCount: number;
   scrapReason?: string;
   operatorId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const claim = await tx.tagClaim.findUniqueOrThrow({
       where: { id: data.tagClaimId },
     });
 
+    const boundCount = data.boundCount ?? claim.boundCount;
+
     const balanceCheck = Invariants.checkDailyBalance({
       claimedCount: claim.claimCount,
-      boundCount: data.boundCount,
+      boundCount,
       returnedCount: data.returnedCount,
       scrappedCount: data.scrappedCount,
     });
@@ -150,7 +169,7 @@ export async function settleDailyTagClaimAction(data: {
     const updatedClaim = await tx.tagClaim.update({
       where: { id: claim.id },
       data: {
-        boundCount: data.boundCount,
+        boundCount,
         returnedCount: data.returnedCount,
         returnReason: data.returnReason,
         scrappedCount: data.scrappedCount,
@@ -181,3 +200,4 @@ export async function settleDailyTagClaimAction(data: {
     return updatedClaim;
   });
 }
+

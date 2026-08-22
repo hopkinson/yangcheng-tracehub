@@ -1,6 +1,6 @@
-node_modules
+﻿node_modules
 .next
 .git
+.env*.local
 dev.db
 dev.db-journal
-*.log

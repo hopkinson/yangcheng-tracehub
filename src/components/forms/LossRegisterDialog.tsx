@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { registerLossAction } from "@/actions/batches";
+import { lossRegisterFormSchema, type LossRegisterFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { AlertTriangle, ClipboardList } from "lucide-react";
 
@@ -27,31 +30,59 @@ export function LossRegisterDialog({
   const [loading, setLoading] = useState(false);
 
   const bookInPool = batch.inPoolCount - batch.outPoolCount - batch.lossCount;
-  const [physicalCount, setPhysicalCount] = useState(String(bookInPool));
-  const [reason, setReason] = useState("");
 
-  const numPhysical = parseInt(physicalCount, 10) || 0;
+  const form = useForm<LossRegisterFormValues>({
+    resolver: zodResolver(lossRegisterFormSchema),
+    defaultValues: {
+      physicalCount: bookInPool,
+      reason: "",
+    },
+  });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        physicalCount: bookInPool,
+        reason: "",
+      });
+    }
+  }, [open, bookInPool, form]);
+
+  const watchedPhysical = form.watch("physicalCount");
+  const numPhysical = typeof watchedPhysical === "number" ? watchedPhysical : parseInt(watchedPhysical, 10) || 0;
   const currentDelta = bookInPool - numPhysical;
   const projectedLoss = batch.lossCount + Math.max(0, currentDelta);
   const projectedLossRate = batch.inPoolCount > 0 ? ((projectedLoss / batch.inPoolCount) * 100).toFixed(2) : "0";
   const isHighLoss = Number(projectedLossRate) > 5.0;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(data: LossRegisterFormValues) {
+    const physical = Number(data.physicalCount);
+    if (physical > bookInPool) {
+      form.setError("physicalCount", {
+        message: "实盘数量大于账面在池，请核查盘点数量",
+      });
+      return;
+    }
+
+    if (isHighLoss && (!data.reason || !data.reason.trim())) {
+      form.setError("reason", {
+        message: "累计损耗率超 5%，请填写损耗原因",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      if (numPhysical < 0) throw new Error("实盘数量不能为负数");
-      if (numPhysical > bookInPool) throw new Error("实盘数量大于账面在池，严禁登记负损耗，请先排查出入库与盘点记录！");
-
       await registerLossAction({
         batchId: batch.id,
-        physicalCount: numPhysical,
-        reason,
+        physicalCount: physical,
+        reason: data.reason || "",
         inspectorId: userId,
       });
 
-      toast.success("损耗盘点登记成功！");
+      toast.success("损耗盘点登记成功");
       setOpen(false);
+      form.reset();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "盘点登记失败";
       toast.error(msg);
@@ -68,7 +99,7 @@ export function LossRegisterDialog({
           盘点损耗
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>批次在池盘点与损耗登记</DialogTitle>
           <DialogDescription>
@@ -76,79 +107,87 @@ export function LossRegisterDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <div className="rounded-lg border bg-muted/30 p-3 text-xs flex flex-col gap-1.5 font-mono">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">初始入池:</span>
-              <span className="font-bold">{batch.inPoolCount} 只</span>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs flex flex-col gap-1.5 font-mono">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">初始入池:</span>
+                <span className="font-bold">{batch.inPoolCount} 只</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">已出库数:</span>
+                <span>{batch.outPoolCount} 只</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">历史已登记损耗:</span>
+                <span>{batch.lossCount} 只</span>
+              </div>
+              <div className="flex justify-between border-t pt-1 font-semibold text-primary">
+                <span>当前账面在池:</span>
+                <span>{bookInPool} 只</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">已出库数:</span>
-              <span>{batch.outPoolCount} 只</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">历史已登记损耗:</span>
-              <span>{batch.lossCount} 只</span>
-            </div>
-            <div className="flex justify-between border-t pt-1 font-semibold text-primary">
-              <span>当前账面在池:</span>
-              <span>{bookInPool} 只</span>
-            </div>
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>现场实盘点数 (只)</Label>
-            <Input
-              type="number"
-              value={physicalCount}
-              onChange={(e) => setPhysicalCount(e.target.value)}
-              min="0"
-              max={bookInPool}
-              required
+            <FormField
+              control={form.control}
+              name="physicalCount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>现场实盘点数 (只)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min="0" max={bookInPool} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="rounded-md border p-3 text-xs flex flex-col gap-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">本次盘亏损耗:</span>
-              <span className="font-bold font-mono">{currentDelta >= 0 ? currentDelta : "异常"} 只</span>
+            <div className="rounded-md border p-3 text-xs flex flex-col gap-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">本次盘亏损耗:</span>
+                <span className="font-bold font-mono">{currentDelta >= 0 ? currentDelta : "异常"} 只</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">累计损耗率:</span>
+                <span className={isHighLoss ? "font-bold text-destructive font-mono" : "font-mono"}>
+                  {projectedLossRate}% {isHighLoss ? "(超5%阈值)" : ""}
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">累计损耗率:</span>
-              <span className={isHighLoss ? "font-bold text-destructive font-mono" : "font-mono"}>
-                {projectedLossRate}% {isHighLoss ? "(超5%阈值)" : ""}
-              </span>
-            </div>
-          </div>
 
-          {isHighLoss && (
-            <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
-              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-              <span>
-                <strong>品控告警</strong>：累计损耗率已超过 5% 红线，必须详细填报原因并由品控介入调查！
-              </span>
-            </div>
-          )}
+            {isHighLoss && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+                <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                <span>
+                  <strong>损耗超标提醒</strong>：累计损耗率已超过 5%，请填写损耗原因。
+                </span>
+              </div>
+            )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label>损耗原因说明 {isHighLoss && <span className="text-destructive">*</span>}</Label>
-            <Textarea
-              placeholder="请输入损耗产生原因（脱水、残损、换壳损耗等）"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              required={isHighLoss}
+            <FormField
+              control={form.control}
+              name="reason"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>损耗原因说明 {isHighLoss && <span className="text-destructive">*</span>}</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="请输入损耗产生原因（脱水、残损、换壳损耗等）" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "提交中..." : "确认登记"}
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "提交中..." : "确认登记"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

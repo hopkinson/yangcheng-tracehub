@@ -1,15 +1,30 @@
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCurrentUser } from "@/lib/auth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { TagClaimDialog } from "@/components/forms/TagClaimDialog";
 import { ResubmitTagClaimDialog } from "@/components/forms/ResubmitTagClaimDialog";
+import { SettleTagClaimDialog } from "@/components/forms/SettleTagClaimDialog";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
 export const dynamic = "force-dynamic";
 
-export default async function TagsPage() {
-  const [tagClaims, farmers, defaultUser] = await Promise.all([
+export default async function TagsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
+}) {
+  const params = await searchParams;
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = Math.max(1, Number(params.pageSize) || 10);
+
+  const [currentUser, totalClaims, tagClaims, farmers] = await Promise.all([
+    getCurrentUser(),
+    prisma.tagClaim.count(),
     prisma.tagClaim.findMany({
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: {
         farmer: true,
         applicant: true,
@@ -24,8 +39,10 @@ export default async function TagsPage() {
       },
       where: { status: "ACTIVE" },
     }),
-    prisma.user.findFirstOrThrow({ where: { role: "WAREHOUSE_ADMIN" } }),
   ]);
+
+  const currentUserId = currentUser?.id || "";
+  const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
 
   const farmerOptions = farmers.map((f) => {
     const activeInPool = f.batches.reduce(
@@ -45,22 +62,17 @@ export default async function TagsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">蟹扣领用申请管理</h1>
-          <p className="text-sm text-muted-foreground">
-            蟹扣为养殖户码（一户一码，不含批次号）。前台发起领用申请与查看审批记录；日清日结由后台自动对账并在台账中归集。
-          </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">蟹扣管理</h1>
+          <p className="text-xs text-muted-foreground">养殖户蟹扣领用申请与日清日结管控</p>
         </div>
-        <TagClaimDialog farmers={farmerOptions} userId={defaultUser.id} />
+        {isWarehouseOrAdmin && <TagClaimDialog farmers={farmerOptions} userId={currentUserId} />}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>蟹扣领用申请与审批记录</CardTitle>
-          <CardDescription>
-            仓库管理员发起领用，系统根据养殖户名下在池存活及年度剩余额度校验可领余量，品控主管审批后方可领用。
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -127,8 +139,11 @@ export default async function TagsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {claim.status === "REJECTED" && (
-                          <ResubmitTagClaimDialog claim={claim} userId={defaultUser.id} />
+                        {claim.status === "APPROVED" && isWarehouseOrAdmin && (
+                          <SettleTagClaimDialog claim={claim} userId={currentUserId} />
+                        )}
+                        {claim.status === "REJECTED" && isWarehouseOrAdmin && (
+                          <ResubmitTagClaimDialog claim={claim} userId={currentUserId} />
                         )}
                       </TableCell>
                     </TableRow>
@@ -137,6 +152,7 @@ export default async function TagsPage() {
               </TableBody>
             </Table>
           </div>
+          <DataTablePagination total={totalClaims} page={page} pageSize={pageSize} />
         </CardContent>
       </Card>
     </div>

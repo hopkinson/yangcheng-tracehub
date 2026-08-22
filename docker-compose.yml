@@ -1,17 +1,12 @@
-services:
+﻿services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: 
     container_name: yangcheng-tracehub
     restart: always
     ports:
       - "3000:3000"
-    environment:
-      - DATABASE_URL=file:./dev.db
-      - NODE_ENV=production
+    env_file:
+      - .env.production
     volumes:
-      - tracehub_data:/app/prisma
-
-volumes:
-  tracehub_data:
+      - ./data/prisma:/app/prisma
+      - ./data/uploads:/app/public/uploads

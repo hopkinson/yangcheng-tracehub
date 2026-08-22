@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { uploadBatchReportAction } from "@/actions/batches";
+import { uploadFileAction } from "@/actions/upload";
 import { toast } from "sonner";
 import { Upload, FileText, X } from "lucide-react";
 
@@ -24,7 +25,7 @@ export function BatchReportUploadDialog({
   const [reportName, setReportName] = useState(currentReportName || "");
   const [reportUrl, setReportUrl] = useState("");
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -33,13 +34,17 @@ export function BatchReportUploadDialog({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setReportUrl(reader.result as string);
-      setReportName(file.name);
-      toast.success(`已选择文件: ${file.name}`);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await uploadFileAction(formData);
+      setReportUrl(res.url);
+      setReportName(res.name);
+      toast.success(`文件上传成功: ${res.name}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "文件上传失败";
+      toast.error(msg);
+    }
   };
 
   async function handleSubmit(e: React.FormEvent) {
@@ -76,12 +81,9 @@ export function BatchReportUploadDialog({
           {currentReportName ? "替换报告" : "上传报告"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>上传批次监测报告</DialogTitle>
-          <DialogDescription>
-            为批次 <span className="font-mono font-bold text-foreground">{batchCode}</span> 绑定药残检测报告或产地准出证明。
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">

@@ -2,22 +2,25 @@
 
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
+import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 export async function createOutboundOrderAction(data: {
   batchId: string;
   storeId: string;
   outboundCount: number;
-  channelOrderCount: number;
+  channelOrderCount?: number;
   applicantId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const channelOrderCount = data.channelOrderCount ?? data.outboundCount;
   return await prisma.$transaction(async (tx) => {
     const batch = await tx.batch.findUniqueOrThrow({
       where: { id: data.batchId },
     });
 
     if (batch.status === "FROZEN") {
-      throw new Error("该原料批次已被品控部门冻结，解冻前严禁申请出库！");
+      throw new Error("批次已冻结，无法申请出库");
     }
 
     const store = await tx.store.findUniqueOrThrow({
@@ -29,7 +32,7 @@ export async function createOutboundOrderAction(data: {
     const outboundCheck = Invariants.checkOutbound({
       bookInPool,
       outboundCount: data.outboundCount,
-      channelOrderCount: data.channelOrderCount,
+      channelOrderCount,
     });
 
     if (!outboundCheck.valid) {
@@ -47,7 +50,7 @@ export async function createOutboundOrderAction(data: {
         storeId: data.storeId,
         channelId: store.channelId,
         outboundCount: data.outboundCount,
-        channelOrderCount: data.channelOrderCount,
+        channelOrderCount,
         logisticsNo: "待生成",
         status: "PENDING",
         applicantId: data.applicantId,
@@ -78,6 +81,7 @@ export async function resubmitOutboundOrderAction(data: {
   outboundCount: number;
   applicantId: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const order = await tx.outboundOrder.findUniqueOrThrow({
       where: { id: data.orderId },
@@ -85,7 +89,7 @@ export async function resubmitOutboundOrderAction(data: {
     });
 
     if (order.batch.status === "FROZEN") {
-      throw new Error("该批次已被品控冻结，禁止重新提报出库！");
+      throw new Error("批次已冻结，无法重新提交");
     }
 
     const store = await tx.store.findUniqueOrThrow({
@@ -102,6 +106,12 @@ export async function resubmitOutboundOrderAction(data: {
     if (!outboundCheck.valid) {
       throw new Error(outboundCheck.reason);
     }
+
+    const previousState = {
+      outboundCount: order.outboundCount,
+      storeId: order.storeId,
+      rejectReason: order.rejectReason,
+    };
 
     const updated = await tx.outboundOrder.update({
       where: { id: data.orderId },
@@ -121,7 +131,11 @@ export async function resubmitOutboundOrderAction(data: {
         action: "RESUBMIT_OUTBOUND",
         entityType: "OUTBOUND_ORDER",
         entityId: order.id,
-        details: JSON.stringify({ orderCode: order.code, count: data.outboundCount }),
+        details: JSON.stringify({
+          orderCode: order.code,
+          previous: previousState,
+          resubmitted: { outboundCount: data.outboundCount, storeId: data.storeId, storeName: store.name },
+        }),
       },
     });
 
@@ -139,6 +153,7 @@ export async function updateLogisticsAction(data: {
   operatorId: string;
   operatorName: string;
 }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const order = await tx.outboundOrder.update({
       where: { id: data.orderId },

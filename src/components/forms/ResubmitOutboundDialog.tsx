@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { resubmitOutboundOrderAction } from "@/actions/outbound";
+import { resubmitOutboundFormSchema, type ResubmitOutboundFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 
@@ -28,16 +31,32 @@ export function ResubmitOutboundDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [storeId, setStoreId] = useState(order.storeId);
-  const [outboundCount, setOutboundCount] = useState(String(order.outboundCount));
 
   const liveInBatch = order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const count = parseInt(outboundCount, 10);
-    if (isNaN(count) || count <= 0) {
-      toast.error("请输入有效的出库数量");
+  const form = useForm<ResubmitOutboundFormValues>({
+    resolver: zodResolver(resubmitOutboundFormSchema),
+    defaultValues: {
+      storeId: order.storeId,
+      outboundCount: order.outboundCount,
+    },
+  });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        storeId: order.storeId,
+        outboundCount: order.outboundCount,
+      });
+    }
+  }, [open, order.storeId, order.outboundCount, form]);
+
+  async function onSubmit(data: ResubmitOutboundFormValues) {
+    const count = Number(data.outboundCount);
+    if (count > liveInBatch) {
+      form.setError("outboundCount", {
+        message: `在池存活不足: 当前批次仅剩 ${liveInBatch} 只`,
+      });
       return;
     }
 
@@ -45,7 +64,7 @@ export function ResubmitOutboundDialog({
     try {
       await resubmitOutboundOrderAction({
         orderId: order.id,
-        storeId,
+        storeId: data.storeId,
         outboundCount: count,
         applicantId: userId,
       });
@@ -67,7 +86,7 @@ export function ResubmitOutboundDialog({
           修改重提
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>修改并重新提报出库单 ({order.code})</DialogTitle>
           <DialogDescription>
@@ -75,50 +94,63 @@ export function ResubmitOutboundDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          {order.rejectReason && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
-              <span className="font-semibold">此前品控驳回原因：</span> {order.rejectReason}
-            </div>
-          )}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            {order.rejectReason && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
+                <span className="font-semibold">此前品控驳回原因：</span> {order.rejectReason}
+              </div>
+            )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label>目标销售门店</Label>
-            <Select value={storeId} onValueChange={setStoreId}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择目标门店" />
-              </SelectTrigger>
-              <SelectContent>
-                {stores.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name} ({s.channel.name})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>修正出库数量 (只)</Label>
-            <Input
-              type="number"
-              min="1"
-              max={liveInBatch}
-              value={outboundCount}
-              onChange={(e) => setOutboundCount(e.target.value)}
-              required
+            <FormField
+              control={form.control}
+              name="storeId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>目标销售门店</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择目标门店" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {stores.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} ({s.channel.name})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button type="submit" size="sm" disabled={loading}>
-              {loading ? "提交中..." : "重新提报"}
-            </Button>
-          </div>
-        </form>
+            <FormField
+              control={form.control}
+              name="outboundCount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>修正出库数量 (只)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min="1" max={liveInBatch || undefined} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" size="sm" disabled={loading}>
+                {loading ? "提交中..." : "重新提报"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

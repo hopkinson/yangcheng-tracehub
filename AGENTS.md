@@ -36,3 +36,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 2. Use `detect_changes_tool` for code review.
 3. Use `get_affected_flows_tool` to understand impact.
 4. Use `query_graph_tool` pattern="tests_for" to check coverage.
+
+### Build & Verification Rules
+- **NEVER** run `pnpm build` or `next build` to verify code changes during active development, as it deletes and overwrites the `.next` directory and crashes the user's running `next dev` server with `ENOENT: routes-manifest.json` or missing chunk errors.
+- **ALWAYS** use `pnpm typecheck` (`tsc --noEmit`) or `pnpm lint` to verify code and type correctness.

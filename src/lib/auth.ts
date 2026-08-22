@@ -32,3 +32,11 @@ export async function getCurrentUser() {
   });
   return defaultAdmin!;
 }
+
+export async function requireRole(allowedRoles: string[]) {
+  const user = await getCurrentUser();
+  if (!user || !allowedRoles.includes(user.role)) {
+    throw new Error(`无权操作: 仅限 [${allowedRoles.join(", ")}] 角色执行`);
+  }
+  return user;
+}

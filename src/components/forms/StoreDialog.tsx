@@ -1,21 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useState, useEffect, useMemo } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { createStoreAction, updateStoreAction, deleteStoreAction } from "@/actions/stores";
+import { storeFormSchema, type StoreFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Store as StoreIcon } from "lucide-react";
+
+interface StoreData {
+  id: string;
+  code: string;
+  name: string;
+  channelId: string;
+  isActive: boolean;
+}
+
+const getStoreValues = (store?: StoreData, firstChannelId = ""): StoreFormValues => ({
+  name: store?.name || "",
+  channelId: store?.channelId || firstChannelId,
+  isActive: store?.isActive ?? true,
+});
 
 export function StoreDialog({
   store,
   channels,
   userId,
 }: {
-  store?: { id: string; code: string; name: string; channelId: string; isActive: boolean };
+  store?: StoreData;
   channels: Array<{ id: string; name: string; code: string }>;
   userId: string;
 }) {
@@ -23,26 +40,35 @@ export function StoreDialog({
   const [loading, setLoading] = useState(false);
   const isEditing = !!store;
 
-  const [name, setName] = useState(store?.name || "");
-  const [channelId, setChannelId] = useState(store?.channelId || channels[0]?.id || "");
-  const [isActive, setIsActive] = useState(store?.isActive ?? true);
+  const defaultValues = useMemo(() => getStoreValues(store, channels[0]?.id), [store, channels]);
+  const form = useForm<StoreFormValues>({
+    resolver: zodResolver(storeFormSchema),
+    defaultValues,
+  });
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error("请输入门店全称");
-      return;
-    }
+  useEffect(() => {
+    if (open) form.reset(getStoreValues(store, channels[0]?.id));
+  }, [open, store, channels, form]);
 
+  async function onSubmit(data: StoreFormValues) {
     setLoading(true);
     try {
       if (isEditing && store) {
-        await updateStoreAction({ id: store.id, name, channelId, isActive, userId });
+        await updateStoreAction({
+          id: store.id,
+          name: data.name.trim(),
+          channelId: data.channelId,
+          isActive: data.isActive,
+          userId,
+        });
         toast.success("门店档案已更新！");
       } else {
-        await createStoreAction({ name, channelId, userId });
+        await createStoreAction({
+          name: data.name.trim(),
+          channelId: data.channelId,
+          userId,
+        });
         toast.success("新增门店档案成功！");
-        setName("");
       }
       setOpen(false);
     } catch (err: unknown) {
@@ -82,86 +108,110 @@ export function StoreDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <StoreIcon className="size-5 text-primary" />
             <DialogTitle>{isEditing ? `编辑门店档案 (${store.code})` : "新增销售门店档案"}</DialogTitle>
           </div>
-          <DialogDescription>
-            {isEditing ? "修改门店名称或所属渠道；已有出库记录的门店禁止删除。" : "系统将自动按 ST-XX 规则分配门店编号。"}
-          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <div className="flex flex-col gap-1.5">
-            <Label>门店全称</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="如：山姆会员店(苏州邻瑞广场店)"
-              required
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>门店全称</FormLabel>
+                  <FormControl>
+                    <Input placeholder="如：山姆会员店(苏州邻瑞广场店)" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>所属渠道</Label>
-            <Select value={channelId} onValueChange={setChannelId}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择所属渠道" />
-              </SelectTrigger>
-              <SelectContent>
-                {channels.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} ({c.code})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <FormField
+              control={form.control}
+              name="channelId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>所属渠道</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择所属渠道" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {channels.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} ({c.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-          {isEditing && (
-            <div className="flex flex-col gap-1.5">
-              <Label>运营状态</Label>
-              <Select value={isActive ? "ACTIVE" : "INACTIVE"} onValueChange={(val) => setIsActive(val === "ACTIVE")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">正常运营</SelectItem>
-                  <SelectItem value="INACTIVE">停用/关闭</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-2">
-            {isEditing ? (
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="text-xs gap-1"
-                disabled={loading}
-                onClick={handleDelete}
-              >
-                <Trash2 className="size-3.5" />
-                删除门店
-              </Button>
-            ) : (
-              <div />
+            {isEditing && (
+              <FormField
+                control={form.control}
+                name="isActive"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>运营状态</FormLabel>
+                    <Select
+                      onValueChange={(val) => field.onChange(val === "ACTIVE")}
+                      value={field.value ? "ACTIVE" : "INACTIVE"}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="ACTIVE">正常运营</SelectItem>
+                        <SelectItem value="INACTIVE">停用/关闭</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             )}
 
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-                取消
-              </Button>
-              <Button type="submit" size="sm" disabled={loading}>
-                {loading ? "保存中..." : "保存"}
-              </Button>
+            <div className="flex items-center justify-between pt-2">
+              {isEditing ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="text-xs gap-1"
+                  disabled={loading}
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="size-3.5" />
+                  删除门店
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+                  取消
+                </Button>
+                <Button type="submit" size="sm" disabled={loading}>
+                  {loading ? "保存中..." : "保存"}
+                </Button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,26 +16,23 @@ export default function LoginPage({
   const params = use(searchParams);
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 py-8">
+    <div className="min-h-screen w-full flex items-center justify-center bg-muted/20 p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center space-y-2">
-          <div className="inline-flex size-11 items-center justify-center rounded-xl bg-foreground text-background text-base font-black shadow-sm tracking-tighter">
+          <div className="inline-flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-black shadow-md tracking-tighter">
             YC
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             阳澄大闸蟹溯源品控系统
           </h1>
           <p className="text-xs text-muted-foreground">
-            阳澄股份 × 山姆会员商店全链路数量闭环合规平台
+            数量闭环管控与山姆渠道合规证明平台
           </p>
         </div>
 
-        <Card className="border-border/80 shadow-md">
+        <Card className="border-border/70 bg-card/85 backdrop-blur-md shadow-xl transition-all">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold">手机号登录</CardTitle>
-            <CardDescription className="text-xs">
-              请输入绑定的 11 位手机号与密码进入系统
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <form action={loginAction} className="space-y-3.5">

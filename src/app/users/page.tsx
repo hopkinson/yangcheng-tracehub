@@ -37,11 +37,11 @@ export default async function UsersPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">系统用户与权限管理</h1>
-        <p className="text-sm text-muted-foreground">
-          基于 RBAC 体系的五类职能角色权限分配、渠道物理隔离配置与登录账号维护。
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">用户管理</h1>
+          <p className="text-xs text-muted-foreground">系统账号维护与角色权限配置</p>
+        </div>
       </div>
 
       {/* 统计指标卡片 */}

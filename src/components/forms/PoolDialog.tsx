@@ -1,45 +1,58 @@
 "use client";
 
-import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useState, useEffect, useMemo } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { createPoolAction, updatePoolAction, deletePoolAction } from "@/actions/pools";
+import { poolFormSchema, type PoolFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Waves } from "lucide-react";
+
+interface PoolData {
+  id: string;
+  code: string;
+  name: string;
+}
+
+const getPoolValues = (pool?: PoolData): PoolFormValues => ({
+  name: pool?.name || "",
+});
 
 export function PoolDialog({
   pool,
   userId,
 }: {
-  pool?: { id: string; code: string; name: string; status: string };
+  pool?: PoolData;
   userId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const isEditing = !!pool;
 
-  const [name, setName] = useState(pool?.name || "");
-  const [status, setStatus] = useState(pool?.status || "ACTIVE");
+  const defaultValues = useMemo(() => getPoolValues(pool), [pool]);
+  const form = useForm<PoolFormValues>({
+    resolver: zodResolver(poolFormSchema),
+    defaultValues,
+  });
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error("请输入暂养池名称");
-      return;
-    }
+  useEffect(() => {
+    if (open) form.reset(getPoolValues(pool));
+  }, [open, pool, form]);
 
+  async function onSubmit(data: PoolFormValues) {
     setLoading(true);
     try {
       if (isEditing && pool) {
-        await updatePoolAction({ id: pool.id, name, status, userId });
+        await updatePoolAction({ id: pool.id, name: data.name.trim(), userId });
         toast.success("暂养池配置已更新！");
       } else {
-        await createPoolAction({ name, userId });
+        await createPoolAction({ name: data.name.trim(), userId });
         toast.success("新增暂养池成功！");
-        setName("");
       }
       setOpen(false);
     } catch (err: unknown) {
@@ -79,70 +92,58 @@ export function PoolDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Waves className="size-5 text-primary" />
             <DialogTitle>{isEditing ? `编辑暂养池 (${pool.code})` : "新增暂养池"}</DialogTitle>
           </div>
-          <DialogDescription>
-            {isEditing ? "修改池子名称或启停状态；有在养批次的池子禁止删除。" : "系统将自动按 ZY-XX 规则分配池子编号。"}
-          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <div className="flex flex-col gap-1.5">
-            <Label>暂养池名称</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="如：1号公蟹池 / 东区暂养池A"
-              required
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>暂养池名称</FormLabel>
+                  <FormControl>
+                    <Input placeholder="如：1号公蟹池 / 东区暂养池A" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          {isEditing && (
-            <div className="flex flex-col gap-1.5">
-              <Label>使用状态</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">正常在用</SelectItem>
-                  <SelectItem value="MAINTENANCE">维护停用</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center justify-between pt-2">
+              {isEditing ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="text-xs gap-1"
+                  disabled={loading}
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="size-3.5" />
+                  删除池子
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+                  取消
+                </Button>
+                <Button type="submit" size="sm" disabled={loading}>
+                  {loading ? "保存中..." : "保存"}
+                </Button>
+              </div>
             </div>
-          )}
-
-          <div className="flex items-center justify-between pt-2">
-            {isEditing ? (
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="text-xs gap-1"
-                disabled={loading}
-                onClick={handleDelete}
-              >
-                <Trash2 className="size-3.5" />
-                删除池子
-              </Button>
-            ) : (
-              <div />
-            )}
-
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-                取消
-              </Button>
-              <Button type="submit" size="sm" disabled={loading}>
-                {loading ? "保存中..." : "保存"}
-              </Button>
-            </div>
-          </div>
-        </form>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

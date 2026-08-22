@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { updateLogisticsAction } from "@/actions/outbound";
+import { logisticsFormSchema, type LogisticsFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { Truck } from "lucide-react";
 
@@ -24,23 +27,37 @@ export function LogisticsBackfillDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [logisticsNo, setLogisticsNo] = useState(order.logisticsNo === "待生成" ? "" : order.logisticsNo || "");
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const initialLogistics = order.logisticsNo === "待生成" ? "" : order.logisticsNo || "";
+
+  const form = useForm<LogisticsFormValues>({
+    resolver: zodResolver(logisticsFormSchema),
+    defaultValues: {
+      logisticsNo: initialLogistics,
+    },
+  });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        logisticsNo: order.logisticsNo === "待生成" ? "" : order.logisticsNo || "",
+      });
+    }
+  }, [open, order.logisticsNo, form]);
+
+  async function onSubmit(data: LogisticsFormValues) {
     setLoading(true);
     try {
-      if (!logisticsNo.trim()) throw new Error("请输入有效的快递/物流单号");
-
       await updateLogisticsAction({
         orderId: order.id,
-        logisticsNo: logisticsNo.trim(),
+        logisticsNo: data.logisticsNo.trim(),
         operatorId: userId,
         operatorName: userName,
       });
 
       toast.success("物流单号回填成功！");
       setOpen(false);
+      form.reset();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "回填失败";
       toast.error(msg);
@@ -57,7 +74,7 @@ export function LogisticsBackfillDialog({
           {order.logisticsNo && order.logisticsNo !== "待生成" ? "修改物流" : "回填物流"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>物流运单号回填与留痕</DialogTitle>
           <DialogDescription>
@@ -65,26 +82,32 @@ export function LogisticsBackfillDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <div className="flex flex-col gap-1.5">
-            <Label>快递/冷链物流单号 (如顺丰/京东)</Label>
-            <Input
-              placeholder="如: SF10882391029"
-              value={logisticsNo}
-              onChange={(e) => setLogisticsNo(e.target.value)}
-              required
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            <FormField
+              control={form.control}
+              name="logisticsNo"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>快递/冷链物流单号 (如顺丰/京东)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="如: SF10882391029" className="font-mono" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "提交中..." : "确认回填"}
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "提交中..." : "确认回填"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

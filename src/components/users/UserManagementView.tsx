@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserDialog, ROLE_LABELS } from "@/components/forms/UserDialog";
 import { resetPasswordAction, deleteUserAction } from "@/actions/users";
 import { switchUserAction } from "@/actions/auth";
@@ -16,11 +16,8 @@ import {
   KeyRound,
   Trash2,
   LogIn,
-  ShieldCheck,
   Building2,
   Users,
-  CheckCircle2,
-  XCircle,
 } from "lucide-react";
 
 interface Channel {
@@ -131,9 +128,6 @@ export function UserManagementView({
                 <Users className="size-5 text-primary" />
                 系统用户列表
               </CardTitle>
-              <CardDescription>
-                管理系统登录账号、分配 RBAC 角色权限与渠道数据隔离配置。
-              </CardDescription>
             </div>
             <UserDialog channels={channels} operatorId={currentUserId} />
           </div>
@@ -306,65 +300,6 @@ export function UserManagementView({
         </CardContent>
       </Card>
 
-      {/* 底部：RBAC 权限矩阵对照表 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <ShieldCheck className="size-5 text-primary" />
-            系统 RBAC 角色权限与功能矩阵对照
-          </CardTitle>
-          <CardDescription>
-            各角色在系统各业务模块中的可访问范围与操作权限规则。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="text-xs">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[140px]">功能模块</TableHead>
-                  <TableHead className="text-center">超级管理员 (ADMIN)</TableHead>
-                  <TableHead className="text-center">品控主管 (QA)</TableHead>
-                  <TableHead className="text-center">仓库管理员 (WAREHOUSE)</TableHead>
-                  <TableHead className="text-center">养殖户专员 (FARMER)</TableHead>
-                  <TableHead className="text-center">渠道审计员 (CHANNEL)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[
-                  { module: "总览看板", admin: true, qa: true, wh: true, fa: true, ch: true },
-                  { module: "养殖户与围网主档", admin: true, qa: "只读", wh: "只读", fa: true, ch: false },
-                  { module: "原料批次入池与损耗", admin: true, qa: "只读/冻结", wh: true, fa: false, ch: false },
-                  { module: "暂养池监控", admin: true, qa: true, wh: true, fa: false, ch: false },
-                  { module: "蟹扣申领与日清日结", admin: true, qa: "审批", wh: "申领/日结", fa: false, ch: false },
-                  { module: "出库管理与物流回填", admin: true, qa: "审批", wh: "申请/回填", fa: false, ch: false },
-                  { module: "审批中心", admin: true, qa: true, wh: false, fa: false, ch: false },
-                  { module: "四大合规台账", admin: true, qa: true, wh: true, fa: true, ch: "仅本渠道" },
-                  { module: "全链路反向追溯", admin: true, qa: true, wh: true, fa: true, ch: "仅本渠道" },
-                  { module: "用户与权限管理", admin: true, qa: false, wh: false, fa: false, ch: false },
-                ].map((row, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-medium">{row.module}</TableCell>
-                    <TableCell className="text-center">{renderPermission(row.admin)}</TableCell>
-                    <TableCell className="text-center">{renderPermission(row.qa)}</TableCell>
-                    <TableCell className="text-center">{renderPermission(row.wh)}</TableCell>
-                    <TableCell className="text-center">{renderPermission(row.fa)}</TableCell>
-                    <TableCell className="text-center">{renderPermission(row.ch)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
     </div>
-  );
-}
-
-function renderPermission(val: boolean | string) {
-  return typeof val === "boolean" ? (
-    val ? <CheckCircle2 className="size-4 text-emerald-600 inline" /> : <XCircle className="size-4 text-muted-foreground/40 inline" />
-  ) : (
-    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">{val}</Badge>
   );
 }

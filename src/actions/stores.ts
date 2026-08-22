@@ -1,9 +1,11 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 export async function createStoreAction(data: { name: string; channelId: string; userId: string }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const count = await prisma.store.count();
   const code = `ST-${String(count + 1).padStart(2, "0")}`;
 
@@ -32,6 +34,7 @@ export async function createStoreAction(data: { name: string; channelId: string;
 }
 
 export async function updateStoreAction(data: { id: string; name: string; channelId: string; isActive: boolean; userId: string }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const store = await prisma.store.update({
     where: { id: data.id },
     data: {
@@ -57,13 +60,14 @@ export async function updateStoreAction(data: { id: string; name: string; channe
 }
 
 export async function deleteStoreAction(data: { id: string; userId: string }) {
+  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const store = await prisma.store.findUniqueOrThrow({
     where: { id: data.id },
     include: { outboundOrders: true },
   });
 
   if (store.outboundOrders.length > 0) {
-    throw new Error(`门店【${store.code} - ${store.name}】已有 ${store.outboundOrders.length} 笔出库发运记录，根据品控合规要求禁止删除，仅可设置为停用！`);
+    throw new Error(`门店【${store.name}】已有出库记录，无法删除，可设为停用`);
   }
 
   await prisma.store.delete({

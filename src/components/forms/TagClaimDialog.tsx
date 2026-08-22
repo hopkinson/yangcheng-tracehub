@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { requestTagClaimAction } from "@/actions/tags";
+import { tagClaimFormSchema, type TagClaimFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { Plus, Tag } from "lucide-react";
 
@@ -26,28 +29,49 @@ export function TagClaimDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [selectedFarmerId, setSelectedFarmerId] = useState(farmers[0]?.id || "");
-  const [claimCount, setClaimCount] = useState("500");
 
+  const form = useForm<TagClaimFormValues>({
+    resolver: zodResolver(tagClaimFormSchema),
+    defaultValues: {
+      farmerId: farmers[0]?.id || "",
+      claimCount: 500,
+    },
+  });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        farmerId: farmers[0]?.id || "",
+        claimCount: 500,
+      });
+    }
+  }, [open, farmers, form]);
+
+  const selectedFarmerId = form.watch("farmerId");
   const currentFarmer = farmers.find((f) => f.id === selectedFarmerId);
   const remainingQuota = currentFarmer ? Math.max(0, currentFarmer.quota - currentFarmer.claimedSoFar) : 0;
   const maxClaimable = currentFarmer ? Math.min(currentFarmer.activeInPool, remainingQuota) : 0;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(data: TagClaimFormValues) {
+    const count = Number(data.claimCount);
+    if (count > maxClaimable) {
+      form.setError("claimCount", {
+        message: `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只`,
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      const count = parseInt(claimCount, 10);
-      if (isNaN(count) || count <= 0) throw new Error("请输入有效的领扣数量");
-
       await requestTagClaimAction({
-        farmerId: selectedFarmerId,
+        farmerId: data.farmerId,
         claimCount: count,
         applicantId: userId,
       });
 
-      toast.success("蟹扣领用申请提交成功，已进入品控审批流程！");
+      toast.success("蟹扣领用申请已提交，等待审批");
       setOpen(false);
+      form.reset();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "申请失败";
       toast.error(msg);
@@ -64,80 +88,90 @@ export function TagClaimDialog({
           蟹扣领用申请
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Tag className="size-5 text-primary" />
             <DialogTitle>蟹扣领用申请 (按养殖户)</DialogTitle>
           </div>
-          <DialogDescription>
-            蟹扣为养殖户码（一户一码），不含批次号。系统实时展示该养殖户当前【可领余量】。
-          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <div className="flex flex-col gap-1.5">
-            <Label>选择来源养殖户</Label>
-            <Select value={selectedFarmerId} onValueChange={setSelectedFarmerId}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择养殖户" />
-              </SelectTrigger>
-              <SelectContent>
-                {farmers.map((f) => {
-                  const rem = Math.max(0, f.quota - f.claimedSoFar);
-                  const maxAvail = Math.min(f.activeInPool, rem);
-                  return (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.code} - {f.name} (可领余量: {maxAvail} 只)
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {currentFarmer && (
-            <div className="rounded-lg border bg-muted/40 p-3 text-xs flex flex-col gap-1.5 font-mono">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">年度签约额度:</span>
-                <span>{currentFarmer.quota.toLocaleString()} 只</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">该户名下在池存活合计:</span>
-                <span>{currentFarmer.activeInPool.toLocaleString()} 只</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">年度累计已核销蟹扣:</span>
-                <span>{currentFarmer.claimedSoFar.toLocaleString()} 只</span>
-              </div>
-              <div className="flex justify-between border-t pt-1 font-bold text-emerald-600">
-                <span>当前最大可领扣余量:</span>
-                <span className="text-sm">{maxClaimable.toLocaleString()} 只</span>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <Label>本次领用数量 (只)</Label>
-            <Input
-              type="number"
-              value={claimCount}
-              onChange={(e) => setClaimCount(e.target.value)}
-              min="1"
-              max={maxClaimable}
-              required
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            <FormField
+              control={form.control}
+              name="farmerId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>选择来源养殖户</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择养殖户" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {farmers.map((f) => {
+                        const rem = Math.max(0, f.quota - f.claimedSoFar);
+                        const maxAvail = Math.min(f.activeInPool, rem);
+                        return (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.code} - {f.name} (可领余量: {maxAvail} 只)
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button type="submit" disabled={loading || maxClaimable <= 0}>
-              {loading ? "提交中..." : "提交领用申请"}
-            </Button>
-          </div>
-        </form>
+            {currentFarmer && (
+              <div className="rounded-lg border bg-muted/40 p-3 text-xs flex flex-col gap-1.5 font-mono">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">年度签约额度:</span>
+                  <span>{currentFarmer.quota.toLocaleString()} 只</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">该户名下在池存活合计:</span>
+                  <span>{currentFarmer.activeInPool.toLocaleString()} 只</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">年度累计已核销蟹扣:</span>
+                  <span>{currentFarmer.claimedSoFar.toLocaleString()} 只</span>
+                </div>
+                <div className="flex justify-between border-t pt-1 font-bold text-emerald-600">
+                  <span>当前最大可领扣余量:</span>
+                  <span className="text-sm">{maxClaimable.toLocaleString()} 只</span>
+                </div>
+              </div>
+            )}
+
+            <FormField
+              control={form.control}
+              name="claimCount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>本次领用数量 (只)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min="1" max={maxClaimable || undefined} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={loading || maxClaimable <= 0}>
+                {loading ? "提交中..." : "提交领用申请"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

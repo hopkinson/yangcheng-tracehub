@@ -1,14 +1,28 @@
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCurrentUser } from "@/lib/auth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StoreDialog } from "@/components/forms/StoreDialog";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
 export const dynamic = "force-dynamic";
 
-export default async function StoresPage() {
-  const [stores, channels, defaultUser] = await Promise.all([
+export default async function StoresPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
+}) {
+  const params = await searchParams;
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = Math.max(1, Number(params.pageSize) || 10);
+
+  const [currentUser, totalStores, stores, channels] = await Promise.all([
+    getCurrentUser(),
+    prisma.store.count(),
     prisma.store.findMany({
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: {
         channel: true,
         outboundOrders: true,
@@ -16,27 +30,24 @@ export default async function StoresPage() {
       orderBy: { code: "asc" },
     }),
     prisma.channel.findMany({ orderBy: { code: "asc" } }),
-    prisma.user.findFirstOrThrow({ where: { role: "WAREHOUSE_ADMIN" } }),
   ]);
+
+  const currentUserId = currentUser?.id || "";
+  const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">销售门店档案管理</h1>
-          <p className="text-sm text-muted-foreground">
-            维护各渠道零售门店档案。出库申请时门店从档案选择；已有出库发货记录的门店禁止删除。
-          </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">门店档案</h1>
+          <p className="text-xs text-muted-foreground">销售渠道与零售门店信息维护</p>
         </div>
-        <StoreDialog channels={channels} userId={defaultUser.id} />
+        {isWarehouseOrAdmin && <StoreDialog channels={channels} userId={currentUserId} />}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>门店清单与出库关联台账</CardTitle>
-          <CardDescription>
-            全量展示各商超零售渠道（山姆、盒马等）线下门店档案。
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -79,7 +90,9 @@ export default async function StoresPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <StoreDialog store={store} channels={channels} userId={defaultUser.id} />
+                        {isWarehouseOrAdmin && (
+                          <StoreDialog store={store} channels={channels} userId={currentUserId} />
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -87,6 +100,7 @@ export default async function StoresPage() {
               </TableBody>
             </Table>
           </div>
+          <DataTablePagination total={totalStores} page={page} pageSize={pageSize} />
         </CardContent>
       </Card>
     </div>

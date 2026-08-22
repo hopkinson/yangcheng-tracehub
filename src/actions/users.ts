@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 export async function createUserAction(data: {
@@ -12,6 +13,7 @@ export async function createUserAction(data: {
   password?: string;
   operatorId?: string;
 }) {
+  await requireRole(["ADMIN"]);
   const username = data.username.trim();
   const phone = data.phone.trim();
   const fullName = data.fullName.trim();
@@ -84,6 +86,7 @@ export async function updateUserAction(data: {
   channelId?: string;
   operatorId?: string;
 }) {
+  await requireRole(["ADMIN"]);
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: data.id },
   });
@@ -152,6 +155,7 @@ export async function resetPasswordAction(data: {
   newPassword?: string;
   operatorId?: string;
 }) {
+  await requireRole(["ADMIN"]);
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: data.id },
   });
@@ -182,6 +186,7 @@ export async function deleteUserAction(data: {
   id: string;
   operatorId?: string;
 }) {
+  await requireRole(["ADMIN"]);
   if (data.operatorId && data.id === data.operatorId) {
     throw new Error("安全拦截：禁止删除当前登录的自身账号！");
   }

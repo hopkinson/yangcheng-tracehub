@@ -3,8 +3,9 @@ import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
-import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+
+import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
   title: "阳澄股份大闸蟹全链路溯源品控系统",
@@ -18,20 +19,17 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [users, currentUser] = await Promise.all([
-    prisma.user.findMany({
-      include: { channel: true },
-      orderBy: { role: "asc" },
-    }),
-    getCurrentUser(),
-  ]);
+  const currentUser = await getCurrentUser();
 
-  const userOptions = users.map((u) => ({
-    id: u.id,
-    fullName: u.fullName,
-    role: u.role,
-    channelName: u.channel?.name,
-  }));
+  let pendingAlertCount = 0;
+  if (currentUser && (currentUser.role === "QA_DIRECTOR" || currentUser.role === "ADMIN")) {
+    const counts = await prisma.$transaction([
+      prisma.tagClaim.count({ where: { status: "PENDING" } }),
+      prisma.outboundOrder.count({ where: { status: "PENDING" } }),
+      prisma.batch.count({ where: { isException: true, status: { not: "COMPLETED" } } }),
+    ]);
+    pendingAlertCount = counts.reduce((a, b) => a + b, 0);
+  }
 
   return (
     <html lang="zh-CN" suppressHydrationWarning>
@@ -43,9 +41,20 @@ export default async function RootLayout({
           disableTransitionOnChange
         >
           <AppShell
-            users={userOptions}
+            currentUser={
+              currentUser
+                ? {
+                    id: currentUser.id,
+                    fullName: currentUser.fullName,
+                    role: currentUser.role,
+                    username: currentUser.username,
+                    channelName: currentUser.channel?.name,
+                  }
+                : null
+            }
             currentUserId={currentUser?.id || ""}
             currentRole={currentUser?.role || ""}
+            pendingAlertCount={pendingAlertCount}
           >
             {children}
           </AppShell>
