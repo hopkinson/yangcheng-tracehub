@@ -24,5 +24,13 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# SSL Certificates (Keep on server, do not commit keys)
+/nginx/ssl/*
+!/nginx/ssl/.gitkeep
+
+# Persistent Data
+/data/
+
 # Added by code-review-graph
 .code-review-graph/
