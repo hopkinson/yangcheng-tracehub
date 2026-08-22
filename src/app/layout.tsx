@@ -10,6 +10,15 @@ import { prisma } from "@/lib/prisma";
 export const metadata: Metadata = {
   title: "阳澄股份大闸蟹全链路溯源品控系统",
   description: "数量闭环管控与山姆渠道合规证明系统",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/icon.svg",
+  },
 };
 
 export const dynamic = "force-dynamic";

@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UserRoleSwitcher } from "./UserRoleSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
+import { Logo } from "./Logo";
 
 interface NavItem {
   href: string;
@@ -172,16 +173,23 @@ export function AppShell({
         )}
       >
         {/* Logo 区域 */}
-        <div className="flex h-14 items-center justify-center border-b border-border/80 px-2">
-          <Link href="/" className="flex items-center justify-center gap-1.5 font-bold tracking-tight">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-black shadow-xs ring-1 ring-primary/20">
-              YC
-            </div>
-            {!collapsed && (
-              <span className="text-xs font-bold tracking-tight text-foreground truncate">
-                阳澄品控溯源
-              </span>
+        <div
+          className={cn(
+            "flex h-14 items-center border-b border-border/80 px-2 transition-all",
+            collapsed ? "justify-center" : "justify-start"
+          )}
+        >
+          <Link
+            href="/"
+            className={cn(
+              "group flex items-center rounded-lg transition-colors",
+              collapsed
+                ? "justify-center size-9 hover:bg-muted/70"
+                : "w-full px-2.5 h-9 hover:bg-muted/70"
             )}
+            title={collapsed ? "阳澄品控溯源系统" : undefined}
+          >
+            <Logo collapsed={collapsed} size="sm" />
           </Link>
         </div>
 
@@ -215,12 +223,13 @@ export function AppShell({
             onClick={() => setMobileOpen(false)}
           />
           <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border/80 bg-background shadow-xl">
-            <div className="flex h-14 items-center justify-between border-b border-border/80 px-4">
-              <Link href="/" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5 font-bold tracking-tight">
-                <div className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-black shadow-xs">
-                  YC
-                </div>
-                <span className="text-xs font-bold tracking-tight text-foreground">阳澄品控溯源</span>
+            <div className="flex h-14 items-center justify-between border-b border-border/80 px-3">
+              <Link
+                href="/"
+                onClick={() => setMobileOpen(false)}
+                className="group flex items-center px-2 h-9 rounded-lg hover:bg-muted/70"
+              >
+                <Logo collapsed={false} size="sm" />
               </Link>
               <Button variant="ghost" size="icon" className="size-8 rounded-lg" onClick={() => setMobileOpen(false)}>
                 <X className="size-4" />

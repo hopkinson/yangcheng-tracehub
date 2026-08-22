@@ -9,6 +9,11 @@ export async function middleware(request: NextRequest) {
   const isAuthenticated = !!session;
 
   const isLoginPage = pathname === "/login";
+  const isPublicApi = pathname.startsWith("/api/health");
+
+  if (isPublicApi) {
+    return NextResponse.next();
+  }
 
   // 1. 如果已登录，但访问登录页，直接跳转到首页
   if (isLoginPage) {

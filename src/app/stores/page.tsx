@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StoreDialog } from "@/components/forms/StoreDialog";
@@ -46,9 +46,6 @@ export default async function StoresPage({
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>门店清单与出库关联台账</CardTitle>
-        </CardHeader>
         <CardContent>
           <div className="rounded-md border">
             <Table>

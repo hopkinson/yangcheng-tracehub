@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { TagClaimDialog } from "@/components/forms/TagClaimDialog";
@@ -71,9 +71,6 @@ export default async function TagsPage({
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>蟹扣领用申请与审批记录</CardTitle>
-        </CardHeader>
         <CardContent>
           <div className="rounded-md border">
             <Table>

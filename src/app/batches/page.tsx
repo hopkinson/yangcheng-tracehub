@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { BatchIntakeDialog } from "@/components/forms/BatchIntakeDialog";
@@ -70,9 +70,6 @@ export default async function BatchesPage({
 
       <FadeIn>
         <Card>
-          <CardHeader>
-            <CardTitle>全量原料批次明细与在池存活状态</CardTitle>
-          </CardHeader>
           <CardContent>
             <div className="rounded-md border">
               <Table>

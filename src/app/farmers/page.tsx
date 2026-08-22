@@ -126,9 +126,6 @@ export default async function FarmersPage({
 
       <FadeIn>
         <Card>
-          <CardHeader>
-            <CardTitle>养殖户主档与额度使用台账</CardTitle>
-          </CardHeader>
           <CardContent>
             <div className="rounded-md border">
               <Table>
