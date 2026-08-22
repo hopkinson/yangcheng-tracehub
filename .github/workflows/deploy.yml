@@ -1,14 +1,18 @@
-﻿name: Build and Direct-Deploy to Aliyun ECS (Zero Timeout)
+name: CI/CD Pipeline (Test & Deploy)
 
 on:
   push:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  test-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -17,7 +21,7 @@ jobs:
       - name: Setup Node.js & pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -30,10 +34,19 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Setup DB & Run Tests
+        run: |
+          npx prisma db push
+          npx tsx test/invariants.test.ts
+          npx tsx test/actions.test.ts
+          npx tsx test/channel-isolation.test.ts
+
       - name: Set up Docker Buildx
+        if: github.event_name != 'pull_request'
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker Image (Standalone)
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -43,12 +56,14 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Save & Compress Docker Image
+        if: github.event_name != 'pull_request'
         run: |
           docker save yangcheng-tracehub:latest | gzip -9 > image.tar.gz
           echo "Compressed image size:"
           ls -lh image.tar.gz
 
-      - name: Transfer Image & Deploy via SSH (Direct Pipe)
+      - name: Transfer Image & Deploy via SSH
+        if: github.event_name != 'pull_request'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -58,6 +73,7 @@ jobs:
           target: "/data/yangcheng-tracehub"
 
       - name: Load Image and Restart Container on ECS
+        if: github.event_name != 'pull_request'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -84,3 +100,4 @@ jobs:
             # 启动容器
             docker compose down || true
             docker compose up -d --remove-orphans
+

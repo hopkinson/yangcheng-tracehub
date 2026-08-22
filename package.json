@@ -2,6 +2,7 @@
   "name": "yangcheng-tracehub",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@10.4.1",
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbo",
@@ -19,6 +20,15 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
