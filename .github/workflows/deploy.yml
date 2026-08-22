@@ -95,12 +95,21 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           script: |
-            mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx
+            mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx/ssl
             cd /opt/yangcheng-tracehub
 
             # 导入镜像并清理临时包
             gunzip -c image.tar.gz | docker load
             rm -f image.tar.gz
+
+            # 若未配置证书，自动生成自签名证书兜底，防止 Nginx 启动崩溃
+            if [ ! -f /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem ] || [ ! -f /opt/yangcheng-tracehub/nginx/ssl/privkey.pem ]; then
+              echo "Generating fallback SSL certificate..."
+              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+                -keyout /opt/yangcheng-tracehub/nginx/ssl/privkey.pem \
+                -out /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem \
+                -subj "/CN=admin.yangchenghu88.com"
+            fi
 
             # 如果不存在生产环境变量文件，则自动创建默认配置
             if [ ! -f .env.production ]; then
@@ -115,6 +124,10 @@ jobs:
             # 启动容器
             docker compose down || true
             docker compose up -d --remove-orphans
+
+            # 部署健康检查与状态探活
+            for i in $(seq 1 15); do curl -sf http://127.0.0.1:3000/api/health > /dev/null && docker compose ps && exit 0 || sleep 2; done
+            docker compose logs --tail 50 && exit 1
 
       # =========================================================================
       # 部署到服务器 2 (Server 2) - 仅在配置了 SERVER_HOST_2 时执行
@@ -141,12 +154,21 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
           script: |
-            mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx
+            mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx/ssl
             cd /opt/yangcheng-tracehub
 
             # 导入镜像并清理临时包
             gunzip -c image.tar.gz | docker load
             rm -f image.tar.gz
+
+            # 若未配置证书，自动生成自签名证书兜底，防止 Nginx 启动崩溃
+            if [ ! -f /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem ] || [ ! -f /opt/yangcheng-tracehub/nginx/ssl/privkey.pem ]; then
+              echo "Generating fallback SSL certificate..."
+              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+                -keyout /opt/yangcheng-tracehub/nginx/ssl/privkey.pem \
+                -out /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem \
+                -subj "/CN=admin.yangchenghu88.com"
+            fi
 
             # 如果不存在生产环境变量文件，则自动创建默认配置
             if [ ! -f .env.production ]; then
@@ -161,3 +183,7 @@ jobs:
             # 启动容器
             docker compose down || true
             docker compose up -d --remove-orphans
+
+            # 部署健康检查与状态探活
+            for i in $(seq 1 15); do curl -sf http://127.0.0.1:3000/api/health > /dev/null && docker compose ps && exit 0 || sleep 2; done
+            docker compose logs --tail 50 && exit 1

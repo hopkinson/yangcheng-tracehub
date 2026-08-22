@@ -6,6 +6,7 @@ services:
     image: yangcheng-tracehub:latest
     container_name: yangcheng-tracehub
     restart: always
+    command: sh -c "prisma db push --skip-generate && node server.js"
     ports:
       - "3000:3000"
     env_file:
