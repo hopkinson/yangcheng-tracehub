@@ -70,7 +70,7 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
         element: "#captcha-element",
         button: "#captcha-trigger-btn",
         slideStyle: {
-          width: "100%",
+          width: 336,
           height: 40,
         },
         captchaVerifyCallback: async (param: string) => {
