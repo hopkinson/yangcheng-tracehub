@@ -187,7 +187,7 @@ export function AppShell({
                 ? "justify-center size-9 hover:bg-muted/70"
                 : "w-full px-2.5 h-9 hover:bg-muted/70"
             )}
-            title={collapsed ? "阳澄品控溯源系统" : undefined}
+            title={collapsed ? "阳澄股份" : undefined}
           >
             <Logo collapsed={collapsed} size="sm" />
           </Link>

@@ -220,7 +220,7 @@ export function Logo({
 
       {!collapsed && (
         <span className="text-xs font-bold tracking-tight text-foreground truncate">
-          阳澄品控溯源
+          阳澄股份
         </span>
       )}
     </div>
