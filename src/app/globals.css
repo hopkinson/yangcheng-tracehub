@@ -134,23 +134,18 @@
 /* 阿里云验证码 2.0 样式与暗黑模式深度融合 */
 #captcha-element {
   width: 100%;
+  min-height: 42px;
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 2px;
   box-sizing: border-box;
-}
-
-#captcha-element > div,
-#captcha-element iframe {
-  width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-  border-radius: var(--radius) !important;
 }
 
 .dark #captcha-element {
   filter: invert(0.88) hue-rotate(180deg) contrast(1.05);
 }
+
 
 
 
