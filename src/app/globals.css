@@ -131,21 +131,27 @@
   animation: tooltip-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 阿里云验证码 2.0 暗黑模式自适应与圆角质感融合 */
+/* 阿里云验证码 2.0 样式与暗黑模式深度融合 */
 #captcha-element {
   width: 100%;
-  border-radius: var(--radius);
-  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+#captcha-element > div,
+#captcha-element iframe {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: var(--radius) !important;
 }
 
 .dark #captcha-element {
   filter: invert(0.88) hue-rotate(180deg) contrast(1.05);
 }
 
-.dark #captcha-element iframe,
-.dark #captcha-element > div {
-  border-radius: var(--radius) !important;
-}
 
 
 

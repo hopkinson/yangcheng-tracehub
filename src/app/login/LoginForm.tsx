@@ -26,6 +26,7 @@ declare global {
       onBizResultCallback?: (bizResult: boolean) => void;
       getInstance?: (instance: AliyunCaptchaInstance) => void;
       immediate?: boolean;
+      slideStyle?: { width?: string | number; height?: string | number };
     }) => void;
   }
 }
@@ -68,6 +69,10 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
         mode: "embed",
         element: "#captcha-element",
         button: "#captcha-trigger-btn",
+        slideStyle: {
+          width: "100%",
+          height: 40,
+        },
         captchaVerifyCallback: async (param: string) => {
           setCaptchaVerifyParam(param);
           setClientError("");
