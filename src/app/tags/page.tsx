@@ -7,6 +7,7 @@ import { TagClaimDialog } from "@/components/forms/TagClaimDialog";
 import { ResubmitTagClaimDialog } from "@/components/forms/ResubmitTagClaimDialog";
 import { SettleTagClaimDialog } from "@/components/forms/SettleTagClaimDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
+import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -96,7 +97,7 @@ export default async function TagsPage({
                   tagClaims.map((claim) => (
                     <TableRow key={claim.id}>
                       <TableCell className="font-mono text-xs">
-                        {new Date(claim.claimDate).toLocaleDateString()}
+                        {formatDate(claim.claimDate)}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">

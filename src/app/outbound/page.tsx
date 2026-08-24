@@ -8,7 +8,7 @@ import { LogisticsBackfillDialog } from "@/components/forms/LogisticsBackfillDia
 import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +87,6 @@ export default async function OutboundPage({
                 </TableHeader>
                 <TableBody>
                   {orders.map((order) => {
-                    const dateObj = new Date(order.createdAt);
                     return (
                       <TableRow key={order.id} className="hover:bg-muted/30 transition-colors">
                         {/* 1. 出库单与时间 */}
@@ -97,8 +96,7 @@ export default async function OutboundPage({
                               {order.code}
                             </span>
                             <span className="text-[11px] font-mono text-muted-foreground">
-                              {dateObj.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" })}{" "}
-                              {dateObj.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                              {formatDateTime(order.createdAt)}
                             </span>
                           </div>
                         </TableCell>

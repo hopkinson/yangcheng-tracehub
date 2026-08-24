@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { getBeijingDateStr } from "@/lib/utils";
 
 export async function createOutboundOrderAction(data: {
   batchId: string;
@@ -39,7 +40,7 @@ export async function createOutboundOrderAction(data: {
       throw new Error(outboundCheck.reason);
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = getBeijingDateStr();
     const countToday = await tx.outboundOrder.count();
     const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
 

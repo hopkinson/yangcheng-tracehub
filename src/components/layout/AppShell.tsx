@@ -169,7 +169,7 @@ export function AppShell({
       <aside
         className={cn(
           "hidden md:flex flex-col border-r border-border/80 bg-sidebar/50 dark:bg-sidebar/30 backdrop-blur-md sticky top-0 h-screen transition-all duration-200 z-30 shrink-0 select-none",
-          collapsed ? "w-14" : "w-44"
+          collapsed ? "w-14" : "w-56"
         )}
       >
         {/* Logo 区域 */}
@@ -187,7 +187,7 @@ export function AppShell({
                 ? "justify-center size-9 hover:bg-muted/70"
                 : "w-full px-2.5 h-9 hover:bg-muted/70"
             )}
-            title={collapsed ? "阳澄股份" : undefined}
+            title={collapsed ? "阳澄湖大闸蟹溯源品控系统" : undefined}
           >
             <Logo collapsed={collapsed} size="sm" />
           </Link>

@@ -12,6 +12,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, History } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
 
 export interface BatchLossHistoryDialogProps {
   batch: {
@@ -145,7 +146,7 @@ export function BatchLossHistoryDialog({ batch }: BatchLossHistoryDialogProps) {
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-mono text-muted-foreground">
-                            {new Date(r.inventoryDate).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
+                            {formatDateTime(r.inventoryDate)}
                           </span>
                           <span className="text-[11px] text-muted-foreground/80">
                             {r.inspector?.fullName || "仓库盘点员"}

@@ -11,7 +11,7 @@ async function runE2EWorkflowTests() {
 
   const timestamp = Date.now();
   const testFarmerCode = `JD-TEST-${timestamp.toString().slice(-4)}`;
-  const testPoolCode = `ZY-T${timestamp.toString().slice(-2)}`;
+  const testPoolCode = `ZY-T${timestamp.toString().slice(-5)}`;
   const testBatchCode1 = `PC-TEST-001-${timestamp.toString().slice(-4)}`;
   const testBatchCode2 = `PC-TEST-002-${timestamp.toString().slice(-4)}`;
   const testOutboundCode = `CK-TEST-${timestamp.toString().slice(-4)}`;

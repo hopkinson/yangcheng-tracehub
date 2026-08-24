@@ -11,6 +11,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
+import { formatDate } from "@/lib/utils";
 
 interface TraceTopologyFlowProps {
   order: {
@@ -67,7 +68,7 @@ export function TraceTopologyFlow({ order }: TraceTopologyFlowProps) {
       color: "border-blue-500/30 bg-blue-500/5",
       accent: "text-blue-600 dark:text-blue-400",
       main: `${order.outboundCount} 只`,
-      sub: `物流: ${order.logisticsNo || "待生成"} · ${new Date(order.approvedAt || order.createdAt).toLocaleDateString()}`,
+      sub: `物流: ${order.logisticsNo || "待生成"} · ${formatDate(order.approvedAt || order.createdAt)}`,
     },
     {
       role: "3. 原料批次",

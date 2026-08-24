@@ -24,6 +24,7 @@ import {
   Truck,
   Eye,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
 
 export interface BatchDetailDialogProps {
   batch: {
@@ -130,7 +131,7 @@ export function BatchDetailDialog({
             </Badge>
           </div>
           <DialogDescription className="text-xs">
-            入池登记时间：{new Date(batch.inPoolTime).toLocaleString()}
+            入池登记时间：{formatDateTime(batch.inPoolTime, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
           </DialogDescription>
         </DialogHeader>
 
@@ -205,7 +206,7 @@ export function BatchDetailDialog({
                 </div>
                 <div className="text-[11px] text-muted-foreground">
                   {batch.reportUrl
-                    ? `已上传 (更新时间: ${batch.reportUploadedAt ? new Date(batch.reportUploadedAt).toLocaleString() : "已绑定"})`
+                    ? `已上传 (更新时间: ${batch.reportUploadedAt ? formatDateTime(batch.reportUploadedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "已绑定"})`
                     : "暂未上传监测报告"}
                 </div>
               </div>

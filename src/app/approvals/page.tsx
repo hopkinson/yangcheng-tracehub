@@ -10,7 +10,7 @@ import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Tag, Truck, AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime, formatDate, formatTime } from "@/lib/utils";
 
 import Link from "next/link";
 
@@ -245,10 +245,10 @@ export default async function ApprovalsPage({
                             <TableCell className="align-middle">
                               <div className="flex flex-col">
                                 <span className="font-mono text-xs font-semibold text-foreground">
-                                  {dateObj.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" })}
+                                  {formatDate(claim.createdAt || claim.claimDate, { year: undefined, month: "2-digit", day: "2-digit" })}
                                 </span>
                                 <span className="font-mono text-[11px] text-muted-foreground">
-                                  {dateObj.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                                  {formatTime(claim.createdAt || claim.claimDate)}
                                 </span>
                               </div>
                             </TableCell>
@@ -668,8 +668,7 @@ export default async function ApprovalsPage({
                                     <>
                                       <span>·</span>
                                       <span>
-                                        {lastLossDate.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" })}{" "}
-                                        {lastLossDate.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                                        {formatDateTime(lastLoss.createdAt)}
                                       </span>
                                     </>
                                   )}

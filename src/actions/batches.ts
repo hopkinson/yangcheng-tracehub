@@ -5,6 +5,7 @@ import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { deleteFileFromStorage } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
+import { getBeijingDateStr } from "@/lib/utils";
 
 export async function createBatchAction(data: {
   farmerId: string;
@@ -77,7 +78,7 @@ export async function createBatchAction(data: {
       });
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = getBeijingDateStr();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const countToday = await tx.batch.count({

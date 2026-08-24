@@ -10,6 +10,7 @@ import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialo
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Users, Tag, Waves, Truck, CheckCircle2, AlertTriangle, FileSpreadsheet, CheckCheck } from "lucide-react";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
+import { formatDate, formatISODate, formatISOMonth } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -181,7 +182,7 @@ export default async function LedgersPage({
   }>();
 
   for (const c of tagClaims) {
-    const dateStr = new Date(c.claimDate).toISOString().slice(0, 10);
+    const dateStr = formatISODate(c.claimDate);
     const key = `${dateStr}_${c.farmerId}`;
     const row = aggregatedMap.get(key) || {
       id: key,
@@ -280,7 +281,7 @@ export default async function LedgersPage({
     "检测报告",
   ];
   const ledger3Rows = batches.map((b) => [
-    new Date(b.inPoolTime).toISOString().slice(0, 10),
+    formatISODate(b.inPoolTime),
     b.code,
     b.pool.code,
     b.farmer.name,
@@ -307,7 +308,7 @@ export default async function LedgersPage({
     "审核状态",
   ];
   const ledger4Rows = outboundOrders.map((o) => [
-    new Date(o.createdAt).toISOString().slice(0, 10),
+    formatISODate(o.createdAt),
     o.code,
     o.batch.code,
     o.batch.farmer.name,
@@ -320,7 +321,7 @@ export default async function LedgersPage({
   ]);
 
   // 月度全链路追溯与品控对账月报汇总
-  const currentMonthStr = selectedDateStr ? selectedDateStr.slice(0, 7) : new Date().toISOString().slice(0, 7);
+  const currentMonthStr = selectedDateStr ? selectedDateStr.slice(0, 7) : formatISOMonth();
 
   const farmerMonthlySummaries = farmers.map((f) => {
     const inPool = f.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
@@ -531,7 +532,7 @@ export default async function LedgersPage({
                   pagedTagClaims.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-mono text-xs">
-                        {new Date(c.claimDate).toLocaleDateString()}
+                        {formatDate(c.claimDate)}
                       </TableCell>
                       <TableCell className="font-medium">
                         {c.farmer.name} ({c.farmer.code})
@@ -614,7 +615,7 @@ export default async function LedgersPage({
                     return (
                       <TableRow key={b.id}>
                         <TableCell className="font-mono text-xs">
-                          {new Date(b.inPoolTime).toLocaleDateString()}
+                          {formatDate(b.inPoolTime)}
                         </TableCell>
                         <TableCell className="font-mono font-medium">{b.code}</TableCell>
                         <TableCell className="font-mono">{b.pool.code}</TableCell>
@@ -687,7 +688,7 @@ export default async function LedgersPage({
                   pagedOutboundOrders.map((o) => (
                     <TableRow key={o.id}>
                       <TableCell className="font-mono text-xs">
-                        {new Date(o.createdAt).toLocaleDateString()}
+                        {formatDate(o.createdAt)}
                       </TableCell>
                       <TableCell className="font-mono font-medium">{o.code}</TableCell>
                       <TableCell className="font-mono text-xs">{o.batch.code}</TableCell>

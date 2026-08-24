@@ -39,8 +39,8 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProps) {
-  const [phone, setPhone] = useState("13800000001");
-  const [password, setPassword] = useState("000001");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [captchaVerifyParam, setCaptchaVerifyParam] = useState("");
   const [clientError, setClientError] = useState("");
@@ -136,8 +136,11 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
       )}
 
       {/* 登录表单卡片 */}
-      <Card className="border-border/80 bg-card/90 dark:bg-card/80 backdrop-blur-xl shadow-xl shadow-sky-950/5">
-        <CardContent className="pt-6 pb-6">
+      <Card className="relative overflow-hidden rounded-2xl border border-border/80 dark:border-white/10 bg-card/90 dark:bg-card/75 backdrop-blur-2xl shadow-2xl shadow-sky-950/10 dark:shadow-black/60">
+        {/* 卡片顶端科技蓝光微流线 */}
+        <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
+
+        <CardContent className="pt-6 pb-6 space-y-4">
           <form action={loginAction} onSubmit={handleSubmit} className="space-y-4">
             {redirectUrl && (
               <input type="hidden" name="redirect" value={redirectUrl} />
@@ -171,7 +174,7 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
                   onChange={(e) => setPhone(e.target.value)}
                   required
                   maxLength={11}
-                  className="h-9 pl-9 text-xs font-mono tracking-wide bg-background/50"
+                  className="h-9.5 pl-9 text-xs font-mono tracking-wide bg-background/50 border-input/80 focus-visible:ring-2 focus-visible:ring-sky-500/20 focus-visible:border-sky-500/50 transition-all"
                 />
               </div>
             </div>
@@ -191,13 +194,13 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-9 pl-9 pr-9 text-xs font-mono bg-background/50"
+                  className="h-9.5 pl-9 pr-9 text-xs font-mono bg-background/50 border-input/80 focus-visible:ring-2 focus-visible:ring-sky-500/20 focus-visible:border-sky-500/50 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   tabIndex={-1}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
                   title={showPassword ? "隐藏密码" : "显示密码"}
                 >
                   {showPassword ? (
@@ -219,7 +222,7 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
               id="captcha-trigger-btn"
               type="submit"
               disabled={isSubmitting}
-              className="w-full h-9 text-xs font-medium mt-2 gap-1.5 shadow-sm hover:shadow transition-all"
+              className="w-full h-9.5 text-xs font-medium mt-2 gap-1.5 shadow-md shadow-sky-600/20 hover:shadow-sky-600/30 active:scale-[0.99] transition-all bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 text-white"
             >
               {isSubmitting ? (
                 <>

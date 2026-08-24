@@ -11,6 +11,7 @@ import { UserDialog, ROLE_LABELS } from "@/components/forms/UserDialog";
 import { resetPasswordAction, deleteUserAction } from "@/actions/users";
 import { switchUserAction } from "@/actions/auth";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/utils";
 import {
   Search,
   KeyRound,
@@ -231,7 +232,7 @@ export function UserManagementView({
                           )}
                         </TableCell>
                         <TableCell className="text-xs font-mono text-muted-foreground">
-                          {new Date(user.createdAt).toLocaleDateString("zh-CN")}
+                          {formatDate(user.createdAt)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">

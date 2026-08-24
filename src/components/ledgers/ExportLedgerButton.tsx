@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
+import { getBeijingDateStr } from "@/lib/utils";
 
 interface ExportLedgerButtonProps {
   filename: string;
@@ -32,7 +33,7 @@ export function ExportLedgerButton({
     link.setAttribute("href", url);
     link.setAttribute(
       "download",
-      `${filename}_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`
+      `${filename}_${getBeijingDateStr()}.csv`
     );
     document.body.appendChild(link);
     link.click();
