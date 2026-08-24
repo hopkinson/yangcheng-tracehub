@@ -4,11 +4,9 @@ import * as React from "react";
 import {
   Building2,
   Truck,
-  Layers,
   Waves,
+  Layers,
   MapPin,
-  ArrowLeft,
-  FileCheck,
 } from "lucide-react";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { formatDate } from "@/lib/utils";
@@ -71,7 +69,15 @@ export function TraceTopologyFlow({ order }: TraceTopologyFlowProps) {
       sub: `物流: ${order.logisticsNo || "待生成"} · ${formatDate(order.approvedAt || order.createdAt)}`,
     },
     {
-      role: "3. 原料批次",
+      role: "3. 暂养仓位",
+      icon: Waves,
+      color: "border-cyan-500/30 bg-cyan-500/5",
+      accent: "text-cyan-600 dark:text-cyan-400",
+      main: order.batch.pool.name,
+      sub: `池号: ${order.batch.pool.code} (在池 ${order.batch.inPoolCount}只)`,
+    },
+    {
+      role: "4. 原料批次",
       icon: Layers,
       color: "border-emerald-500/30 bg-emerald-500/5",
       accent: "text-emerald-600 dark:text-emerald-400",
@@ -83,14 +89,6 @@ export function TraceTopologyFlow({ order }: TraceTopologyFlowProps) {
             url: order.batch.reportUrl,
           }
         : null,
-    },
-    {
-      role: "4. 暂养仓位",
-      icon: Waves,
-      color: "border-cyan-500/30 bg-cyan-500/5",
-      accent: "text-cyan-600 dark:text-cyan-400",
-      main: order.batch.pool.name,
-      sub: `池号: ${order.batch.pool.code} (在池 ${order.batch.inPoolCount}只)`,
     },
     {
       role: "5. 源头湖区",
@@ -107,17 +105,6 @@ export function TraceTopologyFlow({ order }: TraceTopologyFlowProps) {
       {/* 极简流向头部 */}
       <div className="flex items-center justify-between text-xs px-1">
         <span className="font-bold text-foreground">逆向追溯拓扑链</span>
-        <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-          <span>门店</span>
-          <ArrowLeft className="size-3 text-primary" />
-          <span>出库</span>
-          <ArrowLeft className="size-3 text-primary" />
-          <span>批次</span>
-          <ArrowLeft className="size-3 text-primary" />
-          <span>暂养</span>
-          <ArrowLeft className="size-3 text-primary" />
-          <span>湖区</span>
-        </div>
       </div>
 
       {/* 5 节点极简卡片 */}
