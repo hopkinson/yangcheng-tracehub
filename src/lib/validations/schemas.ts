@@ -16,7 +16,6 @@ export const positiveInt = (fieldName = "数量") =>
  */
 export const farmerFormSchema = z.object({
   name: z.string().trim().min(2, "养殖户姓名至少 2 个字符").max(20, "姓名不能超过 20 个字符"),
-  phone: phoneSchema,
   farmType: z.enum(["LAKE_CRAB", "POND_CRAB"], {
     errorMap: () => ({ message: "请选择养殖类型" }),
   }),

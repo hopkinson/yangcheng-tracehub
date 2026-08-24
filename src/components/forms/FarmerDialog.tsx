@@ -17,7 +17,7 @@ interface FarmerData {
   id: string;
   code: string;
   name: string;
-  phone: string;
+  phone?: string;
   farmType: string;
   area: number;
   quota?: number;
@@ -28,7 +28,6 @@ interface FarmerData {
 
 const getFarmerValues = (farmer?: FarmerData): FarmerFormValues => ({
   name: farmer?.name || "",
-  phone: farmer?.phone || "",
   farmType: (farmer?.farmType as "LAKE_CRAB" | "POND_CRAB") || "LAKE_CRAB",
   area: farmer?.area ?? 10,
   creditRating: (farmer?.creditRating as "A" | "B" | "C") || "A",
@@ -101,7 +100,6 @@ export function FarmerDialog({
         await updateFarmerAction({
           id: farmer.id,
           name: data.name,
-          phone: data.phone,
           farmType: data.farmType,
           area: Number(data.area),
           creditRating: data.creditRating,
@@ -113,7 +111,6 @@ export function FarmerDialog({
       } else {
         await createFarmerAction({
           name: data.name,
-          phone: data.phone,
           farmType: data.farmType,
           area: Number(data.area),
           creditRating: data.creditRating,
@@ -176,22 +173,6 @@ export function FarmerDialog({
 
               <FormField
                 control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>联系电话</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：13812345678" maxLength={11} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
                 name="farmType"
                 render={({ field }) => (
                   <FormItem>
@@ -211,7 +192,9 @@ export function FarmerDialog({
                   </FormItem>
                 )}
               />
+            </div>
 
+            <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="creditRating"
@@ -249,21 +232,21 @@ export function FarmerDialog({
                   </FormItem>
                 )}
               />
-            </div>
 
-            <FormField
-              control={form.control}
-              name="area"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>养殖面积 (亩)</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.1" min="0.1" placeholder="如：10" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="area"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>养殖面积 (亩)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" min="0.1" placeholder="如：10" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className="rounded-md border bg-primary/5 p-3 flex items-center justify-between">
               <span className="text-xs text-muted-foreground font-medium">系统实时核定年度总额度:</span>
@@ -357,10 +340,12 @@ export function FarmerDetailDialog({
 
           {/* 基础信息 2列网格 */}
           <div className="grid grid-cols-2 gap-y-3.5 gap-x-8 py-2 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">联系方式</span>
-              <span className="font-mono font-medium">{farmer.phone}</span>
-            </div>
+            {farmer.phone ? (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">联系方式</span>
+                <span className="font-mono font-medium">{farmer.phone}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">养殖类型</span>
               <span>{farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}</span>

@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 
 export async function createFarmerAction(data: {
   name: string;
-  phone: string;
+  phone?: string;
   farmType: string; // LAKE_CRAB, POND_CRAB
   area: number;
   creditRating: string;
@@ -24,7 +24,7 @@ export async function createFarmerAction(data: {
       data: {
         code,
         name: data.name,
-        phone: data.phone,
+        phone: data.phone || "",
         farmType: data.farmType,
         year: currentYear,
         area: data.area,
@@ -58,7 +58,7 @@ export async function createFarmerAction(data: {
 export async function updateFarmerAction(data: {
   id: string;
   name: string;
-  phone: string;
+  phone?: string;
   farmType: string;
   area: number;
   creditRating: string;

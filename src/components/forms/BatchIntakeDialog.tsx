@@ -15,6 +15,22 @@ import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Waves, Upload, FileText, X } from "lucide-react";
 
+export const WEIGHT_TIERS = [
+  "2.0两",
+  "2.5两",
+  "3.0两",
+  "3.5两",
+  "4.0两",
+  "4.5两",
+  "5.0两",
+  "5.5两",
+  "6.0两",
+  "6.5两",
+  "7.0两",
+  "7.5两",
+  "8.0两",
+] as const;
+
 export function BatchIntakeDialog({
   farmers,
   pools,
@@ -291,12 +307,12 @@ export function BatchIntakeDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="2.5两">2.5两</SelectItem>
-                        <SelectItem value="3.0两">3.0两</SelectItem>
-                        <SelectItem value="3.5两">3.5两</SelectItem>
-                        <SelectItem value="4.0两">4.0两</SelectItem>
-                        <SelectItem value="4.5两">4.5两</SelectItem>
-                      </SelectContent>
+                      {WEIGHT_TIERS.map((tier) => (
+                        <SelectItem key={tier} value={tier}>
+                          {tier}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>

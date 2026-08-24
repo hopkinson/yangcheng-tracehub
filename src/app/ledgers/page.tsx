@@ -469,7 +469,7 @@ export default async function LedgersPage({
                     <TableRow key={f.id}>
                       <TableCell className="font-mono font-medium">{f.code}</TableCell>
                       <TableCell className="font-medium">{f.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{f.phone}</TableCell>
+                      <TableCell className="text-muted-foreground">{f.phone || "-"}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{f.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}</Badge>
                       </TableCell>
