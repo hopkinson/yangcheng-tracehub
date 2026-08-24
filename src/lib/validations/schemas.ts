@@ -66,6 +66,20 @@ export const userFormSchema = z
 export type UserFormValues = z.infer<typeof userFormSchema>;
 
 /**
+ * 销售渠道校验
+ */
+export const channelFormSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2, "渠道编码至少 2 个字符")
+    .max(20, "渠道编码最多 20 个字符")
+    .regex(/^[A-Za-z0-9_-]+$/, "渠道编码仅支持英文字母、数字、短横线或下划线"),
+  name: z.string().trim().min(2, "渠道名称至少 2 个字符").max(50, "渠道名称最多 50 个字符"),
+});
+export type ChannelFormValues = z.infer<typeof channelFormSchema>;
+
+/**
  * 门店档案校验
  */
 export const storeFormSchema = z.object({

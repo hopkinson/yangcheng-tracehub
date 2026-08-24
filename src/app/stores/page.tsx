@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StoreDialog } from "@/components/forms/StoreDialog";
+import { ChannelManagerDialog } from "@/components/forms/ChannelManagerDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,18 @@ export default async function StoresPage({
       },
       orderBy: { code: "asc" },
     }),
-    prisma.channel.findMany({ orderBy: { code: "asc" } }),
+    prisma.channel.findMany({
+      orderBy: { code: "asc" },
+      include: {
+        _count: {
+          select: {
+            stores: true,
+            outboundOrders: true,
+            users: true,
+          },
+        },
+      },
+    }),
   ]);
 
   const currentUserId = currentUser?.id || "";
@@ -42,7 +54,12 @@ export default async function StoresPage({
           <h1 className="text-2xl font-bold tracking-tight text-foreground">门店档案</h1>
           <p className="text-xs text-muted-foreground">销售渠道与零售门店信息维护</p>
         </div>
-        {isWarehouseOrAdmin && <StoreDialog channels={channels} userId={currentUserId} />}
+        {isWarehouseOrAdmin && (
+          <div className="flex items-center gap-2">
+            <ChannelManagerDialog channels={channels} userId={currentUserId} />
+            <StoreDialog channels={channels} userId={currentUserId} />
+          </div>
+        )}
       </div>
 
       <Card>

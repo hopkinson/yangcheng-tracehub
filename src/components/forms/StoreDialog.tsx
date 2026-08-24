@@ -138,10 +138,10 @@ export function StoreDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>所属渠道</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={channels.length === 0}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="选择所属渠道" />
+                        <SelectValue placeholder={channels.length === 0 ? "暂无可用渠道，请先创建渠道" : "选择所属渠道"} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -152,6 +152,11 @@ export function StoreDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  {channels.length === 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                      系统暂无销售渠道，请点击页面右上角【渠道管理】先录入渠道。
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
