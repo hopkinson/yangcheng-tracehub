@@ -10,11 +10,13 @@ async function runE2EWorkflowTests() {
   console.log("================================================================================\n");
 
   const timestamp = Date.now();
-  const testFarmerCode = `JD-TEST-${timestamp.toString().slice(-4)}`;
-  const testPoolCode = `ZY-T${timestamp.toString().slice(-5)}`;
-  const testBatchCode1 = `PC-TEST-001-${timestamp.toString().slice(-4)}`;
-  const testBatchCode2 = `PC-TEST-002-${timestamp.toString().slice(-4)}`;
-  const testOutboundCode = `CK-TEST-${timestamp.toString().slice(-4)}`;
+  const uniqueSuffix = `${timestamp}_${Math.random().toString(36).slice(2, 7)}`;
+  const testFarmerCode = `JD-TEST-${uniqueSuffix}`;
+  const testPoolCode = `ZY-TEST-1-${uniqueSuffix}`;
+  const testPoolCode2 = `ZY-TEST-2-${uniqueSuffix}`;
+  const testBatchCode1 = `PC-TEST-001-${uniqueSuffix}`;
+  const testBatchCode2 = `PC-TEST-002-${uniqueSuffix}`;
+  const testOutboundCode = `CK-TEST-${uniqueSuffix}`;
 
   try {
     // -------------------------------------------------------------------------
@@ -160,7 +162,6 @@ async function runE2EWorkflowTests() {
     console.log("  ✔ 在养拦截测试通过: 池内已有存量时禁止混入新批次，只能选择空池");
 
     // 2.3 批次2分配至空暂养池 2
-    const testPoolCode2 = `ZY-T2${timestamp.toString().slice(-4)}`;
     const pool2 = await prisma.holdingPool.create({
       data: {
         code: testPoolCode2,
