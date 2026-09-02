@@ -16,7 +16,8 @@ jobs:
     name: "自动化测试与生产部署"
     runs-on: ubuntu-latest
     env:
-      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST || secrets.SERVER2_HOST || secrets.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || secrets.SERVER2_IP }}
+      SERVER_HOST_1: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
+      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
     steps:
       - name: "检出代码仓库"
         uses: actions/checkout@v4
@@ -71,15 +72,38 @@ jobs:
           ls -lh image.tar.gz
 
       # =========================================================================
+      # 部署前节点连接信息探测与诊断
+      # =========================================================================
+      - name: "检查目标服务器连接密钥配置"
+        if: "!cancelled() && github.event_name != 'pull_request'"
+        run: |
+          echo "=================================================="
+          echo "📋 部署目标服务器密钥探测状态："
+          if [ -n "${{ env.SERVER_HOST_1 }}" ]; then
+            echo "  ✔ 服务器 1 地址 (SERVER_HOST_1): 已配置"
+          else
+            echo "  ⚠️ 服务器 1 地址 (SERVER_HOST_1): 未检测到"
+          fi
+          if [ -n "${{ env.SERVER_HOST_2 }}" ]; then
+            echo "  ✔ 服务器 2 地址 (SERVER_HOST_2): 已配置"
+          else
+            echo "  ⚠️ 服务器 2 地址 (SERVER_HOST_2): 未在 GitHub Secrets 中配置！"
+            echo "     👉 提示：若希望服务器 1 关机后自动转移部署到服务器 2，"
+            echo "        请在 GitHub 仓库 -> Settings -> Secrets and variables -> Actions"
+            echo "        中新增 Secret: SERVER_HOST_2"
+          fi
+          echo "=================================================="
+
+      # =========================================================================
       # 部署到服务器 1 (主生产服务器 - 具备超时熔断与自动降级)
       # =========================================================================
       - name: "通过 SCP 分发镜像与配置文件至服务器 1"
         id: scp_server_1
-        if: "!cancelled() && github.event_name != 'pull_request'"
+        if: "!cancelled() && github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
         uses: appleboy/scp-action@v0.1.7
         continue-on-error: true
         with:
-          host: ${{ secrets.SERVER_HOST_1 || secrets.SERVER_HOST }}
+          host: ${{ env.SERVER_HOST_1 }}
           username: ${{ secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
