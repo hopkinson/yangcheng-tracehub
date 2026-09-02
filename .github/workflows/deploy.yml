@@ -16,7 +16,7 @@ jobs:
     name: "自动化测试与生产部署"
     runs-on: ubuntu-latest
     env:
-      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST }}
+      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || secrets.SERVER_2_HOST || secrets.SERVER2_HOST || secrets.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || secrets.SERVER2_IP }}
     steps:
       - name: "检出代码仓库"
         uses: actions/checkout@v4
@@ -146,10 +146,10 @@ jobs:
         continue-on-error: true
         with:
           host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
-          key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
-          password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
-          port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
+          username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_2_USER || secrets.SERVER2_USER || secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+          key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_2_PORT || secrets.SERVER2_PORT || secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           timeout: "15s"
           source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
           target: "/opt/yangcheng-tracehub"
@@ -161,10 +161,10 @@ jobs:
         continue-on-error: true
         with:
           host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
-          key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
-          password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
-          port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
+          username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_2_USER || secrets.SERVER2_USER || secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+          key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_2_PORT || secrets.SERVER2_PORT || secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           timeout: "15s"
           command_timeout: "10m"
           script: |
