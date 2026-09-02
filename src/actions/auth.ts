@@ -113,15 +113,3 @@ export async function logoutAction() {
   cookieStore.delete(SESSION_COOKIE_NAME);
   redirect("/login");
 }
-
-export async function switchUserAction(userId: string) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-
-  if (!user) return;
-
-  const token = await createSessionToken(user.id);
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, token, SESSION_COOKIE_OPTIONS);
-}

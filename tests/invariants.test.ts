@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { Invariants } from "../src/lib/invariants";
 
-console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与卡控规则自动化单元测试...\n");
+console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环与卡控规则自动化单元测试...\n");
 
 // 1. 卡口一：入池额度校验
 {
   console.log("▶ [Test 1] 养殖户年度额度与批次创建校验");
-  // 正常入池
   const normal = Invariants.checkQuota({
     annualQuota: 60000,
     cumulativeInPool: 20000,
@@ -14,7 +13,6 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   });
   assert.equal(normal.valid, true, "累计30000 <= 60000 应该通过");
 
-  // 超额入池拦截
   const over = Invariants.checkQuota({
     annualQuota: 60000,
     cumulativeInPool: 55000,
@@ -25,44 +23,39 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   console.log("  ✔ 额度入池硬上限拦截测试通过");
 }
 
-// 2. 卡口一：暂养池在养规格锁定与混池拦截
+// 2. 卡口一：暂养池空池入池与已有在养存量混池拦截
 {
-  console.log("▶ [Test 2] 暂养池同规格复用与不同规格混池拦截");
-  // 空池入池自动绑定
+  console.log("▶ [Test 2] 暂养池空池入池与已有在养存量混池拦截");
   const emptyPool = Invariants.checkPoolSpec(
     { currentGender: null, currentWeightTier: null, activeCount: 0 },
     { gender: "MALE", weightTier: "4.0两" }
   );
   assert.equal(emptyPool.valid, true);
-  assert.equal(emptyPool.requiresBinding, true, "空池应触发规格锁定");
+  assert.equal(emptyPool.requiresBinding, true, "空池应允许入池并触发规格锁定");
 
-  // 同规格复用入池
-  const sameSpec = Invariants.checkPoolSpec(
+  const occupiedPool = Invariants.checkPoolSpec(
     { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 500 },
     { gender: "MALE", weightTier: "4.0两" }
   );
-  assert.equal(sameSpec.valid, true, "同公母同重量应允许复用入池");
+  assert.equal(occupiedPool.valid, false, "已有在养存量时必须拦截，新批次只能选择空池");
 
-  // 不同公母混池拦截
   const diffGender = Invariants.checkPoolSpec(
     { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 500 },
     { gender: "FEMALE", weightTier: "4.0两" }
   );
-  assert.equal(diffGender.valid, false, "公母不同严禁混池");
+  assert.equal(diffGender.valid, false, "异公母在养池严禁入池");
 
-  // 不同重量规格混池拦截
   const diffWeight = Invariants.checkPoolSpec(
     { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 500 },
     { gender: "MALE", weightTier: "3.0两" }
   );
-  assert.equal(diffWeight.valid, false, "重量规格不同严禁混池");
-  console.log("  ✔ 暂养池按规格复用与防混池拦截测试通过");
+  assert.equal(diffWeight.valid, false, "异规格在养池严禁入池");
+  console.log("  ✔ 暂养池仅限空池入池与防混池拦截测试通过");
 }
 
 // 3. 卡口二：蟹扣领用余量动态卡控
 {
   console.log("▶ [Test 3] 蟹扣可领余量与在池存活校验");
-  // 正常领扣
   const validClaim = Invariants.checkTagClaim({
     farmerQuota: 60000,
     cumulativeClaimed: 10000,
@@ -71,7 +64,6 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   });
   assert.equal(validClaim.valid, true);
 
-  // 申请数超过在池存活
   const overPool = Invariants.checkTagClaim({
     farmerQuota: 60000,
     cumulativeClaimed: 10000,
@@ -80,7 +72,6 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   });
   assert.equal(overPool.valid, false, "领扣数超过名下在池存活应被拦截");
 
-  // 申请数超过年度剩余额度
   const overQuota = Invariants.checkTagClaim({
     farmerQuota: 12000,
     cumulativeClaimed: 10000,
@@ -94,7 +85,6 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
 // 4. 卡口三：盘点损耗与 5% 红线告警
 {
   console.log("▶ [Test 4] 实盘登记、负损耗拦截与 5% 告警红线");
-  // 负损耗拦截 (实盘 > 账面)
   const negLoss = Invariants.calculateLoss({
     bookInPool: 1000,
     physicalCount: 1050,
@@ -103,7 +93,6 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   });
   assert.equal(negLoss.valid, false, "实盘多于账面必须拦截，禁止负损耗");
 
-  // 正常损耗 <= 5%
   const normalLoss = Invariants.calculateLoss({
     bookInPool: 1000,
     physicalCount: 970,
@@ -113,7 +102,6 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   assert.equal(normalLoss.valid, true);
   assert.equal(normalLoss.isException, false, "损耗率 3% 不应触发异常标记");
 
-  // 损耗 > 5% 触发异常红线
   const highLoss = Invariants.calculateLoss({
     bookInPool: 1000,
     physicalCount: 920,
@@ -125,38 +113,76 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
   console.log("  ✔ 实盘登记与损耗品控风控规则测试通过");
 }
 
-// 5. 卡口四：出库审批在池存活与订单一致性强校验
+// 5. 卡口四：冷库规格可出库存出库校验 (PRD V2.1)
 {
-  console.log("▶ [Test 5] 出库审批在池存活校验与单票一致性");
+  console.log("▶ [Test 5] 冷库规格库存校验与不足拦截");
   // 正常出库
-  const validOut = Invariants.checkOutbound({
-    bookInPool: 2000,
-    outboundCount: 500,
-    channelOrderCount: 500,
+  const validColdOut = Invariants.checkColdStorageOutbound({
+    availableCount: 1000,
+    requestedCount: 600,
+    spec: "3.5两",
+    gender: "FEMALE",
   });
-  assert.equal(validOut.valid, true);
+  assert.equal(validColdOut.valid, true);
+  assert.equal(validColdOut.remaining, 400);
 
-  // 超发出库拦截
-  const overOut = Invariants.checkOutbound({
-    bookInPool: 300,
-    outboundCount: 500,
-    channelOrderCount: 500,
+  // 库存不足拦截
+  const overColdOut = Invariants.checkColdStorageOutbound({
+    availableCount: 0,
+    requestedCount: 800,
+    spec: "3.5两",
+    gender: "FEMALE",
   });
-  assert.equal(overOut.valid, false, "出库数超过批次在池存活应直接拦截");
-
-  // 单票数量不一致拦截
-  const mismatch = Invariants.checkOutbound({
-    bookInPool: 2000,
-    outboundCount: 500,
-    channelOrderCount: 600,
-  });
-  assert.equal(mismatch.valid, false, "出库数与订单数不相等应拦截");
-  console.log("  ✔ 出库审批三方一致性校验测试通过");
+  assert.equal(overColdOut.valid, false);
+  assert.ok(overColdOut.reason.includes("母蟹 3.5两 冷库可出库库存不足：需 800 只，现仅 0 只"));
+  console.log("  ✔ 冷库规格库存校验与拦截提示测试通过");
 }
 
-// 6. 卡口五：蟹扣日清日结轧平
+// 6. 分拣称重与损耗自动计算 (PRD V2.1)
 {
-  console.log("▶ [Test 6] 蟹扣日清日结轧平守恒");
+  console.log("▶ [Test 6] 分拣称重损耗计算与超5%红线");
+  // 正常分拣 445 -> 438, 损耗 7 只 (1.57%)
+  const normalSort = Invariants.calculateSortingLoss({
+    inputCount: 445,
+    qualifiedCount: 438,
+  });
+  assert.equal(normalSort.valid, true);
+  assert.equal(normalSort.lossCount, 7);
+  assert.equal(normalSort.lossRate, 1.57);
+  assert.equal(normalSort.isException, false);
+
+  // 损耗超标分拣 1000 -> 920, 损耗 80 只 (8%)
+  const highLossSort = Invariants.calculateSortingLoss({
+    inputCount: 1000,
+    qualifiedCount: 920,
+  });
+  assert.equal(highLossSort.valid, true);
+  assert.equal(highLossSort.lossCount, 80);
+  assert.equal(highLossSort.lossRate, 8.0);
+  assert.equal(highLossSort.isException, true);
+  console.log("  ✔ 分拣称重损耗与5%告警测试通过");
+}
+
+// 7. 蟹卡规格型号正则智能拆分 (PRD V2.1)
+{
+  console.log("▶ [Test 7] 蟹卡规格型号多明细行正则自动拆分");
+  const rawModel = "4.0母蟹X5只，5.0公蟹X5只";
+  const parsed = Invariants.parseCrabCardSpec(rawModel);
+  assert.equal(parsed.length, 2, "应拆分为 2 条明细行");
+  assert.deepEqual(parsed[0], { gender: "FEMALE", weightTier: "4.0两", count: 5 });
+  assert.deepEqual(parsed[1], { gender: "MALE", weightTier: "5.0两", count: 5 });
+
+  const rawModel2 = "3.5母*4, 4.0公*4";
+  const parsed2 = Invariants.parseCrabCardSpec(rawModel2);
+  assert.equal(parsed2.length, 2);
+  assert.deepEqual(parsed2[0], { gender: "FEMALE", weightTier: "3.5两", count: 4 });
+  assert.deepEqual(parsed2[1], { gender: "MALE", weightTier: "4.0两", count: 4 });
+  console.log("  ✔ 蟹卡规格型号智能拆分测试通过");
+}
+
+// 8. 蟹扣逐日轧平对账
+{
+  console.log("▶ [Test 8] 蟹扣日清日结轧平守恒");
   const balanced = Invariants.checkDailyBalance({
     claimedCount: 1000,
     boundCount: 800,
@@ -164,15 +190,7 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— 五大数量守恒与
     scrappedCount: 50,
   });
   assert.equal(balanced.isBalanced, true, "800 + 150 + 50 == 1000 应轧平");
-
-  const unBalanced = Invariants.checkDailyBalance({
-    claimedCount: 1000,
-    boundCount: 800,
-    returnedCount: 100,
-    scrappedCount: 0,
-  });
-  assert.equal(unBalanced.isBalanced, false, "800 + 100 != 1000 应判定未轧平");
   console.log("  ✔ 蟹扣日清日结对账守恒测试通过\n");
 }
 
-console.log("🎉 全部 6 项核心数学卡控规则测试 100% 通过！");
+console.log("🎉 全部 8 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");

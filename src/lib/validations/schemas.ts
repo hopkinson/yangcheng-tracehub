@@ -16,9 +16,8 @@ export const positiveInt = (fieldName = "数量") =>
  */
 export const farmerFormSchema = z.object({
   name: z.string().trim().min(2, "养殖户姓名至少 2 个字符").max(20, "姓名不能超过 20 个字符"),
-  farmType: z.enum(["LAKE_CRAB", "POND_CRAB"], {
-    errorMap: () => ({ message: "请选择养殖类型" }),
-  }),
+  phone: z.string().trim().optional(),
+  farmType: z.string().default("LAKE_CRAB"),
   creditRating: z.enum(["A", "B", "C"], {
     errorMap: () => ({ message: "请选择信用等级" }),
   }),
@@ -28,6 +27,8 @@ export const farmerFormSchema = z.object({
     .max(10000, "养殖面积数值过大，请核实"),
   enclosuresStr: z.string().trim().min(1, "请至少填写一个围网编号"),
   status: z.enum(["ACTIVE", "SUSPENDED"]).default("ACTIVE"),
+  contractName: z.string().trim().optional(),
+  contractUrl: z.string().trim().optional(),
 });
 export type FarmerFormValues = z.infer<typeof farmerFormSchema>;
 

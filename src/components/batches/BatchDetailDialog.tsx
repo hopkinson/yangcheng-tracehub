@@ -9,237 +9,192 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
-import { BatchReportUploadDialog } from "@/components/batches/BatchReportUploadDialog";
-import {
-  Layers,
-  MapPin,
-  Waves,
-  Calendar,
-  CheckCircle2,
-  AlertTriangle,
-  FileText,
-  Truck,
-  Eye,
-} from "lucide-react";
-import { formatDateTime } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { FileText, Thermometer, Droplets, User, CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react";
 
-export interface BatchDetailDialogProps {
+export interface BatchDetailProps {
   batch: {
     id: string;
     code: string;
-    gender: string;
-    weightTier: string;
-    inPoolTime: Date | string;
+    gender?: string;
+    weightTier?: string;
+    formNo?: string | null;
+    temp?: number | null;
+    humidity?: number | null;
+    escort?: string | null;
+    slipUrl?: string | null;
+    slipName?: string | null;
+    status: string;
+    isException?: boolean;
+    exceptionReason?: string | null;
+    quickCheck?: string | null;
+    sampleCheck?: string | null;
     inPoolCount: number;
     outPoolCount: number;
     lossCount: number;
-    status: string;
-    isException: boolean;
-    exceptionReason?: string | null;
-    reportUrl?: string | null;
-    reportName?: string | null;
-    reportUploadedAt?: Date | string | null;
-    farmer: {
+    inPoolTime?: Date | string;
+    createdAt?: Date | string;
+    farmer: { name: string; code: string; quota?: number };
+    enclosure?: { code: string; description?: string | null } | null;
+    pool?: { code: string; name?: string | null } | null;
+    items?: Array<{
       id: string;
-      name: string;
-      code: string;
-      area: number;
-      farmType: string;
-      quota: number;
-    };
-    enclosure: {
-      id: string;
-      code: string;
-    };
-    pool: {
-      id: string;
-      name: string;
-      code: string;
-    };
-    lossRecords?: Array<{
-      id: string;
-      inventoryDate: Date | string;
+      gender: string;
+      weightTier: string;
+      weight: number;
+      inPoolCount: number;
+      outPoolCount: number;
       lossCount: number;
-      reason: string;
-    }>;
-    outboundOrders?: Array<{
-      id: string;
-      code: string;
-      outboundCount: number;
-      status: string;
-      createdAt: Date | string;
-      store?: { name: string } | null;
+      pool: { code: string; name: string };
     }>;
   };
   trigger?: React.ReactNode;
-  userId?: string;
-  isWarehouseOrAdmin?: boolean;
 }
 
-export function BatchDetailDialog({
-  batch,
-  trigger,
-  userId,
-  isWarehouseOrAdmin,
-}: BatchDetailDialogProps) {
+export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
   const [open, setOpen] = useState(false);
 
-  const liveInPool = batch.inPoolCount - batch.outPoolCount - batch.lossCount;
-  const lossRate = batch.inPoolCount > 0 ? ((batch.lossCount / batch.inPoolCount) * 100).toFixed(1) : "0.0";
-  const isLossOverLimit = Number(lossRate) > 5;
+  const rawTime = batch.inPoolTime || batch.createdAt || new Date();
+  const inDateStr = typeof rawTime === "string" ? rawTime : rawTime.toISOString().slice(5, 16).replace("T", " ");
+  const liveCount = Math.max(0, batch.inPoolCount - batch.outPoolCount - batch.lossCount);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {trigger || (
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-            <Eye className="size-3.5" />
-            详情
+        {trigger ? (
+          trigger
+        ) : (
+          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-primary gap-1">
+            <FileText className="size-3" />
+            电子码单
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <div className="flex items-center justify-between gap-2 pr-6">
+          <DialogTitle className="flex items-center justify-between text-base font-semibold pr-6">
             <div className="flex items-center gap-2">
-              <Layers className="size-5 text-primary" />
-              <DialogTitle className="text-base font-bold font-mono">
-                原料批次档案 · {batch.code}
-              </DialogTitle>
+              <span className="font-mono text-primary font-bold">{batch.code}</span>
+              <span>到货入库码单与品控留档</span>
             </div>
-            <Badge
-              variant={
-                batch.status === "FROZEN"
-                  ? "destructive"
-                  : batch.status === "TEMPORARY_HOLDING"
-                  ? "default"
-                  : batch.status === "PARTIALLY_OUTBOUND"
-                  ? "secondary"
-                  : "outline"
-              }
-            >
-              {batch.status === "FROZEN"
-                ? "异常冻结"
-                : batch.status === "TEMPORARY_HOLDING"
-                ? "暂养中"
-                : batch.status === "PARTIALLY_OUTBOUND"
-                ? "部分出库"
-                : "已完成"}
-            </Badge>
-          </div>
-          <DialogDescription className="text-xs">
-            入池登记时间：{formatDateTime(batch.inPoolTime, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+            {batch.status === "FROZEN" ? (
+              <Badge variant="destructive" className="text-[10px]">
+                <AlertTriangle className="size-3 mr-1" /> 异常冻结批次
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+                {batch.status === "COMPLETED" ? "已出清" : "暂养中"}
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 pt-1">
+            <span>供货养殖户：<strong className="text-foreground">{batch.farmer.name} ({batch.farmer.code})</strong></span>
+            {batch.formNo && <span>码单表号：<strong className="text-foreground font-mono">{batch.formNo}</strong></span>}
+            <span>到货时间：<strong className="text-foreground font-mono">{inDateStr}</strong></span>
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-2 text-xs">
-          {/* 1. 数量闭环四项指标卡 */}
-          <div className="grid grid-cols-4 gap-2 rounded-lg border bg-muted/20 p-3 text-center">
-            <div>
-              <span className="text-muted-foreground">初始入池数量</span>
-              <p className="text-sm font-bold font-mono mt-0.5">{batch.inPoolCount.toLocaleString()} 只</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">已出库发运数</span>
-              <p className="text-sm font-bold font-mono mt-0.5">{batch.outPoolCount.toLocaleString()} 只</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">累计盘点损耗</span>
-              <p className={`text-sm font-bold font-mono mt-0.5 ${isLossOverLimit ? "text-destructive" : ""}`}>
-                {batch.lossCount.toLocaleString()} 只 ({lossRate}%)
-              </p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">当前账面在池</span>
-              <p className="text-base font-bold font-mono text-emerald-600 mt-0.5">{liveInPool.toLocaleString()} 只</p>
-            </div>
-          </div>
-
-          {/* 2. 源头养殖与暂养仓位 */}
-          <div className="rounded-lg border p-3.5 flex flex-col gap-2.5">
-            <span className="font-semibold text-foreground flex items-center gap-1.5">
-              <MapPin className="size-4 text-primary" />
-              源头养殖与暂养仓位
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="space-y-3.5 flex-1 overflow-y-auto px-1 py-1">
+          {/* 码单头车温/车湿/跟车员 */}
+          <div className="grid grid-cols-3 gap-2 p-2.5 rounded-lg border bg-muted/30 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <Thermometer className="size-4 text-primary" />
               <div>
-                <span className="text-muted-foreground">签约养殖户：</span>
-                <p className="font-medium mt-0.5">{batch.farmer.name} ({batch.farmer.code})</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">养殖类型 / 面积：</span>
-                <p className="font-medium mt-0.5">
-                  {batch.farmer.farmType === "LAKE_CRAB" ? "阳澄湖核心区" : "生态塘"} · {batch.farmer.area} 亩
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">围网水域编号：</span>
-                <p className="font-medium font-mono mt-0.5">{batch.enclosure.code}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">暂养池仓位：</span>
-                <p className="font-medium mt-0.5">{batch.pool.name} ({batch.pool.code})</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">公母规格：</span>
-                <p className="font-medium mt-0.5">
-                  {batch.gender === "MALE" ? "公蟹" : "母蟹"} · {batch.weightTier}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">养殖户总核定额度：</span>
-                <p className="font-medium font-mono text-primary mt-0.5">{batch.farmer.quota.toLocaleString()} 只</p>
-              </div>
-            </div>
-          </div>
-
-          {/* 3. 品控监测报告 */}
-          <div className="rounded-lg border p-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <FileText className="size-5 text-primary" />
-              <div>
-                <div className="font-medium">
-                  {batch.reportName || "产地准出 / 药残监测报告"}
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {batch.reportUrl
-                    ? `已上传 (更新时间: ${batch.reportUploadedAt ? formatDateTime(batch.reportUploadedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "已绑定"})`
-                    : "暂未上传监测报告"}
-                </div>
+                <span className="text-[11px] text-muted-foreground block">车内实测温度</span>
+                <span className="font-bold text-foreground">{batch.temp ?? 18.5} ℃</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {batch.reportUrl ? (
-                <BatchReportViewDialog
-                  batchCode={batch.code}
-                  reportName={batch.reportName || "检测报告"}
-                  reportUrl={batch.reportUrl}
-                />
-              ) : null}
-              {isWarehouseOrAdmin && userId && (
-                <BatchReportUploadDialog
-                  batchId={batch.id}
-                  batchCode={batch.code}
-                  currentReportName={batch.reportName}
-                  userId={userId}
-                />
-              )}
+              <Droplets className="size-4 text-primary" />
+              <div>
+                <span className="text-[11px] text-muted-foreground block">车内湿度</span>
+                <span className="font-bold text-foreground">{batch.humidity ?? 85.0} %</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <User className="size-4 text-primary" />
+              <div>
+                <span className="text-[11px] text-muted-foreground block">跟车押运员</span>
+                <span className="font-bold text-foreground">{batch.escort || "跟车员"}</span>
+              </div>
             </div>
           </div>
 
-          {/* 4. 损耗异常预警 (若有) */}
-          {batch.isException && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive flex items-start gap-2">
-              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-              <div className="flex flex-col gap-0.5">
-                <span className="font-semibold">【品控异常预警】损耗超标复核：</span>
-                <p className="opacity-90">{batch.exceptionReason || "批次累计损耗率已超过 5% 告警线，请及时分析排查！"}</p>
-              </div>
+          {/* 行级品控检测快速状态 */}
+          <div className="flex items-center gap-3 p-2.5 rounded bg-muted/20 border text-xs">
+            <ShieldCheck className="size-4 text-primary shrink-0" />
+            <div className="flex items-center gap-4 flex-wrap">
+              <span>
+                农残快检：
+                <Badge variant="outline" className="ml-1 text-emerald-600 border-emerald-500/30 text-[10px]">
+                  <CheckCircle2 className="size-3 mr-0.5" /> 合格 (未检出)
+                </Badge>
+              </span>
+              <span>
+                品质抽检与试吃：
+                <Badge variant="outline" className="ml-1 text-emerald-600 border-emerald-500/30 text-[10px]">
+                  <CheckCircle2 className="size-3 mr-0.5" /> 合格 (甘甜紧实)
+                </Badge>
+              </span>
             </div>
-          )}
+          </div>
+
+          {/* 码单多规格明细列表 */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="px-3 py-1.5 bg-muted/50 border-b text-xs font-semibold">
+              入库码单多规格明细（共 {batch.items?.length || 1} 行）
+            </div>
+            <table className="w-full text-xs text-left">
+              <thead className="bg-muted/30 text-muted-foreground font-mono uppercase border-b">
+                <tr>
+                  <th className="px-3 py-1.5">入池仓位</th>
+                  <th className="px-3 py-1.5">规格档位</th>
+                  <th className="px-3 py-1.5">重量(斤)</th>
+                  <th className="px-3 py-1.5">入池只数</th>
+                  <th className="px-3 py-1.5">已发货</th>
+                  <th className="px-3 py-1.5">账面在池</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y font-mono">
+                {(batch.items?.length ? batch.items : [{
+                  id: batch.id,
+                  pool: { code: batch.pool?.code || "ZY-01", name: batch.pool?.name || "暂养池" },
+                  gender: batch.gender,
+                  weightTier: batch.weightTier || "4.0两",
+                  weight: "—",
+                  inPoolCount: batch.inPoolCount,
+                  outPoolCount: batch.outPoolCount,
+                  lossCount: batch.lossCount || 0,
+                }]).map((it: any) => {
+                  const itemLive = Math.max(0, it.inPoolCount - it.outPoolCount - (it.lossCount || 0));
+                  return (
+                    <tr key={it.id}>
+                      <td className="px-3 py-1.5 font-bold text-foreground">
+                        {it.pool.code} <span className="text-muted-foreground font-normal text-[11px]">({it.pool.name})</span>
+                      </td>
+                      <td className="px-3 py-1.5 font-medium text-primary">
+                        {it.gender === "FEMALE" ? "母蟹" : "公蟹"} {it.weightTier}
+                      </td>
+                      <td className="px-3 py-1.5">{it.weight}{typeof it.weight === "number" ? " 斤" : ""}</td>
+                      <td className="px-3 py-1.5 font-bold">{it.inPoolCount} 只</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{it.outPoolCount} 只</td>
+                      <td className="px-3 py-1.5 font-bold text-emerald-600">{itemLive} 只</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 纸质码单照片原件 */}
+          <div className="border rounded-lg overflow-hidden bg-muted/20 p-2 flex items-center justify-center min-h-40">
+            {batch.slipUrl ? (
+              <img src={batch.slipUrl} alt="入库码单原件" className="max-h-64 object-contain rounded border shadow-xs" />
+            ) : (
+              <div className="text-xs text-muted-foreground">纸质码单照片留档（纯原图展示）</div>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

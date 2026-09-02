@@ -37,56 +37,55 @@ export default async function UsersPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">用户管理</h1>
-          <p className="text-xs text-muted-foreground">系统账号维护与角色权限配置</p>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">角色与权限</h1>
         </div>
       </div>
 
       {/* 统计指标卡片 */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">总注册用户</CardTitle>
-            <Users className="size-4 text-muted-foreground" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">总注册用户</CardTitle>
+            <Users className="size-3.5 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.length} 位</div>
-            <p className="text-xs text-muted-foreground">涵盖 5 大系统角色</p>
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono">{users.length} 位</div>
+            <p className="text-[11px] text-muted-foreground mt-0.5">涵盖 5 大系统角色</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">品控与审核主管</CardTitle>
-            <CheckSquare className="size-4 text-amber-600" />
+        <Card className="border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">品控与审核主管</CardTitle>
+            <CheckSquare className="size-3.5 text-amber-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{(counts.QA_DIRECTOR || 0) + (counts.ADMIN || 0)} 位</div>
-            <p className="text-xs text-muted-foreground">{counts.QA_DIRECTOR || 0} 位品控 + {counts.ADMIN || 0} 位管理员</p>
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono">{(counts.QA_DIRECTOR || 0) + (counts.ADMIN || 0)} 位</div>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{counts.QA_DIRECTOR || 0} 品控 + {counts.ADMIN || 0} 管理员</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">一线仓储与运营</CardTitle>
-            <Shield className="size-4 text-blue-600" />
+        <Card className="border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">一线仓储与运营</CardTitle>
+            <Shield className="size-3.5 text-blue-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{counts.WAREHOUSE_ADMIN || 0} 位</div>
-            <p className="text-xs text-muted-foreground">负责批次入池与打包出库</p>
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono">{counts.WAREHOUSE_ADMIN || 0} 位</div>
+            <p className="text-[11px] text-muted-foreground mt-0.5">负责批次入池与打包出库</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">渠道只读审计人员</CardTitle>
-            <Store className="size-4 text-cyan-600" />
+        <Card className="border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">渠道只读审计人员</CardTitle>
+            <Store className="size-3.5 text-cyan-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{counts.CHANNEL_VIEWER || 0} 位</div>
-            <p className="text-xs text-muted-foreground">覆盖 {channels.length} 个合作销售渠道</p>
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono">{counts.CHANNEL_VIEWER || 0} 位</div>
+            <p className="text-[11px] text-muted-foreground mt-0.5">覆盖 {channels.length} 个合作销售渠道</p>
           </CardContent>
         </Card>
       </div>

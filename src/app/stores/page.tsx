@@ -49,11 +49,8 @@ export default async function StoresPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">门店档案</h1>
-          <p className="text-xs text-muted-foreground">销售渠道与零售门店信息维护</p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">门店档案</h1>
         {isWarehouseOrAdmin && (
           <div className="flex items-center gap-2">
             <ChannelManagerDialog channels={channels} userId={currentUserId} />
@@ -71,7 +68,8 @@ export default async function StoresPage({
                   <TableHead>门店编号</TableHead>
                   <TableHead>门店全称</TableHead>
                   <TableHead>所属渠道</TableHead>
-                  <TableHead>历史出库记录数</TableHead>
+                  <TableHead>累计出库单数</TableHead>
+                  <TableHead>累计出库量</TableHead>
                   <TableHead>运营状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -79,37 +77,56 @@ export default async function StoresPage({
               <TableBody>
                 {stores.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                       暂无门店档案，请点击右上角新增
                     </TableCell>
                   </TableRow>
                 ) : (
-                  stores.map((store) => (
-                    <TableRow key={store.id}>
-                      <TableCell className="font-mono font-medium">{store.code}</TableCell>
-                      <TableCell className="font-semibold">{store.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{store.channel.name}</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono">
-                        {store.outboundOrders.length > 0 ? (
-                          <span className="font-medium text-primary">{store.outboundOrders.length} 笔订单</span>
-                        ) : (
-                          <span className="text-muted-foreground">0 笔</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={store.isActive ? "default" : "secondary"}>
-                          {store.isActive ? "正常运营" : "已停用"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isWarehouseOrAdmin && (
-                          <StoreDialog store={store} channels={channels} userId={currentUserId} />
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  stores.map((store) => {
+                    const totalOutboundCount = store.outboundOrders.reduce((sum, o) => sum + o.outboundCount, 0);
+                    return (
+                      <TableRow key={store.id}>
+                        <TableCell className="font-mono font-medium">{store.code}</TableCell>
+                        <TableCell className="font-semibold">{store.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{store.channel.name}</Badge>
+                        </TableCell>
+                        <TableCell className="font-mono">
+                          {store.outboundOrders.length > 0 ? (
+                            <span className="font-medium text-primary">{store.outboundOrders.length} 笔</span>
+                          ) : (
+                            <span className="text-muted-foreground">0 笔</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono">
+                          {totalOutboundCount > 0 ? (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                              {totalOutboundCount.toLocaleString()} 只
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">0 只</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={store.isActive ? "default" : "secondary"}>
+                            {store.isActive ? "正常运营" : "已停用"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isWarehouseOrAdmin && (
+                            <StoreDialog
+                              store={{
+                                ...store,
+                                hasOutboundOrders: store.outboundOrders.length > 0,
+                              }}
+                              channels={channels}
+                              userId={currentUserId}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

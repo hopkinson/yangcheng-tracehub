@@ -3,7 +3,6 @@
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
-import { deleteFileFromStorage } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
 
@@ -58,17 +57,22 @@ export async function createBatchAction(data: {
 
     const pool = await tx.holdingPool.findUniqueOrThrow({
       where: { id: data.poolId },
-      include: { batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
+      include: {
+        batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+        batchItems: { where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
+      },
     });
 
-    const activeInPool = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
+    const directLive = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
+    const itemLive = pool.batchItems.reduce((sum, bi) => sum + (bi.inPoolCount - bi.outPoolCount - bi.lossCount), 0);
+    const activeInPool = Math.max(directLive, itemLive);
     const poolCheck = Invariants.checkPoolSpec(
       { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
       { gender: data.gender, weightTier: data.weightTier }
     );
 
     if (!poolCheck.valid) {
-      throw new Error(poolCheck.reason);
+      throw new Error(`${pool.code} ${pool.name} ${poolCheck.reason}`);
     }
 
     if (poolCheck.requiresBinding) {
@@ -99,6 +103,17 @@ export async function createBatchAction(data: {
         reportUrl: data.reportUrl || null,
         reportName: data.reportName || null,
         reportUploadedAt: data.reportUrl ? new Date() : null,
+        items: {
+          create: [
+            {
+              poolId: data.poolId,
+              gender: data.gender,
+              weightTier: data.weightTier,
+              weight: Number((data.inPoolCount * 0.3).toFixed(1)),
+              inPoolCount: data.inPoolCount,
+            },
+          ],
+        },
       },
     });
 
@@ -121,87 +136,137 @@ export async function createBatchAction(data: {
   });
 }
 
-export async function uploadBatchReportAction(data: {
-  batchId: string;
-  reportUrl: string;
-  reportName: string;
-  userId: string;
+export async function createMultiSpecBatchAction(data: {
+  farmerId: string;
+  enclosureId: string;
+  formNo?: string;
+  temp?: number;
+  humidity?: number;
+  escort?: string;
+  slipUrl?: string;
+  slipName?: string;
+  items: Array<{
+    poolId: string;
+    gender: string;
+    weightTier: string;
+    weight: number;
+    inPoolCount: number;
+  }>;
+  createdById: string;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const prevBatch = await prisma.batch.findUnique({
-    where: { id: data.batchId },
-    select: { reportUrl: true },
+  return await prisma.$transaction(async (tx) => {
+    const farmer = await tx.farmer.findUniqueOrThrow({
+      where: { id: data.farmerId },
+      include: { batches: true },
+    });
+
+    if (farmer.status !== "ACTIVE") {
+      throw new Error("该养殖户合作状态异常，禁止入池登记");
+    }
+
+    const totalBatchCount = data.items.reduce((sum, it) => sum + it.inPoolCount, 0);
+    const cumulativeInPool = farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
+    const quotaCheck = Invariants.checkQuota({
+      annualQuota: farmer.quota,
+      cumulativeInPool,
+      newBatchCount: totalBatchCount,
+    });
+
+    if (!quotaCheck.valid) {
+      throw new Error(`超出年度额度: 当年已入池 ${cumulativeInPool} 只，本批 ${totalBatchCount} 只，总额度 ${farmer.quota} 只（超 ${quotaCheck.excess} 只）`);
+    }
+
+    // 校验每个明细行入池规则：必须分配到空暂养池且同单不得重复分配同一池
+    const usedPoolIds = new Set<string>();
+    for (let i = 0; i < data.items.length; i++) {
+      const it = data.items[i];
+      if (usedPoolIds.has(it.poolId)) {
+        throw new Error(`码单明细分配冲突：同一码单不同规格行必须分别存入不同的空暂养池，暂养池不可重复选择！`);
+      }
+      usedPoolIds.add(it.poolId);
+
+      const pool = await tx.holdingPool.findUniqueOrThrow({
+        where: { id: it.poolId },
+        include: {
+          batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+          batchItems: { where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
+        },
+      });
+      const directLive = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
+      const itemLive = pool.batchItems.reduce((sum, bi) => sum + (bi.inPoolCount - bi.outPoolCount - bi.lossCount), 0);
+      const activeInPool = Math.max(directLive, itemLive);
+      const poolCheck = Invariants.checkPoolSpec(
+        { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
+        { gender: it.gender, weightTier: it.weightTier }
+      );
+      if (!poolCheck.valid) {
+        throw new Error(`${pool.code} ${pool.name} ${poolCheck.reason}`);
+      }
+
+      await tx.holdingPool.update({
+        where: { id: pool.id },
+        data: { currentGender: it.gender, currentWeightTier: it.weightTier },
+      });
+    }
+
+    const dateStr = getBeijingDateStr();
+    const countToday = await tx.batch.count();
+    const batchCode = `YL${dateStr}${String(countToday + 1).padStart(2, "0")}`;
+
+    const firstItem = data.items[0];
+
+    const batch = await tx.batch.create({
+      data: {
+        code: batchCode,
+        farmerId: data.farmerId,
+        enclosureId: data.enclosureId,
+        poolId: firstItem ? firstItem.poolId : "",
+        gender: firstItem ? firstItem.gender : "MALE",
+        weightTier: firstItem ? firstItem.weightTier : "4.0两",
+        formNo: data.formNo || "YCGF-PZZX-202603",
+        temp: data.temp || 18.5,
+        humidity: data.humidity || 85.0,
+        escort: data.escort || "跟车员",
+        slipUrl: data.slipUrl || null,
+        slipName: data.slipName || null,
+        quickCheck: "QUALIFIED",
+        sampleCheck: "QUALIFIED",
+        inPoolCount: totalBatchCount,
+        createdById: data.createdById,
+        items: {
+          create: data.items.map((it) => ({
+            poolId: it.poolId,
+            gender: it.gender,
+            weightTier: it.weightTier,
+            weight: it.weight,
+            inPoolCount: it.inPoolCount,
+          })),
+        },
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: data.createdById,
+        action: "MULTI_SPEC_BATCH_INTAKE",
+        entityType: "BATCH",
+        entityId: batch.id,
+        details: JSON.stringify({ batchCode, totalBatchCount, formNo: data.formNo, itemsCount: data.items.length }),
+      },
+    });
+
+    try {
+      revalidatePath("/batches");
+      revalidatePath("/pools");
+      revalidatePath("/ledgers");
+      revalidatePath("/");
+    } catch {}
+
+    return batch;
   });
-
-  const batch = await prisma.batch.update({
-    where: { id: data.batchId },
-    data: {
-      reportUrl: data.reportUrl,
-      reportName: data.reportName,
-      reportUploadedAt: new Date(),
-    },
-  });
-
-  if (prevBatch?.reportUrl && prevBatch.reportUrl !== data.reportUrl) {
-    await deleteFileFromStorage(prevBatch.reportUrl);
-  }
-
-  await prisma.auditLog.create({
-    data: {
-      operatorId: data.userId,
-      action: "BATCH_REPORT_UPLOAD",
-      entityType: "BATCH",
-      entityId: batch.id,
-      details: JSON.stringify({ batchCode: batch.code, reportName: data.reportName }),
-    },
-  });
-
-  try {
-    revalidatePath("/batches");
-    revalidatePath("/ledgers");
-  } catch {}
-  return batch;
 }
 
-export async function deleteBatchReportAction(data: {
-  batchId: string;
-  userId: string;
-}) {
-  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const batch = await prisma.batch.findUniqueOrThrow({
-    where: { id: data.batchId },
-    select: { id: true, code: true, reportUrl: true, reportName: true },
-  });
-
-  if (batch.reportUrl) {
-    await deleteFileFromStorage(batch.reportUrl);
-  }
-
-  const updated = await prisma.batch.update({
-    where: { id: data.batchId },
-    data: {
-      reportUrl: null,
-      reportName: null,
-      reportUploadedAt: null,
-    },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      operatorId: data.userId,
-      action: "BATCH_REPORT_DELETE",
-      entityType: "BATCH",
-      entityId: batch.id,
-      details: JSON.stringify({ batchCode: batch.code, prevReportName: batch.reportName }),
-    },
-  });
-
-  try {
-    revalidatePath("/batches");
-    revalidatePath("/ledgers");
-  } catch {}
-  return updated;
-}
 
 export async function registerLossAction(data: {
   batchId: string;

@@ -19,6 +19,10 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  ShoppingBag,
+  Scale,
+  ThermometerSnowflake,
+  PackageCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,6 +47,13 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/", label: "总览看板", icon: Building2 },
       { href: "/approvals", label: "审批中心", icon: CheckSquare },
+      { href: "/trace", label: "追溯查询", icon: FileSearch },
+    ],
+  },
+  {
+    title: "订单",
+    items: [
+      { href: "/orders", label: "订单管理", icon: ShoppingBag },
     ],
   },
   {
@@ -50,7 +61,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/batches", label: "原料批次", icon: Layers },
       { href: "/pools", label: "暂养监控", icon: Waves },
-      { href: "/tags", label: "蟹扣管理", icon: Tag },
+      { href: "/bundling", label: "捆扎管理", icon: PackageCheck },
+      { href: "/sorting", label: "分拣称重", icon: Scale },
+      { href: "/cold-storage", label: "保鲜预冷", icon: ThermometerSnowflake },
       { href: "/outbound", label: "出库管理", icon: Truck },
     ],
   },
@@ -58,23 +71,19 @@ const NAV_GROUPS: NavGroup[] = [
     title: "档案与台账",
     items: [
       { href: "/farmers", label: "养殖档案", icon: Users },
+      { href: "/tags", label: "蟹扣管理", icon: Tag },
       { href: "/stores", label: "门店档案", icon: Store },
       { href: "/ledgers", label: "合规台账", icon: BookOpen },
-      { href: "/trace", label: "追溯查询", icon: FileSearch },
-    ],
-  },
-  {
-    title: "系统设置",
-    items: [
-      { href: "/users", label: "用户管理", icon: UserCog },
+      { href: "/users", label: "角色与权限", icon: UserCog },
     ],
   },
 ];
 
+const PROD_ROUTES = ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/stores", "/tags", "/outbound", "/ledgers", "/trace"];
 const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
-  QA_DIRECTOR: ["/", "/batches", "/pools", "/stores", "/tags", "/outbound", "/approvals", "/ledgers", "/trace"],
-  WAREHOUSE_ADMIN: ["/", "/batches", "/pools", "/stores", "/tags", "/outbound", "/ledgers", "/trace"],
-  FARMER_ADMIN: ["/", "/farmers", "/ledgers", "/trace"],
+  QA_DIRECTOR: [...PROD_ROUTES, "/approvals"],
+  WAREHOUSE_ADMIN: PROD_ROUTES,
+  FARMER_ADMIN: ["/", "/farmers", "/tags", "/ledgers", "/trace", "/approvals"],
   CHANNEL_VIEWER: ["/", "/trace"],
 };
 

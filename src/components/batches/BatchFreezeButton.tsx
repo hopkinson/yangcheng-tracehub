@@ -9,6 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,11 +22,13 @@ export function BatchFreezeButton({
   batchCode,
   isFrozen,
   userId,
+  trigger,
 }: {
   batchId: string;
   batchCode: string;
   isFrozen: boolean;
   userId: string;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -52,33 +55,37 @@ export function BatchFreezeButton({
   }
 
   return (
-    <>
-      <Button
-        variant={isFrozen ? "default" : "outline"}
-        size="sm"
-        className={
-          isFrozen
-            ? "h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-            : "h-7 text-xs gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
-        }
-        disabled={loading}
-        onClick={() => setOpen(true)}
-      >
-        {isFrozen ? (
-          <>
-            <ShieldCheck className="size-3" />
-            解冻批次
-          </>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {trigger ? (
+          trigger
         ) : (
-          <>
-            <ShieldAlert className="size-3" />
-            冻结批次
-          </>
+          <Button
+            variant={isFrozen ? "default" : "outline"}
+            size="sm"
+            className={
+              isFrozen
+                ? "h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                : "h-7 text-xs gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
+            }
+            disabled={loading}
+          >
+            {isFrozen ? (
+              <>
+                <ShieldCheck className="size-3" />
+                解冻批次
+              </>
+            ) : (
+              <>
+                <ShieldAlert className="size-3" />
+                冻结批次
+              </>
+            )}
+          </Button>
         )}
-      </Button>
+      </DialogTrigger>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <div className="flex items-center gap-2">
               {isFrozen ? (
@@ -139,7 +146,6 @@ export function BatchFreezeButton({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   );
 }
 

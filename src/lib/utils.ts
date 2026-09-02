@@ -49,16 +49,7 @@ export function formatTime(
 export function formatISODate(date: Date | string | number = new Date()): string {
   const d = typeof date === "object" ? date : new Date(date);
   if (isNaN(d.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d);
-  const y = parts.find((p) => p.type === "year")?.value || "";
-  const m = parts.find((p) => p.type === "month")?.value || "";
-  const day = parts.find((p) => p.type === "day")?.value || "";
-  return `${y}-${m}-${day}`;
+  return d.toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" });
 }
 
 export function formatISOMonth(date: Date | string | number = new Date()): string {

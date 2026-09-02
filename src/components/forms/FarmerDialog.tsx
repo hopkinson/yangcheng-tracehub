@@ -23,16 +23,21 @@ interface FarmerData {
   quota?: number;
   creditRating: string;
   status: string;
+  contractName?: string | null;
+  contractUrl?: string | null;
   enclosures: Array<{ id: string; code: string }>;
 }
 
 const getFarmerValues = (farmer?: FarmerData): FarmerFormValues => ({
   name: farmer?.name || "",
+  phone: farmer?.phone || "",
   farmType: (farmer?.farmType as "LAKE_CRAB" | "POND_CRAB") || "LAKE_CRAB",
   area: farmer?.area ?? 10,
   creditRating: (farmer?.creditRating as "A" | "B" | "C") || "A",
   status: (farmer?.status as "ACTIVE" | "SUSPENDED") || "ACTIVE",
   enclosuresStr: farmer?.enclosures?.map((e) => e.code).join(", ") || "W-01",
+  contractName: farmer?.contractName || "",
+  contractUrl: farmer?.contractUrl || "",
 });
 
 export interface FarmerWithStats extends FarmerData {
@@ -100,21 +105,25 @@ export function FarmerDialog({
         await updateFarmerAction({
           id: farmer.id,
           name: data.name,
-          farmType: data.farmType,
+          phone: data.phone,
           area: Number(data.area),
           creditRating: data.creditRating,
           status: data.status,
           enclosureCodes,
+          contractName: data.contractName,
+          contractUrl: data.contractUrl,
           userId,
         });
         toast.success("养殖户档案及额度更新成功！");
       } else {
         await createFarmerAction({
           name: data.name,
-          farmType: data.farmType,
+          phone: data.phone,
           area: Number(data.area),
           creditRating: data.creditRating,
           enclosureCodes,
+          contractName: data.contractName,
+          contractUrl: data.contractUrl,
           userId,
         });
         toast.success("签约养殖户建档成功！");
@@ -173,21 +182,13 @@ export function FarmerDialog({
 
               <FormField
                 control={form.control}
-                name="farmType"
+                name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>养殖类型</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="LAKE_CRAB">湖蟹</SelectItem>
-                        <SelectItem value="POND_CRAB">塘蟹</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>联系电话</FormLabel>
+                    <FormControl>
+                      <Input placeholder="如：13812345678" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -248,19 +249,12 @@ export function FarmerDialog({
               />
             </div>
 
-            <div className="rounded-md border bg-primary/5 p-3 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground font-medium">系统实时核定年度总额度:</span>
-              <span className="font-mono font-bold text-lg text-primary">
-                {calculatedQuota.toLocaleString()} 只
-              </span>
-            </div>
-
             <FormField
               control={form.control}
               name="enclosuresStr"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>名下围网水域编号 (逗号分隔)</FormLabel>
+                  <FormLabel>名下围网编号</FormLabel>
                   <FormControl>
                     <Input placeholder="如：W-01, W-02" {...field} />
                   </FormControl>
@@ -268,6 +262,43 @@ export function FarmerDialog({
                 </FormItem>
               )}
             />
+
+            <div className="rounded-md border bg-primary/5 p-3 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground font-medium">系统实时核定年度总额度:</span>
+              <span className="font-mono font-bold text-lg text-primary">
+                {calculatedQuota.toLocaleString()} 只
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="contractName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>养殖合同附件名称</FormLabel>
+                    <FormControl>
+                      <Input placeholder="如：2026年度合作协议.pdf" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="contractUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>合同附件链接 / 路径</FormLabel>
+                    <FormControl>
+                      <Input placeholder="如：/contracts/2026-001.pdf" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             {isEditing && (
               <FormField
@@ -367,6 +398,16 @@ export function FarmerDetailDialog({
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">合作状态</span>
               <span>{farmer.status === "ACTIVE" ? "合作中" : "暂停"}</span>
+            </div>
+            <div className="col-span-2 flex items-center justify-between border-t border-border/40 pt-2 text-xs">
+              <span className="text-muted-foreground">养殖合同附件</span>
+              {farmer.contractName ? (
+                <span className="font-medium text-primary hover:underline cursor-pointer">
+                  📄 {farmer.contractName}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">已归档 (标准养殖签约合同.pdf)</span>
+              )}
             </div>
           </div>
 

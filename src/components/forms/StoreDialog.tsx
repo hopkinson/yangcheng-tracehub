@@ -19,6 +19,7 @@ interface StoreData {
   name: string;
   channelId: string;
   isActive: boolean;
+  hasOutboundOrders?: boolean;
 }
 
 const getStoreValues = (store?: StoreData, firstChannelId = ""): StoreFormValues => ({
@@ -196,11 +197,12 @@ export function StoreDialog({
                   variant="destructive"
                   size="sm"
                   className="text-xs gap-1"
-                  disabled={loading}
+                  disabled={loading || store?.hasOutboundOrders}
                   onClick={handleDelete}
+                  title={store?.hasOutboundOrders ? "已有出库记录的门店不可删除，可设为停用" : "删除门店"}
                 >
                   <Trash2 className="size-3.5" />
-                  删除门店
+                  {store?.hasOutboundOrders ? "禁止删除(有出库记录)" : "删除门店"}
                 </Button>
               ) : (
                 <div />

@@ -32,5 +32,9 @@ Thumbs.db
 # Persistent Data
 /data/
 
+# Uploaded Files
+/public/uploads/*
+!/public/uploads/.gitkeep
+
 # Added by code-review-graph
 .code-review-graph/

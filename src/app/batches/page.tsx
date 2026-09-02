@@ -3,16 +3,13 @@ import { getCurrentUser } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { BatchIntakeDialog } from "@/components/forms/BatchIntakeDialog";
-import { LossRegisterDialog } from "@/components/forms/LossRegisterDialog";
-import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
-import { BatchReportUploadDialog } from "@/components/batches/BatchReportUploadDialog";
-import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
-import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
+import { MultiSpecIntakeDialog } from "@/components/batches/MultiSpecIntakeDialog";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
+import { BatchRowActions } from "@/components/batches/BatchRowActions";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import { StaggerContainer, FadeIn, PulseBadge } from "@/components/motion/MotionWrapper";
+import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import { cn } from "@/lib/utils";
+import { CheckCircle2, FileText } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +32,7 @@ export default async function BatchesPage({
         farmer: true,
         enclosure: true,
         pool: true,
+        items: { include: { pool: true } },
         lossRecords: {
           include: { inspector: true },
           orderBy: { createdAt: "desc" },
@@ -48,6 +46,9 @@ export default async function BatchesPage({
     }),
     prisma.holdingPool.findMany({
       where: { status: "ACTIVE" },
+      include: {
+        batchItems: true,
+      },
     }),
   ]);
 
@@ -56,92 +57,135 @@ export default async function BatchesPage({
   const isQaOrAdmin = currentUser?.role === "QA_DIRECTOR" || isAdmin;
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || isAdmin;
 
+  // 格式化养殖户剩余额度
+  const farmerOptions = farmers.map((f: any) => {
+    const cumulative = f.batches.reduce((sum: number, b: any) => sum + b.inPoolCount, 0);
+    return {
+      id: f.id,
+      name: f.name,
+      code: f.code,
+      quota: f.quota,
+      remainingQuota: Math.max(0, f.quota - cumulative),
+      status: f.status,
+      enclosures: f.enclosures.map((e: any) => ({ id: e.id, code: e.code, description: e.description })),
+    };
+  });
+
+  const poolOptions = pools.map((p: any) => {
+    const liveCount = p.batchItems?.reduce(
+      (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
+      0
+    ) || 0;
+    return {
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      currentGender: p.currentGender,
+      currentWeightTier: p.currentWeightTier,
+      liveCount,
+    };
+  });
+
   return (
     <StaggerContainer className="flex flex-col gap-6">
-      <FadeIn direction="down" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">原料批次</h1>
-          <p className="text-xs text-muted-foreground">活蟹批次入池登记与在池存活跟踪</p>
-        </div>
+      <FadeIn direction="down" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">原料批次</h1>
         {isWarehouseOrAdmin && (
-          <BatchIntakeDialog farmers={farmers} pools={pools} userId={currentUserId} isAdmin={isAdmin} />
+          <div className="flex items-center gap-2">
+            <MultiSpecIntakeDialog farmers={farmerOptions} pools={poolOptions} userId={currentUserId} />
+          </div>
         )}
       </FadeIn>
 
       <FadeIn>
         <Card>
           <CardContent>
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="w-[180px]">批次编号与规格</TableHead>
-                    <TableHead className="min-w-[180px]">来源养殖户与暂养池</TableHead>
-                    <TableHead className="min-w-[220px]">在池存活与流转水位</TableHead>
-                    <TableHead className="w-[140px]">累计损耗</TableHead>
-                    <TableHead className="w-[120px]">检测报告</TableHead>
+                    <TableHead className="w-[180px]">批次号 / 码单表号</TableHead>
+                    <TableHead className="min-w-[180px]">来源养殖户</TableHead>
+                    <TableHead className="min-w-[240px]">入库码单多规格明细</TableHead>
+                    <TableHead className="min-w-[180px]">在池存活与流转</TableHead>
+                    <TableHead className="w-[130px]">品控快检 / 抽检</TableHead>
                     <TableHead className="w-[110px]">批次状态</TableHead>
-                    <TableHead className="text-right w-[150px]">操作</TableHead>
+                    <TableHead className="text-right w-[160px]">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {batches.map((batch) => {
-                    const liveInPool = batch.inPoolCount - batch.outPoolCount - batch.lossCount;
+                  {batches.map((batch: any) => {
+                    const liveInPool = Math.max(0, batch.inPoolCount - batch.outPoolCount - batch.lossCount);
                     const livePct = batch.inPoolCount > 0 ? Math.min(100, Math.round((liveInPool / batch.inPoolCount) * 100)) : 0;
+                    const hasMultiItems = batch.items && batch.items.length > 0;
 
                     return (
                       <TableRow key={batch.id} className="hover:bg-muted/30 transition-colors">
-                        {/* 1. 批次与规格 */}
+                        {/* 1. 批次与码单 */}
                         <TableCell className="align-middle">
-                          <div className="flex flex-col gap-1 items-start">
+                          <div className="flex flex-col gap-0.5 items-start">
                             <BatchDetailDialog
                               batch={batch}
-                              userId={currentUserId}
-                              isWarehouseOrAdmin={isWarehouseOrAdmin}
                               trigger={
                                 <button
                                   type="button"
-                                  className="font-mono font-bold text-foreground hover:text-primary hover:underline cursor-pointer transition-colors text-left text-sm"
-                                  title="点击查看批次完整档案"
+                                  className="font-mono font-bold text-foreground text-sm hover:text-primary hover:underline transition-colors text-left cursor-pointer inline-flex items-center gap-1 group"
+                                  title="点击查阅电子入库码单与品控原件"
                                 >
-                                  {batch.code}
+                                  <span>{batch.code}</span>
+                                  <FileText className="size-3 text-muted-foreground group-hover:text-primary opacity-60 group-hover:opacity-100 transition-opacity" />
                                 </button>
                               }
                             />
-                            <div className="flex items-center gap-1">
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-muted/40 font-normal">
-                                {batch.gender === "MALE" ? "公蟹" : "母蟹"}
-                              </Badge>
-                              <span className="text-[11px] font-mono text-muted-foreground">{batch.weightTier}</span>
-                            </div>
+                            {batch.formNo && (
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                {batch.formNo}
+                              </span>
+                            )}
                           </div>
                         </TableCell>
 
-                        {/* 2. 来源与仓位 */}
+                        {/* 2. 来源养殖户 */}
                         <TableCell className="align-middle">
                           <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              <span className="text-sm font-semibold">{batch.farmer.name}</span>
-                              <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 border-primary/40 text-primary bg-primary/5">
-                                {batch.pool.code}
-                              </Badge>
-                            </div>
+                            <span className="text-sm font-semibold">{batch.farmer.name}</span>
                             <span className="text-[11px] font-mono text-muted-foreground">
-                              {batch.farmer.code} · {batch.enclosure.code}
+                              {batch.farmer.code} {batch.enclosure && `· ${batch.enclosure.code}`}
                             </span>
                           </div>
                         </TableCell>
 
-                        {/* 3. 在池存活与流转 */}
+                        {/* 3. 码单多规格明细 Chips */}
+                        <TableCell className="align-middle">
+                          {hasMultiItems ? (
+                            <div className="flex flex-wrap gap-1 max-w-[260px]">
+                              {batch.items.map((it: any) => (
+                                <span
+                                  key={it.id}
+                                  className="px-1.5 py-0.5 rounded bg-muted/80 text-[10px] font-mono border"
+                                >
+                                  {it.pool.code} ({it.gender === "FEMALE" ? "母" : "公"}{it.weightTier}) · {it.inPoolCount}只
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 font-mono text-xs">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                {batch.pool?.code || "ZY-01"}
+                              </Badge>
+                              <span>{batch.gender === "FEMALE" ? "母蟹" : "公蟹"} {batch.weightTier}</span>
+                              <span className="text-muted-foreground">({batch.inPoolCount}只)</span>
+                            </div>
+                          )}
+                        </TableCell>
+
+                        {/* 4. 在池存活与流转 */}
                         <TableCell className="align-middle">
                           <div className="flex flex-col gap-1.5 py-0.5">
                             <div className="flex items-baseline justify-between gap-2">
-                              <div className="flex items-baseline gap-1">
-                                <span className="font-mono font-bold text-base text-emerald-600 dark:text-emerald-400">
-                                  {liveInPool.toLocaleString()}
-                                </span>
-                                <span className="text-xs text-muted-foreground font-normal">只存活</span>
-                              </div>
+                              <span className="font-mono font-bold text-base text-emerald-600 dark:text-emerald-400">
+                                {liveInPool.toLocaleString()} 只
+                              </span>
                               <span className="text-[11px] font-mono text-muted-foreground">
                                 存活率 {livePct}%
                               </span>
@@ -156,42 +200,22 @@ export default async function BatchesPage({
                                 style={{ width: `${Math.max(4, Math.min(100, livePct))}%` }}
                               />
                             </div>
-
-                            <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
-                              <span>初始: {batch.inPoolCount.toLocaleString()}</span>
-                              <span>已出库: {batch.outPoolCount.toLocaleString()}</span>
-                            </div>
                           </div>
                         </TableCell>
 
-                        {/* 4. 累计损耗 */}
+                        {/* 5. 品控快检/抽检 */}
                         <TableCell className="align-middle">
-                          <BatchLossHistoryDialog batch={batch} />
-                        </TableCell>
-
-                        {/* 5. 检测报告 (独立列) */}
-                        <TableCell className="align-middle">
-                          <div className="flex items-center gap-1.5">
-                            {batch.reportUrl ? (
-                              <BatchReportViewDialog
-                                batchCode={batch.code}
-                                reportName={batch.reportName || "检测报告"}
-                                reportUrl={batch.reportUrl}
-                              />
-                            ) : isWarehouseOrAdmin ? (
-                              <BatchReportUploadDialog
-                                batchId={batch.id}
-                                batchCode={batch.code}
-                                currentReportName={batch.reportName}
-                                userId={currentUserId}
-                              />
-                            ) : (
-                              <span className="text-xs text-muted-foreground italic">未上传</span>
-                            )}
+                          <div className="flex flex-col gap-1 text-[11px]">
+                            <span className="flex items-center gap-1 text-emerald-600">
+                              <CheckCircle2 className="size-3" /> 农残快检合格
+                            </span>
+                            <span className="flex items-center gap-1 text-emerald-600">
+                              <CheckCircle2 className="size-3" /> 试吃抽检合格
+                            </span>
                           </div>
                         </TableCell>
 
-                        {/* 6. 批次状态 (独立列) */}
+                        {/* 6. 批次状态 */}
                         <TableCell className="align-middle">
                           {batch.status === "FROZEN" ? (
                             <Badge variant="destructive" className="font-normal text-xs py-0.5">
@@ -205,26 +229,19 @@ export default async function BatchesPage({
                             </Badge>
                           ) : (
                             <Badge variant={batch.status === "COMPLETED" ? "outline" : "secondary"} className="font-normal text-xs py-0.5">
-                              {batch.status === "PARTIALLY_OUTBOUND" ? "部分出库" : "已完成"}
+                              {batch.status === "PARTIALLY_OUTBOUND" ? "部分出库" : "已出清"}
                             </Badge>
                           )}
                         </TableCell>
 
                         {/* 7. 操作 */}
                         <TableCell className="text-right align-middle">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {batch.status !== "COMPLETED" && isWarehouseOrAdmin && (
-                              <LossRegisterDialog batch={batch} userId={currentUserId} />
-                            )}
-                            {batch.status !== "COMPLETED" && isQaOrAdmin && (
-                              <BatchFreezeButton
-                                batchId={batch.id}
-                                batchCode={batch.code}
-                                isFrozen={batch.status === "FROZEN"}
-                                userId={currentUserId}
-                              />
-                            )}
-                          </div>
+                          <BatchRowActions
+                            batch={batch}
+                            userId={currentUserId}
+                            isWarehouseOrAdmin={isWarehouseOrAdmin}
+                            isQaOrAdmin={isQaOrAdmin}
+                          />
                         </TableCell>
                       </TableRow>
                     );

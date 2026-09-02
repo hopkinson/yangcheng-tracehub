@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,10 +8,8 @@ import { TagApprovalButton, OutboundApprovalButton } from "@/components/forms/Ap
 import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
-import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import { Tag, Truck, AlertTriangle } from "lucide-react";
+import { Tag, Truck, AlertTriangle, CheckCircle2, Clock, ShieldCheck, UserCheck } from "lucide-react";
 import { cn, formatDateTime, formatDate, formatTime } from "@/lib/utils";
-
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -21,49 +19,27 @@ export default async function ApprovalsPage({
 }: {
   searchParams: Promise<{
     tab?: string;
-    tagsPage?: string;
-    tagsPageSize?: string;
-    tagsFilter?: string;
-    outboundPage?: string;
-    outboundPageSize?: string;
-    outboundFilter?: string;
+    type?: string;
   }>;
 }) {
   const [currentUser, params] = await Promise.all([
     getCurrentUser(),
     searchParams,
   ]);
-  const defaultTab = params.tab || "tags";
-  const tagsPage = Math.max(1, Number(params.tagsPage) || 1);
-  const tagsPageSize = Math.max(1, Number(params.tagsPageSize) || 10);
-  const outboundPage = Math.max(1, Number(params.outboundPage) || 1);
-  const outboundPageSize = Math.max(1, Number(params.outboundPageSize) || 10);
 
-  const tagsFilter = params.tagsFilter === "ALL" ? "ALL" : "PENDING";
-  const outboundFilter = params.outboundFilter === "ALL" ? "ALL" : "PENDING";
+  const activeTab = params.tab || "pending";
+  const typeFilter = params.type || "ALL"; // ALL | TAG | OUTBOUND
 
-  const tagsWhere = tagsFilter === "PENDING" ? { status: "PENDING" } : undefined;
-  const outboundWhere = outboundFilter === "PENDING" ? { status: "PENDING" } : undefined;
-
+  // 待审批查询
   const [
-    pendingTagClaimsCount,
-    totalTagClaims,
-    filteredTagClaimsCount,
-    tagClaims,
-    pendingOutboundCount,
-    totalOutboundOrders,
-    filteredOutboundCount,
-    outboundOrders,
-    exceptionBatchesCount,
+    pendingTagClaims,
+    pendingOutboundOrders,
+    processedTagClaims,
+    processedOutboundOrders,
     exceptionBatches,
   ] = await Promise.all([
-    prisma.tagClaim.count({ where: { status: "PENDING" } }),
-    prisma.tagClaim.count(),
-    prisma.tagClaim.count({ where: tagsWhere }),
     prisma.tagClaim.findMany({
-      where: tagsWhere,
-      skip: (tagsPage - 1) * tagsPageSize,
-      take: tagsPageSize,
+      where: { status: "PENDING" },
       include: {
         farmer: {
           include: {
@@ -75,27 +51,41 @@ export default async function ApprovalsPage({
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.outboundOrder.count({ where: { status: "PENDING" } }),
-    prisma.outboundOrder.count(),
-    prisma.outboundOrder.count({ where: outboundWhere }),
     prisma.outboundOrder.findMany({
-      where: outboundWhere,
-      skip: (outboundPage - 1) * outboundPageSize,
-      take: outboundPageSize,
+      where: { status: "PENDING" },
       include: {
         batch: { include: { farmer: true, pool: true } },
         store: { include: { channel: true } },
         channel: true,
         applicant: true,
+        lines: true,
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.batch.count({
-      where: {
-        isException: true,
-        status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND", "FROZEN"] },
+    // 已处理查询
+    prisma.tagClaim.findMany({
+      where: { status: { in: ["APPROVED", "REJECTED"] } },
+      take: 50,
+      include: {
+        farmer: true,
+        applicant: true,
+        approver: true,
       },
+      orderBy: { updatedAt: "desc" },
     }),
+    prisma.outboundOrder.findMany({
+      where: { status: { in: ["APPROVED", "REJECTED"] } },
+      take: 50,
+      include: {
+        batch: { include: { farmer: true } },
+        store: true,
+        channel: true,
+        applicant: true,
+        approver: true,
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+    // 损耗异常批次
     prisma.batch.findMany({
       where: {
         isException: true,
@@ -114,438 +104,391 @@ export default async function ApprovalsPage({
     }),
   ]);
 
+  const totalPendingCount = pendingTagClaims.length + pendingOutboundOrders.length;
+  const processedCount = processedTagClaims.length + processedOutboundOrders.length;
+
+  // 待办卡片统一聚合流
+  const pendingTagCards = (typeFilter === "ALL" || typeFilter === "TAG")
+    ? pendingTagClaims.map((claim) => {
+        const activeInPool = claim.farmer.batches.reduce(
+          (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
+          0
+        );
+        const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+        const remainingQuota = Math.max(0, claim.farmer.quota - cumulativeClaimed);
+        const maxClaimable = Math.min(activeInPool, remainingQuota);
+        const isSafe = claim.claimCount <= maxClaimable && claim.claimCount > 0;
+
+        return {
+          id: claim.id,
+          type: "TAG_CLAIM" as const,
+          code: claim.code || `XK-${claim.id.slice(-8).toUpperCase()}`,
+          createdAt: new Date(claim.createdAt || claim.claimDate),
+          summary: `${claim.farmer.name} · 领用蟹扣 ${claim.claimCount.toLocaleString()} 只`,
+          subSummary: `${claim.farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}养殖户 · 户号 ${claim.farmer.code}`,
+          checkDescription: `领扣校验：在池存活 ${activeInPool.toLocaleString()} 只，年度剩余额度 ${remainingQuota.toLocaleString()} 只 (硬约束 ≤ min(在池, 余量) = ${maxClaimable.toLocaleString()} 只)${!isSafe ? " ⚠️ 超额领扣预警" : ""}`,
+          applicantName: claim.applicant.fullName,
+          applicantRole: claim.applicant.role === "WAREHOUSE_ADMIN" ? "库管员" : "业务员",
+          tagClaimData: claim,
+          outboundData: undefined,
+        };
+      })
+    : [];
+
+  const pendingOutboundCards = (typeFilter === "ALL" || typeFilter === "OUTBOUND")
+    ? pendingOutboundOrders.map((order) => {
+        const liveInBatch = order.batch ? order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount : 0;
+        const typeLabel = order.type === "CRAB_CARD" ? "蟹卡提货 · 统一出库" : `${order.channel.name} · ${order.store.name}`;
+        return {
+          id: order.id,
+          type: "OUTBOUND" as const,
+          code: order.code,
+          createdAt: new Date(order.createdAt),
+          summary: `${typeLabel} · 出库 ${order.outboundCount.toLocaleString()} 只`,
+          subSummary: `关联批次 ${order.batch.code} · ${order.batch.farmer.name} (${order.batch.gender === "MALE" ? "公" : "母"} ${order.batch.weightTier})`,
+          checkDescription: `冷库与在池校验：出库 ${order.outboundCount.toLocaleString()} 只 / 批次在池存活 ${liveInBatch.toLocaleString()} 只 · 物流方式: ${order.logisticsNo || "门店自配"}`,
+          applicantName: order.applicant.fullName,
+          applicantRole: order.applicant.role === "WAREHOUSE_ADMIN" ? "库管员" : "业务员",
+          tagClaimData: undefined,
+          outboundData: order,
+        };
+      })
+    : [];
+
+  const pendingItems = [...pendingTagCards, ...pendingOutboundCards].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">审批中心</h1>
-          <p className="text-xs text-muted-foreground">蟹扣领用申请与出库发货审批</p>
+    <div className="flex flex-col gap-3.5">
+      {/* 顶部标题与定位说明 */}
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="size-5 text-primary" />
+          <h1 className="text-xl font-bold tracking-tight text-foreground">审批中心</h1>
+          {totalPendingCount > 0 && (
+            <Badge variant="destructive" className="font-mono text-[11px] px-1.5 py-0 animate-pulse">
+              {totalPendingCount} 条待办
+            </Badge>
+          )}
         </div>
+        <p className="text-xs text-muted-foreground">
+          操作与审核分离：库管员发起的蟹扣领用与出库申请由内部核验员统一审核卡控
+        </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="transition-all hover:shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">待审蟹扣领用</CardTitle>
-            <Tag className="size-4 text-primary" />
+      {/* 统计概览卡片 */}
+      <div className="grid gap-2.5 sm:grid-cols-3">
+        <Card className="transition-all hover:shadow-xs border-amber-500/20 bg-amber-500/[0.02]">
+          <CardHeader className="p-2.5 pb-1 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-amber-700 dark:text-amber-400">待审蟹扣领用</CardTitle>
+            <Tag className="size-3.5 text-amber-600 dark:text-amber-400" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">
-              {pendingTagClaimsCount.toLocaleString()} 笔
+          <CardContent className="p-2.5 pt-0">
+            <div className="text-base font-bold font-mono text-amber-600 dark:text-amber-400">
+              {pendingTagClaims.length.toLocaleString()} 笔
             </div>
-            <p className="text-xs text-muted-foreground mt-1">核对在池存活与剩余额度</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">在池存活与额度余量双重核验</p>
           </CardContent>
         </Card>
 
-        <Card className="transition-all hover:shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">待审出库单</CardTitle>
-            <Truck className="size-4 text-primary" />
+        <Card className="transition-all hover:shadow-xs border-cyan-500/20 bg-cyan-500/[0.02]">
+          <CardHeader className="p-2.5 pb-1 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-cyan-700 dark:text-cyan-400">待审出库申请</CardTitle>
+            <Truck className="size-3.5 text-cyan-600 dark:text-cyan-400" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">
-              {pendingOutboundCount.toLocaleString()} 笔
+          <CardContent className="p-2.5 pt-0">
+            <div className="text-base font-bold font-mono text-cyan-600 dark:text-cyan-400">
+              {pendingOutboundOrders.length.toLocaleString()} 笔
             </div>
-            <p className="text-xs text-muted-foreground mt-1">核对批次在池存活</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">冷库规格库存与批次存活校验</p>
           </CardContent>
         </Card>
 
-        <Card className={`transition-all hover:shadow-xs ${exceptionBatchesCount > 0 ? "border-destructive/40 bg-destructive/5" : ""}`}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">损耗超标待查</CardTitle>
-            <AlertTriangle className={`size-4 ${exceptionBatchesCount > 0 ? "text-destructive animate-pulse" : "text-muted-foreground"}`} />
+        <Card className={`transition-all hover:shadow-xs ${exceptionBatches.length > 0 ? "border-destructive/40 bg-destructive/5" : "border-border/80"}`}>
+          <CardHeader className="p-2.5 pb-1 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium">损耗超标待查</CardTitle>
+            <AlertTriangle className={`size-3.5 ${exceptionBatches.length > 0 ? "text-destructive animate-pulse" : "text-muted-foreground"}`} />
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold font-mono ${exceptionBatchesCount > 0 ? "text-destructive" : ""}`}>
-              {exceptionBatchesCount.toLocaleString()} 批
+          <CardContent className="p-2.5 pt-0">
+            <div className={`text-base font-bold font-mono ${exceptionBatches.length > 0 ? "text-destructive" : ""}`}>
+              {exceptionBatches.length.toLocaleString()} 批
             </div>
-            <p className="text-xs text-muted-foreground mt-1">累计损耗率超 5%</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">累计损耗率超 5% 标红预警</p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue={defaultTab} className="flex flex-col gap-4">
-        <TabsList className="grid w-full grid-cols-3 max-w-[600px]">
-          <TabsTrigger value="tags" className="flex items-center gap-2 text-xs">
-            <Tag className="size-3.5" />
-            蟹扣领用 ({pendingTagClaimsCount})
-          </TabsTrigger>
-          <TabsTrigger value="outbound" className="flex items-center gap-2 text-xs">
-            <Truck className="size-3.5" />
-            出库审批 ({pendingOutboundCount})
-          </TabsTrigger>
-          <TabsTrigger value="exceptions" className="flex items-center gap-2 text-xs">
-            <AlertTriangle className="size-3.5 text-destructive" />
-            损耗超标 ({exceptionBatchesCount})
-          </TabsTrigger>
-        </TabsList>
+      {/* 主选项卡：待审核 / 已处理 / 损耗超标 */}
+      <Tabs defaultValue={activeTab} className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 border-b pb-2.5">
+          <TabsList className="grid w-full grid-cols-3 max-w-[440px] h-8">
+            <TabsTrigger value="pending" className="flex items-center gap-1.5 text-xs">
+              <Clock className="size-3" />
+              待审核 ({totalPendingCount})
+            </TabsTrigger>
+            <TabsTrigger value="processed" className="flex items-center gap-1.5 text-xs">
+              <CheckCircle2 className="size-3" />
+              已处理 ({processedCount})
+            </TabsTrigger>
+            <TabsTrigger value="exceptions" className="flex items-center gap-1.5 text-xs">
+              <AlertTriangle className="size-3 text-destructive" />
+              损耗超标 ({exceptionBatches.length})
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="tags">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>蟹扣领用审批列表</CardTitle>
-              <div className="flex items-center gap-1.5 text-xs bg-muted/60 p-1 rounded-md">
-                <Link
-                  href={`/approvals?tab=tags&tagsFilter=PENDING&outboundFilter=${outboundFilter}&tagsPage=1`}
-                  className={`px-2 py-1 rounded font-medium transition-colors ${
-                    tagsFilter === "PENDING"
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  待审批 ({pendingTagClaimsCount})
-                </Link>
-                <Link
-                  href={`/approvals?tab=tags&tagsFilter=ALL&outboundFilter=${outboundFilter}&tagsPage=1`}
-                  className={`px-2 py-1 rounded font-medium transition-colors ${
-                    tagsFilter === "ALL"
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  全部历史 ({totalTagClaims})
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="w-[120px]">申请时间</TableHead>
-                      <TableHead className="min-w-[200px]">养殖户</TableHead>
-                      <TableHead className="min-w-[260px]">领扣数量与存活/额度</TableHead>
-                      <TableHead className="w-[130px]">申请人</TableHead>
-                      <TableHead className="w-[100px]">状态</TableHead>
-                      <TableHead className="text-right w-[160px]">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tagClaims.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                          {tagsFilter === "PENDING" ? "暂无待审批的蟹扣领用申请" : "暂无蟹扣领用记录"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      tagClaims.map((claim) => {
-                        const activeInPool = claim.farmer.batches.reduce(
-                          (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
-                          0
-                        );
-                        const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
-                        const remainingQuota = Math.max(0, claim.farmer.quota - cumulativeClaimed);
-                        const maxClaimable = Math.min(activeInPool, remainingQuota);
-                        const isSafe = claim.claimCount <= maxClaimable && claim.claimCount > 0;
-                        const usageRatio = activeInPool > 0 ? Math.min(100, Math.round((claim.claimCount / activeInPool) * 100)) : 0;
-                        const dateObj = new Date(claim.createdAt || claim.claimDate);
+          {activeTab === "pending" && (
+            <div className="flex items-center gap-1 text-xs bg-muted/60 p-0.5 rounded-md self-start sm:self-auto">
+              <Link
+                href="/approvals?tab=pending&type=ALL"
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  typeFilter === "ALL"
+                    ? "bg-background text-foreground shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                全部待办 ({totalPendingCount})
+              </Link>
+              <Link
+                href="/approvals?tab=pending&type=TAG"
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  typeFilter === "TAG"
+                    ? "bg-background text-foreground shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                蟹扣领用 ({pendingTagClaims.length})
+              </Link>
+              <Link
+                href="/approvals?tab=pending&type=OUTBOUND"
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  typeFilter === "OUTBOUND"
+                    ? "bg-background text-foreground shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                出库申请 ({pendingOutboundOrders.length})
+              </Link>
+            </div>
+          )}
+        </div>
 
-                        return (
-                          <TableRow key={claim.id} className="hover:bg-muted/30 transition-colors">
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col">
-                                <span className="font-mono text-xs font-semibold text-foreground">
-                                  {formatDate(claim.createdAt || claim.claimDate, { year: undefined, month: "2-digit", day: "2-digit" })}
-                                </span>
-                                <span className="font-mono text-[11px] text-muted-foreground">
-                                  {formatTime(claim.createdAt || claim.claimDate)}
-                                </span>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-semibold text-sm text-foreground">{claim.farmer.name}</span>
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-muted/60 font-normal">
-                                    {claim.farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
-                                  <span className="bg-muted px-1 rounded text-[10px]">{claim.farmer.code}</span>
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-1.5 py-0.5">
-                                <div className="flex items-baseline justify-between gap-2">
-                                  <div className="flex items-baseline gap-1">
-                                    <span className="font-mono font-bold text-base text-primary">
-                                      {claim.claimCount.toLocaleString()}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground font-normal">只</span>
-                                  </div>
-                                  <span className="text-[11px] font-mono text-muted-foreground">
-                                    占在池 <strong className={cn(usageRatio > 80 ? "text-amber-500 font-bold" : "text-foreground")}>{usageRatio}%</strong>
-                                  </span>
-                                </div>
-
-                                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all",
-                                      !isSafe ? "bg-destructive" : usageRatio > 80 ? "bg-amber-500" : "bg-emerald-500"
-                                    )}
-                                    style={{ width: `${Math.max(4, Math.min(100, usageRatio))}%` }}
-                                  />
-                                </div>
-
-                                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                                  <span>在池: <strong className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{activeInPool.toLocaleString()}</strong> 只</span>
-                                  <span>额度余量: <strong className="font-mono font-semibold">{remainingQuota.toLocaleString()}</strong> 只</span>
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-medium text-xs text-foreground">{claim.applicant.fullName}</span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {claim.applicant.role === "WAREHOUSE_ADMIN" ? "仓库主管" : claim.applicant.role === "ADMIN" ? "管理员" : "业务员"}
-                                </span>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <Badge
-                                variant={
-                                  claim.status === "APPROVED"
-                                    ? "default"
-                                    : claim.status === "REJECTED"
-                                    ? "destructive"
-                                    : "secondary"
-                                }
-                                className={cn(
-                                  "font-normal text-xs py-0.5",
-                                  claim.status === "PENDING" && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                                )}
-                              >
-                                {claim.status === "PENDING" && (
-                                  <span className="size-1.5 rounded-full bg-amber-500 animate-pulse mr-1.5 inline-block" />
-                                )}
-                                {claim.status === "APPROVED"
-                                  ? "已通过"
-                                  : claim.status === "REJECTED"
-                                  ? "已驳回"
-                                  : "待审批"}
-                              </Badge>
-                            </TableCell>
-
-                            <TableCell className="text-right align-middle">
-                              {claim.status === "PENDING" ? (
-                                <TagApprovalButton claimId={claim.id} />
-                              ) : (
-                                <span className="text-xs text-muted-foreground">
-                                  {claim.approvalComment || "已处理"}
-                                </span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
+        {/* 1. 待审核标签页 (紧凑型待办卡片流) */}
+        <TabsContent value="pending" className="flex flex-col gap-2.5 mt-0">
+          {pendingItems.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <CheckCircle2 className="size-10 text-emerald-500/60 mb-2" />
+                <h3 className="text-sm font-semibold text-foreground">暂无待审批事项</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">所有领扣与出库申请均已完成核验与审核</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {pendingItems.map((item) => {
+                const isTag = item.type === "TAG_CLAIM";
+                return (
+                  <Card
+                    key={`${item.type}_${item.id}`}
+                    className={cn(
+                      "transition-all border-l-4 hover:shadow-xs",
+                      isTag
+                        ? "border-l-amber-500 bg-amber-500/[0.015]"
+                        : "border-l-cyan-500 bg-cyan-500/[0.015]"
                     )}
-                  </TableBody>
-                </Table>
-              </div>
-              <DataTablePagination
-                total={filteredTagClaimsCount}
-                page={tagsPage}
-                pageSize={tagsPageSize}
-                pageParam="tagsPage"
-                pageSizeParam="tagsPageSize"
-              />
-            </CardContent>
-          </Card>
+                  >
+                    <CardContent className="p-3 sm:p-3.5 flex flex-col gap-2">
+                      {/* 卡片主信息行：左侧类型单号与摘要，右侧操作按钮与时间 */}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isTag ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5"
+                            >
+                              <Tag className="size-2.5" />
+                              蟹扣领用
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5"
+                            >
+                              <Truck className="size-2.5" />
+                              出库申请
+                            </Badge>
+                          )}
+                          <span className="font-mono text-xs font-bold text-foreground">{item.code}</span>
+                          <span className="text-xs font-semibold text-foreground">{item.summary}</span>
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            ({item.subSummary})
+                          </span>
+                        </div>
+
+                        {/* 右侧：申请时间与审批操作 */}
+                        <div className="flex items-center gap-3 self-end sm:self-auto shrink-0">
+                          <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
+                            <Clock className="size-3" />
+                            <span>{formatDate(item.createdAt)} {formatTime(item.createdAt)}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {isTag && item.tagClaimData && (
+                              <TagApprovalButton claimId={item.tagClaimData.id} />
+                            )}
+                            {!isTag && item.outboundData && (
+                              <OutboundApprovalButton orderId={item.outboundData.id} />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 底部信息条：校验口径 + 申请人 */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pt-1.5 border-t border-border/40 text-[11px]">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <ShieldCheck className="size-3.5 text-primary shrink-0" />
+                          <span className="font-medium text-foreground shrink-0">校验口径:</span>
+                          <span className="font-mono text-muted-foreground leading-snug">
+                            {item.checkDescription}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0 self-start sm:self-auto">
+                          <UserCheck className="size-3 text-muted-foreground" />
+                          <span>申请人: <strong className="text-foreground font-medium">{item.applicantName}</strong> ({item.applicantRole})</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
-        <TabsContent value="outbound">
+        {/* 2. 已处理历史标签页 */}
+        <TabsContent value="processed">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>出库发货审批列表</CardTitle>
-              <div className="flex items-center gap-1.5 text-xs bg-muted/60 p-1 rounded-md">
-                <Link
-                  href={`/approvals?tab=outbound&outboundFilter=PENDING&tagsFilter=${tagsFilter}&outboundPage=1`}
-                  className={`px-2 py-1 rounded font-medium transition-colors ${
-                    outboundFilter === "PENDING"
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  待审批 ({pendingOutboundCount})
-                </Link>
-                <Link
-                  href={`/approvals?tab=outbound&outboundFilter=ALL&tagsFilter=${tagsFilter}&outboundPage=1`}
-                  className={`px-2 py-1 rounded font-medium transition-colors ${
-                    outboundFilter === "ALL"
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  全部历史 ({totalOutboundOrders})
-                </Link>
-              </div>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">已处理审批历史 (最新 100 笔)</CardTitle>
+              <CardDescription className="text-xs">
+                包含已一键通过放行及已填写原因驳回的蟹扣领用与出库申请留痕
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="w-[140px]">出库单号</TableHead>
-                      <TableHead className="min-w-[180px]">批次与养殖来源</TableHead>
-                      <TableHead className="min-w-[240px]">出库数量与可用存活</TableHead>
-                      <TableHead className="min-w-[160px]">目标门店 / 渠道</TableHead>
+                      <TableHead className="w-[110px]">类型</TableHead>
+                      <TableHead className="w-[150px]">单号</TableHead>
+                      <TableHead className="min-w-[200px]">审批摘要</TableHead>
                       <TableHead className="w-[110px]">申请人</TableHead>
                       <TableHead className="w-[100px]">状态</TableHead>
-                      <TableHead className="text-right w-[160px]">操作</TableHead>
+                      <TableHead className="w-[140px]">审核人 / 时间</TableHead>
+                      <TableHead className="min-w-[180px]">审核意见 / 驳回原因</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {outboundOrders.length === 0 ? (
+                    {processedTagClaims.length === 0 && processedOutboundOrders.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
-                          {outboundFilter === "PENDING" ? "暂无待审批的出库发运单" : "暂无出库单记录"}
+                          暂无已处理历史记录
                         </TableCell>
                       </TableRow>
                     ) : (
-                      outboundOrders.map((order) => {
-                        const liveInBatch =
-                          order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount;
-                        const usageRatio = liveInBatch > 0 ? Math.min(100, Math.round((order.outboundCount / liveInBatch) * 100)) : 0;
-                        const isSafe = order.outboundCount <= liveInBatch;
-
-                        return (
-                          <TableRow key={order.id} className="hover:bg-muted/30 transition-colors">
+                      [
+                        ...processedTagClaims.map((c) => ({
+                          id: c.id,
+                          type: "TAG" as const,
+                          code: c.code || `XK-${c.id.slice(-8).toUpperCase()}`,
+                          summary: `${c.farmer.name} · 领用蟹扣 ${c.claimCount.toLocaleString()} 只`,
+                          applicant: c.applicant.fullName,
+                          status: c.status,
+                          approver: c.approver?.fullName || "质量总监",
+                          approvedAt: c.approvedAt || c.updatedAt,
+                          comment: c.approvalComment || (c.status === "APPROVED" ? "审核通过" : "已驳回"),
+                        })),
+                        ...processedOutboundOrders.map((o) => ({
+                          id: o.id,
+                          type: "OUTBOUND" as const,
+                          code: o.code,
+                          summary: `${o.store.name} · 出库 ${o.outboundCount.toLocaleString()} 只 (${o.batch.farmer.name})`,
+                          applicant: o.applicant.fullName,
+                          status: o.status,
+                          approver: o.approver?.fullName || "质量总监",
+                          approvedAt: o.approvedAt || o.updatedAt,
+                          comment: o.approvalComment || o.rejectReason || (o.status === "APPROVED" ? "审核通过" : "已驳回"),
+                        })),
+                      ]
+                        .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime())
+                        .map((row) => (
+                          <TableRow key={`${row.type}_${row.id}`} className="hover:bg-muted/30">
                             <TableCell className="align-middle">
-                              <span className="font-mono font-semibold text-xs text-foreground">{order.code}</span>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-0.5">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono text-xs font-semibold">{order.batch.code}</span>
-                                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-3.5 font-normal">
-                                    {order.batch.gender === "MALE" ? "公" : "母"} {order.batch.weightTier}
-                                  </Badge>
-                                </div>
-                                <span className="text-xs text-muted-foreground">{order.batch.farmer.name}</span>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-1.5 py-0.5">
-                                <div className="flex items-baseline justify-between gap-2">
-                                  <div className="flex items-baseline gap-1">
-                                    <span className="font-mono font-bold text-base text-primary">
-                                      {order.outboundCount.toLocaleString()}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground font-normal">只</span>
-                                  </div>
-                                  <span className="text-[11px] font-mono text-muted-foreground">
-                                    占批次在池 {usageRatio}%
-                                  </span>
-                                </div>
-
-                                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all",
-                                      !isSafe ? "bg-destructive" : usageRatio > 80 ? "bg-amber-500" : "bg-emerald-500"
-                                    )}
-                                    style={{ width: `${Math.max(4, Math.min(100, usageRatio))}%` }}
-                                  />
-                                </div>
-
-                                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                                  <span>批次可用存活: <strong className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{liveInBatch.toLocaleString()}</strong> 只</span>
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-xs font-medium">{order.store.name}</span>
-                                <span className="text-[10px] text-muted-foreground font-mono">{order.channel.name}</span>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-medium text-xs">{order.applicant.fullName}</span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {order.applicant.role === "WAREHOUSE_ADMIN" ? "仓库管理员" : order.applicant.role === "ADMIN" ? "管理员" : "业务员"}
-                                </span>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-middle">
-                              <div className="flex flex-col gap-1 items-start">
-                                <Badge
-                                  variant={
-                                    order.status === "APPROVED"
-                                      ? "default"
-                                      : order.status === "REJECTED"
-                                      ? "destructive"
-                                      : "secondary"
-                                  }
-                                  className={cn(
-                                    "font-normal text-xs py-0.5",
-                                    order.status === "PENDING" && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                                  )}
-                                >
-                                  {order.status === "PENDING" && (
-                                    <span className="size-1.5 rounded-full bg-amber-500 animate-pulse mr-1.5 inline-block" />
-                                  )}
-                                  {order.status === "APPROVED"
-                                    ? "已通过"
-                                    : order.status === "REJECTED"
-                                    ? "已驳回"
-                                    : "待审批"}
+                              {row.type === "TAG" ? (
+                                <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">
+                                  蟹扣领用
                                 </Badge>
-                                {order.status === "PENDING" && order.rejectReason && (
-                                  <span
-                                    className="text-[10px] font-medium text-amber-600 dark:text-amber-400 max-w-[130px] truncate"
-                                    title={`曾驳回原因: ${order.rejectReason}`}
-                                  >
-                                    曾驳回: {order.rejectReason}
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="text-right align-middle">
-                              {order.status === "PENDING" ? (
-                                <OutboundApprovalButton orderId={order.id} />
                               ) : (
-                                <span className="text-xs text-muted-foreground">
-                                  {order.approvalComment || order.rejectReason || "已处理"}
-                                </span>
+                                <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30 text-[10px] px-1.5 py-0">
+                                  出库申请
+                                </Badge>
                               )}
                             </TableCell>
+
+                            <TableCell className="align-middle font-mono font-semibold text-xs">
+                              {row.code}
+                            </TableCell>
+
+                            <TableCell className="align-middle text-xs font-medium">
+                              {row.summary}
+                            </TableCell>
+
+                            <TableCell className="align-middle text-xs text-muted-foreground">
+                              {row.applicant}
+                            </TableCell>
+
+                            <TableCell className="align-middle">
+                              {row.status === "APPROVED" ? (
+                                <Badge variant="default" className="text-[10px] px-1.5 py-0 font-normal">
+                                  已通过
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-normal">
+                                  已驳回
+                                </Badge>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="align-middle">
+                              <div className="flex flex-col text-[11px] font-mono text-muted-foreground">
+                                <span className="text-foreground font-medium">{row.approver}</span>
+                                <span>{formatDate(row.approvedAt)} {formatTime(row.approvedAt)}</span>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="align-middle text-xs">
+                              <span className={cn(row.status === "REJECTED" ? "text-destructive font-medium" : "text-muted-foreground")}>
+                                {row.comment}
+                              </span>
+                            </TableCell>
                           </TableRow>
-                        );
-                      })
+                        ))
                     )}
                   </TableBody>
                 </Table>
               </div>
-              <DataTablePagination
-                total={filteredOutboundCount}
-                page={outboundPage}
-                pageSize={outboundPageSize}
-                pageParam="outboundPage"
-                pageSizeParam="outboundPageSize"
-              />
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* 3. 损耗超标监控标签页 */}
         <TabsContent value="exceptions">
           <Card className="border-destructive/30">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-destructive flex items-center gap-2">
                 <AlertTriangle className="size-5" />
-                损耗超标批次
+                损耗超标批次监控
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -582,12 +525,10 @@ export default async function ApprovalsPage({
 
                         return (
                           <TableRow key={batch.id} className="bg-destructive/[0.03] hover:bg-destructive/[0.08] transition-colors">
-                            {/* 1. 异常批次与规格 */}
                             <TableCell className="align-middle">
                               <div className="flex flex-col gap-1 items-start">
                                 <BatchDetailDialog
                                   batch={batch}
-                                  userId={currentUser.id}
                                   trigger={
                                     <button
                                       type="button"
@@ -607,7 +548,6 @@ export default async function ApprovalsPage({
                               </div>
                             </TableCell>
 
-                            {/* 2. 来源养殖户与暂养池 */}
                             <TableCell className="align-middle">
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex items-center gap-1.5 font-medium">
@@ -622,7 +562,6 @@ export default async function ApprovalsPage({
                               </div>
                             </TableCell>
 
-                            {/* 3. 损耗超标水位与风险敞口 */}
                             <TableCell className="align-middle">
                               <div className="flex flex-col gap-1.5 py-0.5">
                                 <div className="flex items-baseline justify-between gap-2">
@@ -653,7 +592,6 @@ export default async function ApprovalsPage({
                               </div>
                             </TableCell>
 
-                            {/* 4. 损耗原因与盘点责任 */}
                             <TableCell className="align-middle">
                               <div className="flex flex-col gap-1 max-w-[220px]">
                                 <span
@@ -676,7 +614,6 @@ export default async function ApprovalsPage({
                               </div>
                             </TableCell>
 
-                            {/* 5. 处置状态 */}
                             <TableCell className="align-middle">
                               {batch.status === "FROZEN" ? (
                                 <Badge variant="destructive" className="font-normal text-xs py-0.5">
@@ -691,7 +628,6 @@ export default async function ApprovalsPage({
                               )}
                             </TableCell>
 
-                            {/* 6. 品控处置操作 */}
                             <TableCell className="text-right align-middle">
                               <div className="flex items-center justify-end gap-1.5">
                                 <BatchLossHistoryDialog batch={batch} />

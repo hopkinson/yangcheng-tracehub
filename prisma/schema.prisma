@@ -46,6 +46,8 @@ model Farmer {
   quota           Int           // 额度 = area * 600
   creditRating    String        @default("A") // A, B, C
   status          String        @default("ACTIVE") // ACTIVE, SUSPENDED, TERMINATED
+  contractName    String?       // 养殖合同附件名
+  contractUrl     String?       // 养殖合同附件URL
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -70,27 +72,29 @@ model Enclosure {
 // 3. 暂养池管理 (按规格复用)
 // -------------------------------------------------------------
 model HoldingPool {
-  id                String      @id @default(cuid())
-  code              String      @unique // ZY-XX, 如 ZY-01
-  name              String      // 1号公蟹池
-  status            String      @default("ACTIVE") // ACTIVE, MAINTENANCE
+  id                String        @id @default(cuid())
+  code              String        @unique // ZY-XX, 如 ZY-01
+  name              String        // 1号公蟹池
+  status            String        @default("ACTIVE") // ACTIVE, MAINTENANCE
   
   // 在养规格锁定 (有在养批次时锁定公母和规格档位)
-  currentGender     String?     // MALE, FEMALE
-  currentWeightTier String?     // 如 4.0两, 2.5两
+  currentGender     String?       // MALE, FEMALE
+  currentWeightTier String?       // 如 4.0两, 2.5两
   
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   batches           Batch[]
+  batchItems        BatchItem[]
+  bundleLines       BundleLine[]
 }
 
 // -------------------------------------------------------------
-// 4. 原料批次 (入库即入池, 一批一公母一规格)
+// 4. 原料批次 (一码单多规格主从结构)
 // -------------------------------------------------------------
 model Batch {
   id               String          @id @default(cuid())
-  code             String          @unique // PC-YYYYMMDD-XXX
+  code             String          @unique // YL+YYYYMMDD+XX 或 PC-YYYYMMDD-XXX
   farmerId         String
   farmer           Farmer          @relation(fields: [farmerId], references: [id])
   enclosureId      String
@@ -98,11 +102,11 @@ model Batch {
   poolId           String
   pool             HoldingPool     @relation(fields: [poolId], references: [id])
   
-  gender           String          // MALE, FEMALE
-  weightTier       String          // 4.0两, 2.5两
+  gender           String          @default("MALE") // MALE, FEMALE (单规格兼容字段)
+  weightTier       String          @default("4.0两") // 4.0两, 2.5两 (单规格兼容字段)
   inPoolTime       DateTime        @default(now())
   
-  inPoolCount      Int             // 入池数量
+  inPoolCount      Int             @default(0) // 入池总数量
   outPoolCount     Int             @default(0) // 已出库数量
   lossCount        Int             @default(0) // 已登记损耗
   // 账面在池 = inPoolCount - outPoolCount - lossCount
@@ -111,7 +115,25 @@ model Batch {
   isException      Boolean         @default(false)
   exceptionReason  String?
   
-  // 监测报告 (PRD V1.4)
+  // 码单头与品控留痕 (PRD V2.1)
+  formNo           String?         // YCGF-PZZX-202603 等纸质表号
+  temp             Float?          // 车内温度 (℃)
+  humidity         Float?          // 车内湿度 (%)
+  escort           String?         // 跟车员
+  slipUrl          String?         // 纸质入库码单照片
+  slipName         String?         // 码单照片文件名
+  
+  quickCheck       String?         // 农残快检: QUALIFIED, UNQUALIFIED
+  quickCheckUrl    String?         // 农残快检报告附件
+  quickCheckName   String?
+  
+  sampleCheck      String?         // 抽检试吃: QUALIFIED, UNQUALIFIED
+  sampleCheckUrl   String?         // 抽检试吃记录附件
+  sampleCheckName  String?
+  
+  lossReason       String?         // 损耗/异常说明
+  
+  // 兼容旧字段
   reportUrl        String?
   reportName       String?
   reportUploadedAt DateTime?
@@ -121,12 +143,32 @@ model Batch {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  items            BatchItem[]
   lossRecords      LossRecord[]
   outboundOrders   OutboundOrder[]
 }
 
+// 原料批次明细行 (一码单拆多规格入多池)
+model BatchItem {
+  id               String          @id @default(cuid())
+  batchId          String
+  batch            Batch           @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  poolId           String
+  pool             HoldingPool     @relation(fields: [poolId], references: [id])
+  
+  gender           String          // MALE, FEMALE
+  weightTier       String          // 如 4.0两, 3.5两
+  weight           Float           @default(0) // 小计重量 (斤)
+  inPoolCount      Int             // 入池数量 (只)
+  outPoolCount     Int             @default(0) // 已出库数量
+  lossCount        Int             @default(0) // 损耗数量
+  
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
 // -------------------------------------------------------------
-// 5. 损耗盘点登记 (盘点登记制)
+// 5. 损耗盘点登记
 // -------------------------------------------------------------
 model LossRecord {
   id              String    @id @default(cuid())
@@ -146,10 +188,11 @@ model LossRecord {
 }
 
 // -------------------------------------------------------------
-// 6. 蟹扣领用与日清日结
+// 6. 蟹扣领用与审批
 // -------------------------------------------------------------
 model TagClaim {
   id              String          @id @default(cuid())
+  code            String?         @unique // XK+YYYYMMDD+XX
   claimDate       DateTime        // 领用日期
   farmerId        String
   farmer          Farmer          @relation(fields: [farmerId], references: [id])
@@ -161,7 +204,7 @@ model TagClaim {
   scrappedCount   Int             @default(0) // 当日作废数
   scrapReason     String?
   
-  isBalanced      Boolean         @default(false) // 轧平: claimCount == boundCount + returnedCount + scrappedCount
+  isBalanced      Boolean         @default(false) // 轧平
   status          String          @default("PENDING") // PENDING, APPROVED, REJECTED
   
   applicantId     String
@@ -173,10 +216,159 @@ model TagClaim {
 
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+
+  bundleBatches   BundleBatch[]
 }
 
 // -------------------------------------------------------------
-// 7. 渠道与门店
+// 7. 捆扎管理 (班组 + 批次 + 明细)
+// -------------------------------------------------------------
+model BundleGroup {
+  id              String          @id @default(cuid())
+  code            String          @unique // P1, P2, P3
+  name            String          // 捆扎一组
+  status          String          @default("IDLE") // IDLE (空闲), BUNDLING (捆扎中), COMPLETED (已完成)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  batches         BundleBatch[]
+}
+
+model BundleBatch {
+  id              String          @id @default(cuid())
+  code            String          @unique // KZD+YYYYMMDD+XX
+  date            DateTime        @default(now())
+  groupId         String
+  group           BundleGroup     @relation(fields: [groupId], references: [id])
+  
+  tagClaimId      String
+  tagClaim        TagClaim        @relation(fields: [tagClaimId], references: [id])
+  ropeBatch       String          // 手填蟹绳批次, 如 XS2026090101
+  
+  status          String          @default("BUNDLING") // BUNDLING (捆扎中), COMPLETED (已完成)
+  doneAt          DateTime?       // 完成捆扎时间
+  createdById     String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  lines           BundleLine[]
+  sortTasks       SortTask[]
+}
+
+model BundleLine {
+  id              String          @id @default(cuid())
+  bundleBatchId   String
+  bundleBatch     BundleBatch     @relation(fields: [bundleBatchId], references: [id], onDelete: Cascade)
+  poolId          String
+  pool            HoldingPool     @relation(fields: [poolId], references: [id])
+  
+  gender          String          // MALE, FEMALE
+  weightTier      String          // 如 4.0两, 3.2两
+  count           Int             // 只数
+  
+  createdAt       DateTime        @default(now())
+}
+
+// -------------------------------------------------------------
+// 8. 分拣称重 (机器 + 任务)
+// -------------------------------------------------------------
+model SortMachine {
+  id                    String      @id @default(cuid())
+  code                  String      @unique // FJ-01, FJ-02
+  name                  String      // 分拣机 G1
+  status                String      @default("ACTIVE") // ACTIVE (正常), DISABLED (停用)
+  lastCalibratedAt      DateTime?
+  lastCalibrationStatus String      @default("QUALIFIED") // QUALIFIED (合格), PENDING (待校验), EXCEPTION (异常)
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  tasks                 SortTask[]
+}
+
+model SortTask {
+  id              String          @id @default(cuid())
+  code            String          @unique // FJR+YYYYMMDD+XX
+  date            DateTime        @default(now())
+  machineId       String
+  machine         SortMachine     @relation(fields: [machineId], references: [id])
+  
+  bundleBatchId   String
+  bundleBatch     BundleBatch     @relation(fields: [bundleBatchId], references: [id])
+  
+  gender          String          // MALE, FEMALE
+  weightTier      String          // 规格档位
+  inputCount      Int             // 投入只数
+  qualifiedCount  Int             @default(0) // 符合标准数 (合格只数)
+  lossCount       Int             @default(0) // 损耗 = inputCount - qualifiedCount
+  lossRate        Float           @default(0) // 损耗率 (%)
+  
+  status          String          @default("PENDING") // PENDING (待分拣), COMPLETED (已完成)
+  doneAt          DateTime?
+  createdById     String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// -------------------------------------------------------------
+// 9. 保鲜预冷 (保鲜库 + 入库台账)
+// -------------------------------------------------------------
+model ColdStore {
+  id              String          @id @default(cuid())
+  code            String          @unique // BX-01, BX-02, BX-03
+  name            String          // 预冷A区
+  targetTemp      Float           @default(4.5) // 目标温度 4-5℃
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  logs            ColdLog[]
+}
+
+model ColdLog {
+  id              String          @id @default(cuid())
+  code            String          @unique // CR-XXXX
+  storeId         String
+  store           ColdStore       @relation(fields: [storeId], references: [id])
+  
+  type            String          @default("INTAKE") // INTAKE (入库)
+  count           Int             // 入库只数
+  refType         String?         // BUNDLE, SORT
+  refId           String?         // 关联 KZD/FJR 编号
+  operator        String          // 经手人
+  createdAt       DateTime        @default(now())
+}
+
+// -------------------------------------------------------------
+// 10. 订单管理 (门店订单 + 蟹卡提货拆分)
+// -------------------------------------------------------------
+model Order {
+  id              String          @id @default(cuid())
+  code            String          @unique // SO+YYYYMMDD+XX
+  importId        String          // 导入批次号 IM+YYYYMMDD+XX
+  orderNo         String          // 原始单号 SM... / KK...
+  type            String          // STORE_ORDER (门店订单), CRAB_CARD (蟹卡提货)
+  storeId         String?
+  storeName       String?         // 山姆会员店(深圳福田店)
+  specModel       String?         // 蟹卡原始规格型号, 如 "4.0母蟹X5只，5.0公蟹X5只"
+  
+  gender          String          // MALE, FEMALE
+  weightTier      String          // 4.0两, 3.2两
+  count           Int             // 只数
+  
+  importTime      DateTime        @default(now())
+  deliveryDate    DateTime        // 发货日期
+  status          String          @default("PENDING") // PENDING (待发货), SHIPPED (已发货)
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  outboundLines   OutboundLine[]
+}
+
+// -------------------------------------------------------------
+// 11. 渠道与门店
 // -------------------------------------------------------------
 model Channel {
   id              String          @id @default(cuid())
@@ -193,7 +385,7 @@ model Channel {
 model Store {
   id              String          @id @default(cuid())
   code            String          @unique // ST-01
-  name            String          // 山姆会员店(苏州邻瑞店)
+  name            String          // 山姆会员店(深圳福田店)
   channelId       String
   channel         Channel         @relation(fields: [channelId], references: [id])
   isActive        Boolean         @default(true)
@@ -204,26 +396,31 @@ model Store {
 }
 
 // -------------------------------------------------------------
-// 8. 出库管理
+// 12. 出库管理 (以冷库规格库存为源头)
 // -------------------------------------------------------------
 model OutboundOrder {
   id                String          @id @default(cuid())
-  code              String          @unique // CK-YYYYMMDD-XXX
-  batchId           String
-  batch             Batch           @relation(fields: [batchId], references: [id])
+  code              String          @unique // CK+YYYYMMDD+XX
+  type              String          @default("STORE_ORDER") // STORE_ORDER (门店订单), CRAB_CARD (提蟹统一出库)
+  
   storeId           String
   store             Store           @relation(fields: [storeId], references: [id])
+  storeName         String?
   channelId         String
   channel           Channel         @relation(fields: [channelId], references: [id])
   
-  outboundCount     Int             // 出库数量
-  channelOrderCount Int             // 渠道订单数量 (== outboundCount)
+  // 关联批次
+  batchId           String
+  batch             Batch           @relation(fields: [batchId], references: [id])
   
-  logisticsNo       String?         // 初始"待生成", 后续回填
+  outboundCount     Int             @default(0) // 出库总数量
+  channelOrderCount Int             @default(0) // 渠道订单数量
+  
+  logisticsNo       String?         // 统一单号或 "门店自配"
   logisticsUpdatedAt DateTime?
   logisticsUpdatedBy String?
   
-  status            String          @default("PENDING") // PENDING, APPROVED, REJECTED
+  status            String          @default("PENDING") // PENDING (待审核), APPROVED (已出库), REJECTED (已驳回)
   rejectReason      String?
   
   applicantId       String
@@ -235,10 +432,59 @@ model OutboundOrder {
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
+
+  lines             OutboundLine[]
+}
+
+model OutboundLine {
+  id                String          @id @default(cuid())
+  outboundOrderId   String
+  outboundOrder     OutboundOrder   @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  
+  orderId           String?
+  order             Order?          @relation(fields: [orderId], references: [id])
+  orderNo           String          // 关联订单原始单号
+  
+  gender            String          // MALE, FEMALE
+  weightTier        String          // 4.0两, 3.5两
+  count             Int             // 出库只数
+  
+  expressCompany    String?         // 顺丰速运 等
+  waybillNo         String?         // 快递运单号
+  
+  createdAt         DateTime        @default(now())
 }
 
 // -------------------------------------------------------------
-// 9. 特批留痕与审计日志
+// 13. 品控留痕体系 (12类记录表统一管理)
+// -------------------------------------------------------------
+model QCRecord {
+  id              String          @id @default(cuid())
+  code            String          @unique // 业务编号 JC/SC/XJ/SZ/KZ/JZ/FJ/BX/BZ/CL+YYYYMMDD+XX
+  cat             String          // QUICK_CHECK, TASTE_CHECK, WAYBILL, POOL_INSPECT, WATER_QUALITY, BUNDLE_INSPECT, SORT_CALIBRATE, SORT_INSPECT, COLD_TEMP, PACK_INSPECT, VEHICLE_INSPECT, SHIP_LOG
+  formNo          String?         // YCGF-PZZX-202604 等纸质表号
+  
+  refType         String          // BATCH, POOL, MACHINE, STORE, OUTBOUND
+  refId           String          // YL... / ZY-01 / FJ-01 / BX-01 / CK...
+  title           String          // 记录标题
+  
+  checkTime       DateTime        // 巡检/校准实际发生时间 (暴露补录痛点)
+  uploadTime      DateTime        @default(now()) // 上传时间
+  
+  result          String          @default("QUALIFIED") // QUALIFIED (合格), EXCEPTION (异常)
+  conclusion      String?         // 三段/两段结论文本
+  reason          String?         // 异常原因说明 (异常时必填)
+  
+  uploader        String          // 质检员/上传人
+  fileName        String?         // 文件名
+  fileUrl         String?         // 原图 URL / Base64 / 静态资源路径
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// -------------------------------------------------------------
+// 14. 特批留痕与审计日志
 // -------------------------------------------------------------
 model SpecialApproval {
   id          String   @id @default(cuid())
@@ -255,7 +501,7 @@ model AuditLog {
   id          String   @id @default(cuid())
   operatorId  String
   operator    User     @relation(fields: [operatorId], references: [id])
-  action      String   // INTAKE, TAG_CLAIM, LOSS_REGISTER, OUTBOUND
+  action      String   // INTAKE, TAG_CLAIM, LOSS_REGISTER, OUTBOUND, BUNDLE, SORT
   entityType  String
   entityId    String
   details     String?  // JSON string

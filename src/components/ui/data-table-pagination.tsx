@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ interface DataTablePaginationProps {
   pageSizeOptions?: number[];
   pageParam?: string;
   pageSizeParam?: string;
+  className?: string;
 }
 
 export function DataTablePagination({
@@ -27,6 +29,7 @@ export function DataTablePagination({
   pageSizeOptions = [10, 20, 50, 100],
   pageParam = "page",
   pageSizeParam = "pageSize",
+  className,
 }: DataTablePaginationProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -45,7 +48,7 @@ export function DataTablePagination({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 py-4 border-t">
+    <div className={cn("flex flex-col sm:flex-row items-center justify-between gap-4 px-2 pt-4", className)}>
       <div className="text-xs text-muted-foreground">
         共 <span className="font-medium text-foreground">{total}</span> 条数据
       </div>

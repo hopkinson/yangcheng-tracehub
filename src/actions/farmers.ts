@@ -7,10 +7,11 @@ import { revalidatePath } from "next/cache";
 export async function createFarmerAction(data: {
   name: string;
   phone?: string;
-  farmType: string; // LAKE_CRAB, POND_CRAB
   area: number;
   creditRating: string;
   enclosureCodes: string[]; // e.g. ["W-01", "W-02"]
+  contractName?: string;
+  contractUrl?: string;
   userId: string;
 }) {
   await requireRole(["FARMER_ADMIN", "ADMIN"]);
@@ -25,12 +26,14 @@ export async function createFarmerAction(data: {
         code,
         name: data.name,
         phone: data.phone || "",
-        farmType: data.farmType,
+        farmType: "LAKE_CRAB",
         year: currentYear,
         area: data.area,
         quota,
         creditRating: data.creditRating || "A",
         status: "ACTIVE",
+        contractName: data.contractName,
+        contractUrl: data.contractUrl,
         enclosures: {
           create: data.enclosureCodes.filter(c => c.trim()).map(code => ({ code: code.trim() })),
         },
@@ -59,11 +62,12 @@ export async function updateFarmerAction(data: {
   id: string;
   name: string;
   phone?: string;
-  farmType: string;
   area: number;
   creditRating: string;
   status: string;
   enclosureCodes: string[];
+  contractName?: string;
+  contractUrl?: string;
   userId: string;
 }) {
   await requireRole(["FARMER_ADMIN", "ADMIN"]);
@@ -105,11 +109,13 @@ export async function updateFarmerAction(data: {
       data: {
         name: data.name,
         phone: data.phone,
-        farmType: data.farmType,
+        farmType: "LAKE_CRAB",
         area: data.area,
         quota,
         creditRating: data.creditRating,
         status: data.status,
+        contractName: data.contractName,
+        contractUrl: data.contractUrl,
       },
       include: { enclosures: true },
     });

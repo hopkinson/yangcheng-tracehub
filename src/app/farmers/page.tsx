@@ -74,52 +74,60 @@ export default async function FarmersPage({
   });
 
   return (
-    <StaggerContainer className="flex flex-col gap-6">
-      <FadeIn direction="down" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">养殖档案</h1>
-          <p className="text-xs text-muted-foreground">签约养殖户主档与蟹扣额度核定</p>
+    <StaggerContainer className="flex flex-col gap-4">
+      <FadeIn direction="down" className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Scale className="size-5 text-primary" />
+            养殖档案
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            签约养殖户主档、围网面积核定与年度理论产能额度闭环管理
+          </p>
         </div>
         {isFarmerAdminOrAdmin && <FarmerDialog userId={currentUserId} />}
       </FadeIn>
 
-      <FadeIn className="grid gap-4 sm:grid-cols-3">
-        <Card className="transition-all hover:shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">签约养殖户总数</CardTitle>
-            <Scale className="size-4 text-muted-foreground" />
+      <FadeIn className="grid gap-3 sm:grid-cols-3">
+        <Card className="transition-all hover:shadow-xs border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">签约养殖户总数</CardTitle>
+            <Scale className="size-3.5 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">
-              <AnimatedNumber value={totalFarmers} /> 户
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono text-foreground flex items-baseline gap-1">
+              <AnimatedNumber value={totalFarmers} />
+              <span className="text-xs font-normal text-muted-foreground">户</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">正常合作中</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">正常合作中</p>
           </CardContent>
         </Card>
 
-        <Card className="transition-all hover:shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">总核定养殖面积</CardTitle>
-            <MapPin className="size-4 text-muted-foreground" />
+        <Card className="transition-all hover:shadow-xs border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">总核定养殖面积</CardTitle>
+            <MapPin className="size-3.5 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">
-              {(statsAgg._sum.area || 0).toFixed(1)} 亩
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono text-foreground flex items-baseline gap-1">
+              {(statsAgg._sum.area || 0).toFixed(1)}
+              <span className="text-xs font-normal text-muted-foreground">亩</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">签约水域面积</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">签约水域面积</p>
           </CardContent>
         </Card>
 
-        <Card className="transition-all hover:shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">全年核定总额度</CardTitle>
-            <Scale className="size-4 text-muted-foreground" />
+        <Card className="transition-all hover:shadow-xs border-border/80">
+          <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-medium text-muted-foreground">全年核定总额度</CardTitle>
+            <Scale className="size-3.5 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">
-              <AnimatedNumber value={statsAgg._sum.quota || 0} /> 只
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg font-bold font-mono text-foreground flex items-baseline gap-1">
+              <AnimatedNumber value={statsAgg._sum.quota || 0} />
+              <span className="text-xs font-normal text-muted-foreground">只</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">标准产能 600 只/亩</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">标准产能 600 只/亩</p>
           </CardContent>
         </Card>
       </FadeIn>
@@ -183,13 +191,9 @@ export default async function FarmersPage({
                               <span className="font-mono text-[11px] text-muted-foreground">{farmer.code}</span>
                               <Badge
                                 variant="outline"
-                                className={
-                                  farmer.farmType === "LAKE_CRAB"
-                                    ? "border-primary/30 text-primary bg-primary/5 text-[10px] px-1.5 py-0"
-                                    : "border-amber-500/30 text-amber-600 bg-amber-500/5 text-[10px] px-1.5 py-0"
-                                }
+                                className="border-primary/30 text-primary bg-primary/5 text-[10px] px-1.5 py-0"
                               >
-                                {farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}
+                                湖蟹
                               </Badge>
                             </div>
                           </div>

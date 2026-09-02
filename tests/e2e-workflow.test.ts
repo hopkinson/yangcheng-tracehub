@@ -145,34 +145,45 @@ async function runE2EWorkflowTests() {
       data: { currentGender: "MALE", currentWeightTier: "4.0两" },
     });
 
-    // 2.2 防混池校验：尝试以“母蟹 / 3.0两”混入该池
+    // 2.2 防混池与在养拦截校验：尝试混入该已有在养存量的池子（无论同规格还是异规格均拦截）
     const mixPoolCheck = Invariants.checkPoolSpec(
       { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 10000 },
       { gender: "FEMALE", weightTier: "3.0两" }
     );
     assert.equal(mixPoolCheck.valid, false, "不同规格公母混池必须被严格拦截");
-    console.log("  ✔ 混池拦截测试通过: 禁止母蟹/3.0两混入公蟹/4.0两暂养池");
 
-    // 2.3 同规格复用：同为“公蟹 / 4.0两” 5,000只 入同池
-    const reuseCheck = Invariants.checkPoolSpec(
+    const occupiedPoolCheck = Invariants.checkPoolSpec(
       { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 10000 },
       { gender: "MALE", weightTier: "4.0两" }
     );
-    assert.equal(reuseCheck.valid, true, "同规格同公母应允许复用入池");
+    assert.equal(occupiedPoolCheck.valid, false, "已有在养批次时必须拦截，新批次必须选择空池");
+    console.log("  ✔ 在养拦截测试通过: 池内已有存量时禁止混入新批次，只能选择空池");
+
+    // 2.3 批次2分配至空暂养池 2
+    const testPoolCode2 = `ZY-T2${timestamp.toString().slice(-4)}`;
+    const pool2 = await prisma.holdingPool.create({
+      data: {
+        code: testPoolCode2,
+        name: `测试暂养池-${testPoolCode2}`,
+        status: "ACTIVE",
+        currentGender: "MALE",
+        currentWeightTier: "4.0两",
+      },
+    });
 
     const batch2 = await prisma.batch.create({
       data: {
         code: testBatchCode2,
         farmerId: farmer.id,
         enclosureId: farmer.enclosures[1].id,
-        poolId: pool.id,
+        poolId: pool2.id,
         gender: "MALE",
         weightTier: "4.0两",
         inPoolCount: 5000,
         createdById: warehouseUser.id,
       },
     });
-    console.log("  ✔ 同规格复用入池成功: 批次1 (10,000只) + 批次2 (5,000只) 共享暂养池\n");
+    console.log("  ✔ 空池独立入池成功: 批次1 (10,000只) 入暂养池1，批次2 (5,000只) 入暂养池2\n");
 
     // -------------------------------------------------------------------------
     // 闭环 3：养殖户累计入池额度硬卡控与特批留痕

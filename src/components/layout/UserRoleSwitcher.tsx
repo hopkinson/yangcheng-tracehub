@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { logoutAction } from "@/actions/auth";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChangePasswordDialog } from "@/components/forms/ChangePasswordDialog";
@@ -15,9 +16,9 @@ export interface CurrentUser {
 
 const ROLE_MAP: Record<string, string> = {
   ADMIN: "超级管理员",
-  QA_DIRECTOR: "品控主管",
-  WAREHOUSE_ADMIN: "仓库管理员",
-  FARMER_ADMIN: "养殖户管理员",
+  QA_DIRECTOR: "质检主管",
+  WAREHOUSE_ADMIN: "库管员",
+  FARMER_ADMIN: "内部核验员",
   CHANNEL_VIEWER: "渠道审计员",
 };
 
@@ -36,14 +37,17 @@ export function UserRoleSwitcher({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-2 rounded-full py-1 px-2 hover:bg-muted/70 transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex items-center gap-2 rounded-full py-1 px-2.5 hover:bg-muted/70 transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-ring border border-border/50 bg-background/50"
         >
-          <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold select-none ring-1 ring-primary/20">
+          <div className="flex size-6.5 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold select-none ring-1 ring-primary/20">
             {firstChar}
           </div>
-          <span className="text-xs font-medium text-foreground max-w-[110px] truncate">
+          <span className="text-xs font-medium text-foreground max-w-[90px] truncate hidden sm:inline">
             {user.fullName || user.username}
           </span>
+          <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 font-medium bg-primary/10 text-primary border-primary/25">
+            {roleName}
+          </Badge>
         </button>
       </PopoverTrigger>
 

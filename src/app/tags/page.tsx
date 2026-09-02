@@ -20,7 +20,7 @@ export default async function TagsPage({
   const page = Math.max(1, Number(params.page) || 1);
   const pageSize = Math.max(1, Number(params.pageSize) || 10);
 
-  const [currentUser, totalClaims, tagClaims, farmers] = await Promise.all([
+  const [currentUser, totalClaims, tagClaims, farmers, unbalancedClaims] = await Promise.all([
     getCurrentUser(),
     prisma.tagClaim.count(),
     prisma.tagClaim.findMany({
@@ -39,6 +39,15 @@ export default async function TagsPage({
         tagClaims: { where: { status: "APPROVED" } },
       },
       where: { status: "ACTIVE" },
+    }),
+    prisma.tagClaim.findMany({
+      where: { status: "APPROVED", isBalanced: false },
+      include: {
+        farmer: true,
+        applicant: true,
+        approver: true,
+      },
+      orderBy: { claimDate: "desc" },
     }),
   ]);
 
@@ -63,13 +72,62 @@ export default async function TagsPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-4">
-        <div className="space-y-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">蟹扣管理</h1>
-          <p className="text-xs text-muted-foreground">养殖户蟹扣领用申请与日清日结管控</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            蟹扣领用审批与日清日结轧平（领用数 = 绑扣出库 + 当日退回 + 当日作废）
+          </p>
         </div>
         {isWarehouseOrAdmin && <TagClaimDialog farmers={farmerOptions} userId={currentUserId} />}
       </div>
+
+      {/* 待日结轧平预警看板 */}
+      {unbalancedClaims.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 shadow-xs">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-sm">
+                ⚠️
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                  蟹扣日结待轧平预警
+                  <Badge variant="outline" className="bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/40 text-[10px]">
+                    {unbalancedClaims.length} 笔未轧平
+                  </Badge>
+                </h3>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+                  系统硬约束：若前日存在未轧平领扣记录，次日将阻断该养殖户的新领扣申请，请及时核销退废。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {unbalancedClaims.map((claim) => {
+              const accounted = (claim.boundCount || 0) + (claim.returnedCount || 0) + (claim.scrappedCount || 0);
+              const diff = claim.claimCount - accounted;
+              return (
+                <div key={claim.id} className="flex items-center justify-between rounded-lg bg-background/80 p-2.5 border border-amber-500/20 text-xs">
+                  <div className="flex flex-col">
+                    <div className="font-semibold text-foreground flex items-center gap-1.5">
+                      {claim.farmer.name}
+                      <span className="font-mono text-[10px] text-muted-foreground">({formatDate(claim.claimDate)})</span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      领用: <span className="font-mono font-medium">{claim.claimCount}</span> · 已核销: <span className="font-mono text-emerald-600">{accounted}</span> · 差额: <span className="font-mono font-bold text-destructive">{diff} 只</span>
+                    </div>
+                  </div>
+                  {isWarehouseOrAdmin && (
+                    <SettleTagClaimDialog claim={claim} userId={currentUserId} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardContent>
@@ -110,21 +168,34 @@ export default async function TagsPage({
                       </TableCell>
                       <TableCell className="text-muted-foreground">{claim.applicant.fullName}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant={
-                            claim.status === "APPROVED"
-                              ? "default"
+                        <div className="flex flex-col gap-1 items-start">
+                          <Badge
+                            variant={
+                              claim.status === "APPROVED"
+                                ? "default"
+                                : claim.status === "REJECTED"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {claim.status === "APPROVED"
+                              ? "审批通过"
                               : claim.status === "REJECTED"
-                              ? "destructive"
-                              : "secondary"
-                          }
-                        >
-                          {claim.status === "APPROVED"
-                            ? "审批通过"
-                            : claim.status === "REJECTED"
-                            ? "已驳回"
-                            : "待品控审核"}
-                        </Badge>
+                              ? "已驳回"
+                              : "待品控审核"}
+                          </Badge>
+                          {claim.status === "APPROVED" && (
+                            claim.isBalanced ? (
+                              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px] px-1.5 py-0 h-4">
+                                ✓ 已轧平
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40 text-[10px] px-1.5 py-0 h-4">
+                                待日结轧平
+                              </Badge>
+                            )
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {claim.approver ? (

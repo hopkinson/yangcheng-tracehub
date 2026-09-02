@@ -40,18 +40,18 @@ export function LedgerDateFilter({ selectedDate }: { selectedDate?: string }) {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             className={cn(
-              "w-[220px] justify-start text-left font-normal text-xs h-9",
+              "w-[155px] justify-start text-left font-normal text-xs h-7 px-2.5 gap-1.5",
               !date && "text-muted-foreground"
             )}
           >
-            <CalendarIcon className="mr-2 size-3.5" />
-            {date ? format(date, "yyyy年MM月dd日") : <span>选择对账日期 (按天查询)</span>}
+            <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{date ? format(date, "yyyy-MM-dd") : "指定日期查询"}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
@@ -76,10 +76,10 @@ export function LedgerDateFilter({ selectedDate }: { selectedDate?: string }) {
           variant="ghost"
           size="sm"
           onClick={handleClear}
-          className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
+          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           <X className="size-3.5 mr-1" />
-          清除筛选
+          清除
         </Button>
       )}
     </div>

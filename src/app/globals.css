@@ -102,6 +102,36 @@
   }
 }
 
+/* 现代极简细长滚动条 (Linear / macOS 风格) */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.80 0.01 254 / 0.5);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.60 0.02 254 / 0.7);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.35 0.01 254 / 0.5);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.50 0.02 254 / 0.8);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Tooltip 专属微动效 (严格限定 role="tooltip"，禁止波及触发按钮) */
 @keyframes tooltip-in {
   from {
