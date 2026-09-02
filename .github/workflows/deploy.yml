@@ -71,29 +71,36 @@ jobs:
           ls -lh image.tar.gz
 
       # =========================================================================
-      # 部署到服务器 1 (主生产服务器)
+      # 部署到服务器 1 (主生产服务器 - 具备超时熔断与自动降级)
       # =========================================================================
       - name: "通过 SCP 分发镜像与配置文件至服务器 1"
-        if: github.event_name != 'pull_request'
+        id: scp_server_1
+        if: "!cancelled() && github.event_name != 'pull_request'"
         uses: appleboy/scp-action@v0.1.7
+        continue-on-error: true
         with:
           host: ${{ secrets.SERVER_HOST_1 || secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
+          timeout: "15s"
           source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
           target: "/opt/yangcheng-tracehub"
 
       - name: "SSH 远程加载镜像并平滑重启服务 (服务器 1)"
-        if: github.event_name != 'pull_request'
+        id: ssh_server_1
+        if: "!cancelled() && steps.scp_server_1.outcome == 'success'"
         uses: appleboy/ssh-action@v1.0.3
+        continue-on-error: true
         with:
           host: ${{ secrets.SERVER_HOST_1 || secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
+          timeout: "15s"
+          command_timeout: "10m"
           script: |
             mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx/ssl
             cd /opt/yangcheng-tracehub
@@ -130,29 +137,36 @@ jobs:
             docker compose logs --tail 50 && exit 1
 
       # =========================================================================
-      # 部署到服务器 2 (备用服务器 - 可选)
+      # 部署到服务器 2 (备用服务器 - 无论主服是否在线均可自动平滑兜底)
       # =========================================================================
       - name: "通过 SCP 分发镜像与配置文件至服务器 2"
-        if: github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''
+        id: scp_server_2
+        if: "!cancelled() && github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         uses: appleboy/scp-action@v0.1.7
+        continue-on-error: true
         with:
           host: ${{ env.SERVER_HOST_2 }}
           username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
+          timeout: "15s"
           source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
           target: "/opt/yangcheng-tracehub"
 
       - name: "SSH 远程加载镜像并平滑重启服务 (服务器 2)"
-        if: github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''
+        id: ssh_server_2
+        if: "!cancelled() && steps.scp_server_2.outcome == 'success'"
         uses: appleboy/ssh-action@v1.0.3
+        continue-on-error: true
         with:
           host: ${{ env.SERVER_HOST_2 }}
           username: ${{ secrets.SERVER_USER_2 || secrets.SERVER_USER || 'root' }}
           key: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_PORT || 22 }}
+          timeout: "15s"
+          command_timeout: "10m"
           script: |
             mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx/ssl
             cd /opt/yangcheng-tracehub
@@ -187,3 +201,31 @@ jobs:
             # 部署健康检查与状态探活
             for i in $(seq 1 15); do curl -sf http://127.0.0.1:3000/api/health > /dev/null && docker compose ps && exit 0 || sleep 2; done
             docker compose logs --tail 50 && exit 1
+
+      # =========================================================================
+      # 节点部署结果汇总校验
+      # =========================================================================
+      - name: "校验集群最终部署状态"
+        if: "!cancelled() && github.event_name != 'pull_request'"
+        run: |
+          SERVER1_DEPLOYED="${{ steps.ssh_server_1.outcome == 'success' }}"
+          SERVER2_DEPLOYED="${{ steps.ssh_server_2.outcome == 'success' }}"
+          
+          echo "=================================================="
+          echo "🚀 集群部署状态汇总汇报："
+          echo "  - 服务器 1 (主节点): $SERVER1_DEPLOYED"
+          echo "  - 服务器 2 (备节点): $SERVER2_DEPLOYED"
+          echo "=================================================="
+          
+          if [ "$SERVER1_DEPLOYED" != "true" ] && [ "$SERVER2_DEPLOYED" != "true" ]; then
+            echo "❌ 严重错误: 所有可用服务器 (服务器 1 与 服务器 2) 均部署失败或不可达！"
+            exit 1
+          fi
+          
+          if [ "$SERVER1_DEPLOYED" != "true" ] && [ "$SERVER2_DEPLOYED" == "true" ]; then
+            echo "⚠️ 提示: 服务器 1 离线/超时，已成功自动降级并由 服务器 2 承载生产服务！"
+          elif [ "$SERVER1_DEPLOYED" == "true" ] && [ "$SERVER2_DEPLOYED" != "true" ]; then
+            echo "✅ 提示: 服务器 1 部署成功（服务器 2 未配置或离线）。"
+          else
+            echo "🎉 提示: 服务器 1 与 服务器 2 双节点均已成功同步更新！"
+          fi
