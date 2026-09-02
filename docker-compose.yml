@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: yangcheng-tracehub:latest
+    image: ghcr.io/hopkinson/yangcheng-tracehub:latest
     container_name: yangcheng-tracehub
     restart: always
     command: sh -c "prisma db push --skip-generate && node server.js"

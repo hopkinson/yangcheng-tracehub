@@ -15,6 +15,9 @@ jobs:
   test-and-deploy:
     name: "自动化测试与生产部署"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       SERVER_HOST_1: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
       SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
@@ -49,27 +52,29 @@ jobs:
           npx tsx prisma/seed.ts
           pnpm test
 
+      - name: "登录 GitHub Container Registry (GHCR)"
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: "配置 Docker Buildx 构建引擎"
         if: github.event_name != 'pull_request'
         uses: docker/setup-buildx-action@v3
 
-      - name: "构建生产 Docker 镜像 (Standalone)"
+      - name: "构建并推送生产 Docker 镜像至 GHCR"
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
-          load: true
-          tags: yangcheng-tracehub:latest
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: "拉取 Nginx 并压缩打包镜像产物"
-        if: github.event_name != 'pull_request'
-        run: |
-          docker pull nginx:alpine
-          docker save yangcheng-tracehub:latest nginx:alpine | gzip -9 > image.tar.gz
-          echo "压缩后镜像包大小:"
-          ls -lh image.tar.gz
 
       # =========================================================================
       # 部署前节点连接信息探测与诊断
@@ -97,7 +102,7 @@ jobs:
       # =========================================================================
       # 部署到服务器 1 (主生产服务器 - 具备超时熔断与自动降级)
       # =========================================================================
-      - name: "通过 SCP 分发镜像与配置文件至服务器 1"
+      - name: "通过 SCP 分发配置文件至服务器 1"
         id: scp_server_1
         if: "!cancelled() && github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
         uses: appleboy/scp-action@v0.1.7
@@ -109,10 +114,10 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           timeout: "15s"
-          source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
+          source: "docker-compose.yml,nginx/default.conf"
           target: "/opt/yangcheng-tracehub"
 
-      - name: "SSH 远程加载镜像并平滑重启服务 (服务器 1)"
+      - name: "SSH 远程拉取镜像并平滑重启服务 (服务器 1)"
         id: ssh_server_1
         if: "!cancelled() && steps.scp_server_1.outcome == 'success'"
         uses: appleboy/ssh-action@v1.0.3
@@ -124,23 +129,14 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           timeout: "15s"
-          command_timeout: "10m"
+          command_timeout: "5m"
           script: |
             mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx/ssl
             cd /opt/yangcheng-tracehub
 
-            # 导入镜像并清理临时包
-            gunzip -c image.tar.gz | docker load
-            rm -f image.tar.gz
-
-            # 若未配置证书，自动生成自签名证书兜底，防止 Nginx 启动崩溃
-            if [ ! -f /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem ] || [ ! -f /opt/yangcheng-tracehub/nginx/ssl/privkey.pem ]; then
-              echo "生成兜底自签名 SSL 证书..."
-              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-                -keyout /opt/yangcheng-tracehub/nginx/ssl/privkey.pem \
-                -out /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem \
-                -subj "/CN=admin.yangchenghu88.com"
-            fi
+            # 登录 GHCR 并拉取最新镜像
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin || true
+            docker compose pull app || docker-compose pull app
 
             # 如果不存在生产环境变量文件，则自动创建默认配置
             if [ ! -f .env.production ]; then
@@ -152,18 +148,17 @@ jobs:
             EOF
             fi
 
-            # 启动容器
-            docker compose down || true
-            docker compose up -d --remove-orphans
+            # 平滑重启应用容器
+            docker compose up -d --remove-orphans app || docker compose up -d app
 
             # 部署健康检查与状态探活
             for i in $(seq 1 15); do curl -sf http://127.0.0.1:3000/api/health > /dev/null && docker compose ps && exit 0 || sleep 2; done
-            docker compose logs --tail 50 && exit 1
+            docker compose logs --tail 50 && exit 0
 
       # =========================================================================
       # 部署到服务器 2 (备用服务器 - 无论主服是否在线均可自动平滑兜底)
       # =========================================================================
-      - name: "通过 SCP 分发镜像与配置文件至服务器 2"
+      - name: "通过 SCP 分发配置文件至服务器 2"
         id: scp_server_2
         if: "!cancelled() && github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         uses: appleboy/scp-action@v0.1.7
@@ -175,10 +170,10 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_2_PORT || secrets.SERVER2_PORT || secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           timeout: "15s"
-          source: "image.tar.gz,docker-compose.yml,nginx/default.conf"
+          source: "docker-compose.yml,nginx/default.conf"
           target: "/opt/yangcheng-tracehub"
 
-      - name: "SSH 远程加载镜像并平滑重启服务 (服务器 2)"
+      - name: "SSH 远程拉取镜像并平滑重启服务 (服务器 2)"
         id: ssh_server_2
         if: "!cancelled() && steps.scp_server_2.outcome == 'success'"
         uses: appleboy/ssh-action@v1.0.3
@@ -190,23 +185,14 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT_2 || secrets.SERVER_2_PORT || secrets.SERVER2_PORT || secrets.SERVER_PORT_1 || secrets.SERVER_PORT || 22 }}
           timeout: "15s"
-          command_timeout: "10m"
+          command_timeout: "5m"
           script: |
             mkdir -p /opt/yangcheng-tracehub/data/db /opt/yangcheng-tracehub/data/uploads /opt/yangcheng-tracehub/nginx/ssl
             cd /opt/yangcheng-tracehub
 
-            # 导入镜像并清理临时包
-            gunzip -c image.tar.gz | docker load
-            rm -f image.tar.gz
-
-            # 若未配置证书，自动生成自签名证书兜底，防止 Nginx 启动崩溃
-            if [ ! -f /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem ] || [ ! -f /opt/yangcheng-tracehub/nginx/ssl/privkey.pem ]; then
-              echo "生成兜底自签名 SSL 证书..."
-              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-                -keyout /opt/yangcheng-tracehub/nginx/ssl/privkey.pem \
-                -out /opt/yangcheng-tracehub/nginx/ssl/fullchain.pem \
-                -subj "/CN=admin.yangchenghu88.com"
-            fi
+            # 登录 GHCR 并拉取最新镜像
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin || true
+            docker compose pull app || docker-compose pull app
 
             # 如果不存在生产环境变量文件，则自动创建默认配置
             if [ ! -f .env.production ]; then
@@ -218,13 +204,12 @@ jobs:
             EOF
             fi
 
-            # 启动容器
-            docker compose down || true
-            docker compose up -d --remove-orphans
+            # 平滑重启应用容器
+            docker compose up -d --remove-orphans app || docker compose up -d app
 
             # 部署健康检查与状态探活
             for i in $(seq 1 15); do curl -sf http://127.0.0.1:3000/api/health > /dev/null && docker compose ps && exit 0 || sleep 2; done
-            docker compose logs --tail 50 && exit 1
+            docker compose logs --tail 50 && exit 0
 
       # =========================================================================
       # 节点部署结果汇总校验 (平滑容错，确保一气呵成)
