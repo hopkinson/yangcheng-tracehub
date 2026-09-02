@@ -46,9 +46,7 @@ jobs:
         run: |
           npx prisma db push
           npx tsx prisma/seed.ts
-          npx tsx test/invariants.test.ts
-          npx tsx test/actions.test.ts
-          npx tsx test/channel-isolation.test.ts
+          pnpm test
 
       - name: "配置 Docker Buildx 构建引擎"
         if: github.event_name != 'pull_request'

@@ -13,9 +13,9 @@ const quotaCheck2 = Invariants.checkQuota({ annualQuota: 60000, cumulativeInPool
 assert.strictEqual(quotaCheck2.valid, false);
 assert.strictEqual(quotaCheck2.excess, 1000);
 
-// 2. 暂养池规格复用与冲突
+// 2. 暂养池规格复用与冲突 (PRD V2.1: 仅限空池入池并锁定规格，已有在养存量禁止混入新批次)
 const poolOk = Invariants.checkPoolSpec(
-  { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 1000 },
+  { currentGender: null, currentWeightTier: null, activeCount: 0 },
   { gender: "MALE", weightTier: "4.0两" }
 );
 assert.strictEqual(poolOk.valid, true);
@@ -25,6 +25,12 @@ const poolConflict = Invariants.checkPoolSpec(
   { gender: "FEMALE", weightTier: "3.0两" }
 );
 assert.strictEqual(poolConflict.valid, false);
+
+const poolOccupied = Invariants.checkPoolSpec(
+  { currentGender: "MALE", currentWeightTier: "4.0两", activeCount: 1000 },
+  { gender: "MALE", weightTier: "4.0两" }
+);
+assert.strictEqual(poolOccupied.valid, false);
 
 // 3. 蟹扣领用余量
 const tagCheck = Invariants.checkTagClaim({
