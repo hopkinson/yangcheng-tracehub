@@ -1,5 +1,6 @@
 import { LoginForm } from "./LoginForm";
 import { BrandFullLogo } from "@/components/layout/Logo";
+import { getTenant } from "@/config/tenant";
 
 export default async function LoginPage({
   searchParams,
@@ -7,6 +8,7 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; redirect?: string }>;
 }) {
   const params = await searchParams;
+  const tenant = getTenant();
   const sceneId =
     process.env.NEXT_PUBLIC_ALIYUN_CAPTCHA_SCENE_ID ||
     process.env.ALIYUN_CAPTCHA_SCENE_ID ||
@@ -91,7 +93,7 @@ export default async function LoginPage({
           </div>
 
           <h1 className="text-lg font-bold tracking-tight text-foreground">
-            阳澄湖大闸蟹溯源品控系统
+            {tenant.name}
           </h1>
         </div>
 
