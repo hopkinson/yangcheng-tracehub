@@ -3,7 +3,7 @@ services:
     image: ghcr.io/hopkinson/yangcheng-tracehub:latest
     container_name: yangcheng-tracehub
     restart: always
-    command: sh -c "prisma db push --skip-generate && node server.js"
+    command: sh -c "npx prisma db push --skip-generate && node server.js"
     ports:
       - "3000:3000"
     env_file:
