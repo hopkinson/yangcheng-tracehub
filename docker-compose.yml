@@ -5,32 +5,9 @@ services:
     restart: always
     command: sh -c "npx prisma db push --skip-generate && node server.js"
     ports:
-      - "3001:3000"
+      - "3000:3000"
     env_file:
       - .env.production
     volumes:
       - ./data/db:/app/data
       - ./data/uploads:/app/public/uploads
-
-  # 若服务器已有统一 Nginx 反代，可直接由网关代理到 3001 端口；若需独立运行可再解开
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: yangcheng-nginx
-  #   restart: always
-  #   ports:
-  #     - "8080:80"
-  #     - "8443:443"
-  #   volumes:
-  #     - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-  #     - ./nginx/ssl:/etc/nginx/ssl:ro
-  #   depends_on:
-  #     - app
-
-  watchtower:
-    image: containrrr/watchtower
-    container_name: yangcheng-watchtower
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 60 --cleanup yangcheng-tracehub
-

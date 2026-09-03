@@ -1,0 +1,125 @@
+name: "生产部署 · 服务器 2 (第二节点)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "要部署的镜像版本标签 (默认: latest)"
+        required: false
+        default: "latest"
+
+jobs:
+  deploy-server-2:
+    name: "部署镜像至服务器 2"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
+      SERVER_USER_2: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || secrets.SERVER_2_USER || vars.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+      SERVER_PASSWORD_2: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY_2: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT_2: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || secrets.SERVER_PORT_1 || 22 }}
+      TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+    steps:
+      - name: "检查服务器 2 配置参数"
+        run: |
+          if [ -z "$SERVER_HOST_2" ]; then
+            echo "❌ 错误: 未检测到 SERVER_HOST_2 环境变量或 Secret，请在 GitHub 仓库中配置该服务器 IP。"
+            exit 1
+          fi
+          echo "✅ 目标服务器 2: $SERVER_HOST_2"
+
+      - name: "SSH 部署并平滑上线 (服务器 2)"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST_2 }}
+          username: ${{ env.SERVER_USER_2 }}
+          key: ${{ env.SERVER_SSH_KEY_2 }}
+          password: ${{ env.SERVER_PASSWORD_2 }}
+          port: ${{ env.SERVER_PORT_2 }}
+          timeout: "30s"
+          command_timeout: "10m"
+          script: |
+            set -e
+
+            # 1. 自动定位服务器部署目录
+            TARGET_DIR=""
+            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+              if [ -d "$dir" ]; then
+                TARGET_DIR="$dir"
+                break
+              fi
+            done
+
+            if [ -z "$TARGET_DIR" ]; then
+              TARGET_DIR="/opt/yangcheng-tracehub"
+              mkdir -p "$TARGET_DIR"
+            fi
+            echo "📂 部署目标目录: $TARGET_DIR"
+            cd "$TARGET_DIR"
+
+            # 2. 优化国内 Docker 加速镜像（若 daemon.json 尚无加速配置则自动写入稳定国内加速器）
+            if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json; then
+              echo "⚡ 配置国内 Docker 镜像加速源..."
+              mkdir -p /etc/docker
+              cat << 'DAEMON_EOF' > /etc/docker/daemon.json
+            {
+              "registry-mirrors": [
+                "https://docker.m.daocloud.io",
+                "https://dockerproxy.com",
+                "https://mirror.baidubce.com",
+                "https://hub-mirror.c.163.com"
+              ]
+            }
+            DAEMON_EOF
+              systemctl daemon-reload && systemctl restart docker || true
+              sleep 2
+            fi
+
+            # 3. 使用 GitHub 流水线令牌登录 GHCR
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            # 4. 确保持久化目录存在
+            mkdir -p data/db data/uploads
+
+            # 5. 更新 docker-compose.yml
+            cat << COMPOSE_EOF > docker-compose.yml
+            services:
+              app:
+                image: ghcr.io/${{ github.repository }}:${{ env.TAG }}
+                container_name: yangcheng-tracehub
+                restart: always
+                command: sh -c "npx prisma db push --skip-generate && node server.js"
+                ports:
+                  - "3000:3000"
+                env_file:
+                  - .env.production
+                volumes:
+                  - ./data/db:/app/data
+                  - ./data/uploads:/app/public/uploads
+            COMPOSE_EOF
+
+            # 6. 如果不存在 .env.production，写入默认配置
+            if [ ! -f .env.production ]; then
+              cat << 'ENV_EOF' > .env.production
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="file:/app/data/app.db"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
+            NEXT_PUBLIC_TENANT=maoshi
+            ENV_EOF
+            fi
+
+            # 7. 拉取最新镜像并重启 app 容器
+            echo "📥 正在拉取镜像: ghcr.io/${{ github.repository }}:${{ env.TAG }}..."
+            docker compose pull app || docker-compose pull app
+
+            echo "🔄 启动并平滑上线容器..."
+            docker compose up -d --no-deps app || docker-compose up -d --no-deps app
+
+            # 8. 状态检查
+            sleep 3
+            docker compose ps
+            echo "✅ 服务器 2 部署成功！"

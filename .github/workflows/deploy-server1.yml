@@ -1,0 +1,173 @@
+name: "生产部署 · 服务器 1 (主节点)"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    name: "构建 GHCR 镜像并发布到服务器 1"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SERVER_HOST_1: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
+      SERVER_USER_1: ${{ secrets.SERVER_USER_1 || vars.SERVER_USER_1 || secrets.SERVER_USER || vars.SERVER_USER || 'root' }}
+      SERVER_PASSWORD_1: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY_1: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT_1: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+    steps:
+      - name: "检出代码仓库"
+        uses: actions/checkout@v4
+
+      - name: "初始化 pnpm 环境"
+        uses: pnpm/action-setup@v4
+
+      - name: "配置 Node.js 22"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: "安装项目依赖"
+        run: pnpm install --frozen-lockfile
+
+      - name: "生成 Prisma 客户端"
+        run: pnpm prisma:generate
+
+      - name: "TypeScript 类型安全检查"
+        run: pnpm typecheck
+
+      - name: "初始化测试数据库并运行自动化测试"
+        env:
+          DATABASE_URL: "file:./dev.db"
+          AUTH_SECRET: "test-secret-key-123456"
+        run: |
+          npx prisma db push
+          npx tsx prisma/seed.ts
+          pnpm test
+
+      - name: "登录 GitHub Container Registry (GHCR)"
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "配置 Docker Buildx 构建引擎"
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-buildx-action@v3
+
+      - name: "构建并推送生产 Docker 镜像至 GHCR"
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # =========================================================================
+      # 部署到服务器 1 (主生产服务器)
+      # =========================================================================
+      - name: "SSH 部署并平滑上线 (服务器 1)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          key: ${{ env.SERVER_SSH_KEY_1 }}
+          password: ${{ env.SERVER_PASSWORD_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
+          timeout: "30s"
+          command_timeout: "10m"
+          script: |
+            set -e
+
+            # 1. 自动定位服务器部署目录
+            TARGET_DIR=""
+            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+              if [ -d "$dir" ]; then
+                TARGET_DIR="$dir"
+                break
+              fi
+            done
+
+            if [ -z "$TARGET_DIR" ]; then
+              TARGET_DIR="/opt/yangcheng-tracehub"
+              mkdir -p "$TARGET_DIR"
+            fi
+            echo "📂 部署目标目录: $TARGET_DIR"
+            cd "$TARGET_DIR"
+
+            # 2. 优化国内 Docker 加速镜像（若 daemon.json 尚无加速配置则自动写入稳定国内加速器）
+            if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json; then
+              echo "⚡ 配置国内 Docker 镜像加速源..."
+              mkdir -p /etc/docker
+              cat << 'DAEMON_EOF' > /etc/docker/daemon.json
+            {
+              "registry-mirrors": [
+                "https://docker.m.daocloud.io",
+                "https://dockerproxy.com",
+                "https://mirror.baidubce.com",
+                "https://hub-mirror.c.163.com"
+              ]
+            }
+            DAEMON_EOF
+              systemctl daemon-reload && systemctl restart docker || true
+              sleep 2
+            fi
+
+            # 3. 使用 GitHub 流水线令牌登录 GHCR（确保拉取 100% 具备权限，杜绝 denied）
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            # 4. 确保持久化目录存在
+            mkdir -p data/db data/uploads
+
+            # 5. 更新 docker-compose.yml
+            cat << 'COMPOSE_EOF' > docker-compose.yml
+            services:
+              app:
+                image: ghcr.io/${{ github.repository }}:latest
+                container_name: yangcheng-tracehub
+                restart: always
+                command: sh -c "npx prisma db push --skip-generate && node server.js"
+                ports:
+                  - "3000:3000"
+                env_file:
+                  - .env.production
+                volumes:
+                  - ./data/db:/app/data
+                  - ./data/uploads:/app/public/uploads
+            COMPOSE_EOF
+
+            # 6. 如果不存在 .env.production，写入默认配置
+            if [ ! -f .env.production ]; then
+              cat << 'ENV_EOF' > .env.production
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="file:/app/data/app.db"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
+            NEXT_PUBLIC_TENANT=maoshi
+            ENV_EOF
+            fi
+
+            # 7. 拉取最新镜像并重启 app 容器
+            echo "📥 正在拉取最新生产镜像..."
+            docker compose pull app || docker-compose pull app
+
+            echo "🔄 启动并平滑上线容器..."
+            docker compose up -d --no-deps app || docker-compose up -d --no-deps app
+
+            # 8. 状态与健康检查
+            sleep 3
+            docker compose ps
+            echo "✅ 服务器 1 部署成功！"
