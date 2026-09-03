@@ -3,18 +3,23 @@ name: "服务器运维与实时日志诊断"
 on:
   workflow_dispatch:
     inputs:
+      server:
+        description: "选择服务器 (1: 主节点, 2: 第二节点)"
+        required: false
+        default: "1"
       lines:
         description: "查看日志行数 (默认: 100)"
         required: false
         default: "100"
       action:
-        description: "执行操作 (logs / seed / restart / status)"
+        description: "执行操作 (logs / push / seed / restart / status)"
         required: false
         default: "logs"
 
 jobs:
-  server-diag:
+  server1-diag:
     name: "服务器 1 诊断与日志"
+    if: github.event.inputs.server != '2'
     runs-on: ubuntu-latest
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
@@ -22,6 +27,87 @@ jobs:
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
       SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
       SERVER_PORT: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+    steps:
+      - name: "SSH 执行诊断指令 (密码模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_PASSWORD }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "5m"
+          script: |
+            TARGET_DIR="/opt/yangcheng-tracehub"
+            [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
+            cd "$TARGET_DIR"
+            echo "=== 容器状态 ==="
+            docker compose ps
+            
+            if [ "${{ github.event.inputs.action || 'logs' }}" = "push" ]; then
+              echo "=== 正在同步数据库表结构 (prisma db push --accept-data-loss) ==="
+              docker compose exec -T app /usr/local/bin/prisma db push --accept-data-loss --skip-generate
+              echo "=== 重启应用容器 ==="
+              docker compose restart app
+              sleep 2
+            elif [ "${{ github.event.inputs.action || 'logs' }}" = "seed" ]; then
+              echo "=== 正在执行数据库初始化种子数据 (prisma seed) ==="
+              docker compose exec -T app sh -c "npx tsx prisma/seed.ts || node -e 'console.log(1)'"
+            elif [ "${{ github.event.inputs.action || 'logs' }}" = "restart" ]; then
+              echo "=== 重启应用容器 ==="
+              docker compose restart app
+              sleep 2
+            fi
+
+            echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
+            docker compose logs --tail=${{ github.event.inputs.lines || '100' }} app
+
+      - name: "SSH 执行诊断指令 (密钥模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SERVER_SSH_KEY }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "5m"
+          script: |
+            TARGET_DIR="/opt/yangcheng-tracehub"
+            [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
+            cd "$TARGET_DIR"
+            echo "=== 容器状态 ==="
+            docker compose ps
+            
+            if [ "${{ github.event.inputs.action || 'logs' }}" = "push" ]; then
+              echo "=== 正在同步数据库表结构 (prisma db push --accept-data-loss) ==="
+              docker compose exec -T app /usr/local/bin/prisma db push --accept-data-loss --skip-generate
+              echo "=== 重启应用容器 ==="
+              docker compose restart app
+              sleep 2
+            elif [ "${{ github.event.inputs.action || 'logs' }}" = "seed" ]; then
+              echo "=== 正在执行数据库初始化种子数据 (prisma seed) ==="
+              docker compose exec -T app sh -c "npx tsx prisma/seed.ts || node -e 'console.log(1)'"
+            elif [ "${{ github.event.inputs.action || 'logs' }}" = "restart" ]; then
+              echo "=== 重启应用容器 ==="
+              docker compose restart app
+              sleep 2
+            fi
+
+            echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
+            docker compose logs --tail=${{ github.event.inputs.lines || '100' }} app
+
+  server2-diag:
+    name: "服务器 2 诊断与日志"
+    if: github.event.inputs.server == '2'
+    runs-on: ubuntu-latest
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
+      SERVER_USER: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || secrets.SERVER_2_USER || vars.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+      SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || secrets.SERVER_PORT_1 || 22 }}
     steps:
       - name: "SSH 执行诊断指令 (密码模式)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
