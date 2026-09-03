@@ -130,15 +130,15 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
 
       {isCaptchaConfigured && (
         <div className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 bg-muted/40 px-2 py-0.5 rounded-full border border-border/50 mb-2">
-          <ShieldCheck className="size-3 text-sky-500" />
+          <ShieldCheck className="size-3 text-primary" />
           <span>已启用阿里云智能风控防御</span>
         </div>
       )}
 
       {/* 登录表单卡片 */}
-      <Card className="relative overflow-hidden rounded-2xl border border-border/80 dark:border-white/10 bg-card/90 dark:bg-card/75 backdrop-blur-2xl shadow-2xl shadow-sky-950/10 dark:shadow-black/60">
+      <Card className="relative overflow-hidden rounded-2xl border border-border/80 dark:border-white/10 bg-card/90 dark:bg-card/75 backdrop-blur-2xl shadow-2xl shadow-primary/5 dark:shadow-black/60">
         {/* 卡片顶端科技蓝光微流线 */}
-        <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
 
         <CardContent className="pt-6 pb-6 space-y-4">
           <form action={loginAction} onSubmit={handleSubmit} className="space-y-4">
@@ -174,7 +174,7 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
                   onChange={(e) => setPhone(e.target.value)}
                   required
                   maxLength={11}
-                  className="h-9.5 pl-9 text-xs font-mono tracking-wide bg-background/50 border-input/80 focus-visible:ring-2 focus-visible:ring-sky-500/20 focus-visible:border-sky-500/50 transition-all"
+                  className="h-9.5 pl-9 text-xs font-mono tracking-wide bg-background/50 border-input/80 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/50 transition-all"
                 />
               </div>
             </div>
@@ -194,7 +194,7 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-9.5 pl-9 pr-9 text-xs font-mono bg-background/50 border-input/80 focus-visible:ring-2 focus-visible:ring-sky-500/20 focus-visible:border-sky-500/50 transition-all"
+                  className="h-9.5 pl-9 pr-9 text-xs font-mono bg-background/50 border-input/80 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/50 transition-all"
                 />
                 <button
                   type="button"
@@ -222,7 +222,7 @@ export function LoginForm({ sceneId, prefix, error, redirectUrl }: LoginFormProp
               id="captcha-trigger-btn"
               type="submit"
               disabled={isSubmitting}
-              className="w-full h-9.5 text-xs font-medium mt-2 gap-1.5 shadow-md shadow-sky-600/20 hover:shadow-sky-600/30 active:scale-[0.99] transition-all bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 text-white"
+              className="w-full h-9.5 text-xs font-medium mt-2 gap-1.5 shadow-md shadow-primary/25 hover:shadow-primary/35 active:scale-[0.99] transition-all bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {isSubmitting ? (
                 <>

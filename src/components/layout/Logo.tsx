@@ -17,13 +17,14 @@ export interface LogoProps {
  */
 export function CrabLogoIcon({ className }: { className?: string }) {
   const tenant = getTenant();
+  const isMaoshi = tenant.id === "maoshi";
   return (
     <div className={cn("relative inline-flex items-center justify-center shrink-0 select-none", className)}>
       <Image
         src={tenant.emblem}
         alt={tenant.name}
-        width={191}
-        height={254}
+        width={isMaoshi ? 800 : 191}
+        height={isMaoshi ? 800 : 254}
         priority
         className="size-full object-contain drop-shadow-xs"
       />
@@ -42,6 +43,9 @@ export function BrandFullLogo({
   priority?: boolean;
 }) {
   const tenant = getTenant();
+  const isSquareLogo = tenant.id === "maoshi";
+  const logoWidth = isSquareLogo ? 961 : 996;
+  const logoHeight = isSquareLogo ? 903 : 281;
 
   return (
     <div className={cn("relative inline-flex items-center justify-center select-none", className)}>
@@ -49,8 +53,8 @@ export function BrandFullLogo({
       <Image
         src={tenant.logo}
         alt={tenant.name}
-        width={996}
-        height={281}
+        width={logoWidth}
+        height={logoHeight}
         priority={priority}
         className="w-full h-auto object-contain dark:hidden"
       />
@@ -58,8 +62,8 @@ export function BrandFullLogo({
       <Image
         src={tenant.logoDark}
         alt={tenant.name}
-        width={996}
-        height={281}
+        width={logoWidth}
+        height={logoHeight}
         priority={priority}
         className="w-full h-auto object-contain hidden dark:block"
       />
