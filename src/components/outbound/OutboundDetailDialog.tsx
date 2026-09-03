@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FileText, Truck, Store, Calendar, User, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { formatDateTime, cn } from "@/lib/utils";
+import { getTenant } from "@/config/tenant";
 
 export function OutboundDetailDialog({
   order,
@@ -98,7 +99,7 @@ export function OutboundDetailDialog({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg border bg-muted/20">
             <div>
               <span className="text-[11px] text-muted-foreground block">去向 / 门店</span>
-              <span className="font-medium text-foreground">{order.storeName || (isStore ? "山姆门店" : "蟹卡直发")}</span>
+              <span className="font-medium text-foreground">{order.storeName || (isStore ? getTenant().storeLabel : "蟹卡直发")}</span>
             </div>
             <div>
               <span className="text-[11px] text-muted-foreground block">出库总只数</span>

@@ -3,6 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { getTenant } from "@/config/tenant";
 
 export interface LogoProps {
   className?: string;
@@ -12,14 +13,15 @@ export interface LogoProps {
 }
 
 /**
- * 阳澄湖大闸蟹溯源品控系统 - 品牌徽标图标
+ * 品牌徽标图标
  */
 export function CrabLogoIcon({ className }: { className?: string }) {
+  const tenant = getTenant();
   return (
     <div className={cn("relative inline-flex items-center justify-center shrink-0 select-none", className)}>
       <Image
-        src="/logo-emblem.png"
-        alt="阳澄湖大闸蟹溯源品控系统"
+        src={tenant.emblem}
+        alt={tenant.name}
         width={191}
         height={254}
         priority
@@ -30,7 +32,7 @@ export function CrabLogoIcon({ className }: { className?: string }) {
 }
 
 /**
- * 阳澄股份 - 完整带文字品牌 Logo (包含图形徽标 + 阳澄股份® YANGCHENG STOCK)
+ * 完整带文字品牌 Logo
  */
 export function BrandFullLogo({
   className,
@@ -39,12 +41,14 @@ export function BrandFullLogo({
   className?: string;
   priority?: boolean;
 }) {
+  const tenant = getTenant();
+
   return (
     <div className={cn("relative inline-flex items-center justify-center select-none", className)}>
       {/* 浅色模式显示深色文字版 */}
       <Image
-        src="/logo-brand.png"
-        alt="阳澄股份 YANGCHENG STOCK"
+        src={tenant.logo}
+        alt={tenant.name}
         width={996}
         height={281}
         priority={priority}
@@ -52,8 +56,8 @@ export function BrandFullLogo({
       />
       {/* 深色模式显示高亮文字版 */}
       <Image
-        src="/logo-brand-dark.png"
-        alt="阳澄股份 YANGCHENG STOCK"
+        src={tenant.logoDark}
+        alt={tenant.name}
         width={996}
         height={281}
         priority={priority}
@@ -71,6 +75,7 @@ export function Logo({
   collapsed = false,
   size = "md",
 }: LogoProps) {
+  const tenant = getTenant();
   return (
     <div
       className={cn(
@@ -89,9 +94,10 @@ export function Logo({
 
       {!collapsed && (
         <span className="text-xs font-bold tracking-tight text-foreground truncate">
-          阳澄湖大闸蟹溯源品控系统
+          {tenant.name}
         </span>
       )}
     </div>
   );
 }
+

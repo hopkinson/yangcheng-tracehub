@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getTenant } from "@/config/tenant";
 
 export interface TraceQCBadge {
   id: string;
@@ -366,7 +367,7 @@ async function buildTraceFromOutbound(
       code: primaryOrder.code,
       orderNo: primaryOrder.orderNo,
       type: primaryOrder.type,
-      storeName: primaryOrder.storeName || outOrder.store?.name || "山姆会员店",
+      storeName: primaryOrder.storeName || outOrder.store?.name || getTenant().storeLabel,
       specModel: primaryOrder.specModel,
       gender: primaryOrder.gender,
       weightTier: primaryOrder.weightTier,
@@ -378,8 +379,8 @@ async function buildTraceFromOutbound(
     outboundInfo: {
       code: outOrder.code,
       type: outOrder.type,
-      storeName: outOrder.store?.name || outOrder.storeName || "山姆会员店",
-      channelName: outOrder.channel?.name || "山姆会员商店",
+      storeName: outOrder.store?.name || outOrder.storeName || getTenant().storeLabel,
+      channelName: outOrder.channel?.name || getTenant().channelName,
       outboundCount: outOrder.outboundCount,
       applicantName: outOrder.applicant?.fullName || "李仓管",
       approverName: outOrder.approver?.fullName || "张核验",
@@ -539,7 +540,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       code: primaryOrder.code,
       orderNo: primaryOrder.orderNo,
       type: primaryOrder.type,
-      storeName: primaryOrder.storeName || "山姆会员店",
+      storeName: primaryOrder.storeName || getTenant().storeLabel,
       specModel: primaryOrder.specModel,
       gender: primaryOrder.gender,
       weightTier: primaryOrder.weightTier,

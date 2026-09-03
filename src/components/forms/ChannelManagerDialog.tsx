@@ -158,7 +158,7 @@ export function ChannelManagerDialog({
                     <FormLabel className="text-xs">渠道全称</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="如 山姆会员商店、盒马鲜生"
+                        placeholder="如 商超零售渠道、餐饮连锁渠道"
                         className="h-9 text-sm"
                         {...field}
                       />

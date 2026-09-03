@@ -87,7 +87,17 @@
   --chart-2: oklch(0.68 0.16 160);
   --chart-3: oklch(0.75 0.18 65);
   --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+}
+
+[data-tenant="maoshi"] {
+  --primary: oklch(0.46 0.20 252);
+  --ring: oklch(0.46 0.20 252);
+}
+
+[data-tenant="maoshi"].dark,
+.dark[data-tenant="maoshi"] {
+  --primary: oklch(0.58 0.20 252);
+  --ring: oklch(0.58 0.20 252);
 }
 
 @layer base {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { getTenant } from "@/config/tenant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -302,10 +303,10 @@ export default async function OutboundPage({
                           <div className="flex flex-col gap-0.5 items-start">
                             <span className="font-medium text-foreground text-xs flex items-center gap-1">
                               {isStore ? <StoreIcon className="size-3 text-cyan-600" /> : <ShoppingBag className="size-3 text-orange-600" />}
-                              {order.store?.name || order.storeName || (isStore ? "山姆会员店" : "蟹卡顺丰直发")}
+                              {order.store?.name || order.storeName || (isStore ? getTenant().storeLabel : "蟹卡顺丰直发")}
                             </span>
                             <span className="text-[10px] text-muted-foreground font-mono">
-                              {order.channel?.name || "山姆会员渠道"}
+                              {order.channel?.name || getTenant().channelName}
                             </span>
                           </div>
                         </TableCell>

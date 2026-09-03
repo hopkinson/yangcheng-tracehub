@@ -126,7 +126,7 @@ export function StoreDialog({
                 <FormItem>
                   <FormLabel>门店全称</FormLabel>
                   <FormControl>
-                    <Input placeholder="如：山姆会员店(苏州邻瑞广场店)" {...field} />
+                    <Input placeholder="如：合作门店(苏州邻瑞广场店)" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

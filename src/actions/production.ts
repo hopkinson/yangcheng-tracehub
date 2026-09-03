@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
+import { getTenant } from "@/config/tenant";
 
 // ============================================================================
 // 1. 订单管理 Server Actions
@@ -61,7 +62,7 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
         importId,
         orderNo: raw.orderNo,
         type: raw.type,
-        storeName: raw.storeName || "山姆会员店",
+        storeName: raw.storeName || getTenant().storeLabel,
         specModel: raw.specModel || null,
         gender: raw.gender === "母" || raw.gender === "FEMALE" ? "FEMALE" : "MALE",
         weightTier: raw.weightTier.endsWith("两") ? raw.weightTier : `${raw.weightTier}两`,

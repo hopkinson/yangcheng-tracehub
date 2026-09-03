@@ -76,7 +76,7 @@ const PERMISSION_MATRIX = [
   { category: "出库与履约", module: "出库打包与物流回填", desc: "单票出库打包、按批次绑扣、填报物流单号/门店自配", admin: "管理", farmerAdmin: "无权", warehouse: "打包 / 发货", qa: "出库核准", channel: "进度查验" },
   { category: "品控审批与风控", module: "出库单审核与三方一致性", desc: "校验在池存活、单票一致（出库数=订单数），审批通过即核销在池", admin: "特批放行", farmerAdmin: "无权", warehouse: "提交申请", qa: "出库审批", channel: "无权" },
   { category: "品控审批与风控", module: "批次品控争议冻结 / 解冻", desc: "抽检不合格或重大损耗时冻结批次，禁止出库发货；排查后解冻", admin: "冻结 / 解冻", farmerAdmin: "无权", warehouse: "受控拦截", qa: "冻结 / 解冻", channel: "无权" },
-  { category: "销售与溯源", module: "门店档案与渠道管理", desc: "山姆各门店主档维护、累计出库统计、有出库记录防删保护", admin: "增删改查", farmerAdmin: "无权", warehouse: "门店维护", qa: "只读", channel: "只读" },
+  { category: "销售与溯源", module: "门店档案与渠道管理", desc: "各渠道门店主档维护、累计出库统计、有出库记录防删保护", admin: "增删改查", farmerAdmin: "无权", warehouse: "门店维护", qa: "只读", channel: "只读" },
   { category: "销售与溯源", module: "渠道反向追溯与合规台账", desc: "四本法定合规台账查阅、批次全链路正反向追溯、快检试吃原件调阅", admin: "全量调阅", farmerAdmin: "养殖台账", warehouse: "出入库台账", qa: "全量调阅", channel: "专属追溯 (隔离)" },
   { category: "系统与安全", module: "系统用户与特批审计", desc: "用户账号管理、初始密码重置、全流程特批放行与操作留痕审计", admin: "超级特权", farmerAdmin: "无权", warehouse: "无权", qa: "无权", channel: "无权" },
 ];

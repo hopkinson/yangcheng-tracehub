@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileSpreadsheet, UploadCloud, Loader2, Info } from "lucide-react";
 import { importOrdersAction, RawImportOrder } from "@/actions/production";
 import { Invariants } from "@/lib/invariants";
+import { getTenant } from "@/config/tenant";
 
 export function OrderImportDialog() {
   const [open, setOpen] = useState(false);
@@ -71,9 +72,9 @@ export function OrderImportDialog() {
       } else {
         // 格式: 订单号 门店名称 公母 规格 只数 发货日期
         list.push({
-          orderNo: parts[0] || `SM${Date.now()}`,
+          orderNo: parts[0] || `SO${Date.now()}`,
           type: "STORE_ORDER",
-          storeName: parts[1] || "山姆会员店",
+          storeName: parts[1] || getTenant().storeLabel,
           gender: parts[2] === "母" ? "FEMALE" : "MALE",
           weightTier: parts[3] || "4.0两",
           count: parseInt(parts[4], 10) || 100,
@@ -145,7 +146,7 @@ export function OrderImportDialog() {
                 蟹卡提货导入（自动拆分规格）
               </TabsTrigger>
               <TabsTrigger value="STORE" className="text-xs">
-                山姆门店订单导入
+                {getTenant().storeLabel}订单导入
               </TabsTrigger>
             </TabsList>
           </div>
@@ -161,7 +162,7 @@ export function OrderImportDialog() {
               placeholder={
                 activeTab === "CARD"
                   ? "格式：订单号 规格型号 发货日期（例如：KK20260921102 4.0母蟹X5只，5.0公蟹X5只 2026-09-22）"
-                  : "格式：订单号 门店名称 公母 规格 只数 发货日期（例如：SM20260921008 山姆会员店(深圳龙华店) 公 4.0两 1500 2026-09-22）"
+                  : `格式：订单号 门店名称 公母 规格 只数 发货日期（例如：SO20260921008 ${getTenant().storeLabel}(深圳店) 公 4.0两 1500 2026-09-22）`
               }
               className="font-mono text-xs h-24 resize-none"
             />
