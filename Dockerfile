@@ -23,7 +23,8 @@ WORKDIR /app
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
     && apk add --no-cache libc6-compat openssl
 RUN npm config set registry https://registry.npmmirror.com \
-    && npm install -g prisma@6.4.1
+    && npm install -g prisma@6.4.1 \
+    && ln -sf /usr/local/bin/prisma /usr/bin/prisma
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -37,7 +38,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /app/node_modules/.bin \
+    && ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node server.js"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
