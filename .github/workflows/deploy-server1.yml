@@ -87,13 +87,12 @@ jobs:
           echo "✅ 镜像打包并压缩完成，文件大小:"
           ls -lh app-image.tar.gz
 
-      - name: "传输镜像包至服务器 1"
-        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
+      - name: "传输镜像包至服务器 1 (密码认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 == ''"
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.SERVER_HOST_1 }}
           username: ${{ env.SERVER_USER_1 }}
-          key: ${{ env.SERVER_SSH_KEY_1 }}
           password: ${{ env.SERVER_PASSWORD_1 }}
           port: ${{ env.SERVER_PORT_1 }}
           timeout: "60s"
@@ -102,14 +101,107 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "SSH 部署并平滑上线 (服务器 1)"
-        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
+      - name: "传输镜像包至服务器 1 (密钥认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          key: ${{ env.SERVER_SSH_KEY_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
+          timeout: "60s"
+          command_timeout: "10m"
+          source: "app-image.tar.gz"
+          target: "/tmp"
+          overwrite: true
+
+      - name: "SSH 部署并平滑上线 (服务器 1 - 密码认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 == ''"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          password: ${{ env.SERVER_PASSWORD_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
+          timeout: "30s"
+          command_timeout: "10m"
+          script: |
+            set -e
+
+            # 1. 从 /tmp 加载传输过来的最新镜像包并立即清理临时文件
+            if [ -f /tmp/app-image.tar.gz ]; then
+              echo "📥 正在从传输包加载最新 Docker 镜像..."
+              docker load < /tmp/app-image.tar.gz
+              rm -f /tmp/app-image.tar.gz
+              echo "✅ 镜像加载成功！"
+            fi
+
+            # 2. 自动定位服务器部署目录
+            TARGET_DIR=""
+            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+              if [ -d "$dir" ]; then
+                TARGET_DIR="$dir"
+                break
+              fi
+            done
+
+            if [ -z "$TARGET_DIR" ]; then
+              TARGET_DIR="/opt/yangcheng-tracehub"
+              mkdir -p "$TARGET_DIR"
+            fi
+            echo "📂 部署目标目录: $TARGET_DIR"
+            cd "$TARGET_DIR"
+
+            # 3. 确保持久化目录存在
+            mkdir -p data/db data/uploads
+
+            # 4. 更新 docker-compose.yml
+            cat << 'COMPOSE_EOF' > docker-compose.yml
+            services:
+              app:
+                image: ghcr.io/${{ github.repository }}:latest
+                container_name: yangcheng-tracehub
+                restart: always
+                command: sh -c "npx prisma db push --skip-generate && node server.js"
+                ports:
+                  - "3000:3000"
+                env_file:
+                  - .env.production
+                volumes:
+                  - ./data/db:/app/data
+                  - ./data/uploads:/app/public/uploads
+            COMPOSE_EOF
+
+            # 5. 如果不存在 .env.production，写入默认配置
+            if [ ! -f .env.production ]; then
+              cat << 'ENV_EOF' > .env.production
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="file:/app/data/app.db"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
+            NEXT_PUBLIC_TENANT=maoshi
+            ENV_EOF
+            fi
+
+            # 6. 本地镜像已 load 就绪，直接平滑上线应用容器
+            echo "🔄 启动并平滑上线容器..."
+            docker compose up -d --no-deps app || docker-compose up -d --no-deps app
+
+            # 7. 清理悬空未使用的旧镜像，保持磁盘干净
+            docker image prune -f || true
+
+            # 8. 状态与健康检查
+            sleep 3
+            docker compose ps
+            echo "✅ 服务器 1 部署成功！"
+
+      - name: "SSH 部署并平滑上线 (服务器 1 - 密钥认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST_1 }}
           username: ${{ env.SERVER_USER_1 }}
           key: ${{ env.SERVER_SSH_KEY_1 }}
-          password: ${{ env.SERVER_PASSWORD_1 }}
           port: ${{ env.SERVER_PORT_1 }}
           timeout: "30s"
           command_timeout: "10m"
