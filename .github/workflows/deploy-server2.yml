@@ -1,6 +1,10 @@
 name: "生产部署 · 服务器 2 (第二节点)"
 
 on:
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
     inputs:
       image_tag:
@@ -9,12 +13,12 @@ on:
         default: "latest"
 
 jobs:
-  deploy-server-2:
-    name: "部署镜像至服务器 2"
+  build-and-deploy:
+    name: "构建并发布到服务器 2"
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
+      packages: write
     env:
       SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
       SERVER_USER_2: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || secrets.SERVER_2_USER || vars.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
@@ -24,14 +28,71 @@ jobs:
       TAG: ${{ github.event.inputs.image_tag || 'latest' }}
     steps:
       - name: "检查服务器 2 配置参数"
+        id: check_config
         run: |
           if [ -z "$SERVER_HOST_2" ]; then
-            echo "❌ 错误: 未检测到 SERVER_HOST_2 环境变量或 Secret，请在 GitHub 仓库中配置该服务器 IP。"
-            exit 1
+            echo "⚠️ [提示] 未检测到 SERVER_HOST_2 配置，跳过服务器 2 部署。"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ 目标服务器 2: $SERVER_HOST_2"
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
-          echo "✅ 目标服务器 2: $SERVER_HOST_2"
 
+      - name: "检出代码仓库"
+        if: steps.check_config.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: "初始化 pnpm 环境"
+        if: steps.check_config.outputs.skip != 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: "配置 Node.js 22"
+        if: steps.check_config.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: "安装项目依赖"
+        if: steps.check_config.outputs.skip != 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: "生成 Prisma 客户端"
+        if: steps.check_config.outputs.skip != 'true'
+        run: pnpm prisma:generate
+
+      - name: "TypeScript 类型安全检查"
+        if: steps.check_config.outputs.skip != 'true'
+        run: pnpm typecheck
+
+      - name: "登录 GitHub Container Registry (GHCR)"
+        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "配置 Docker Buildx 构建引擎"
+        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request'
+        uses: docker/setup-buildx-action@v3
+
+      - name: "构建并推送生产 Docker 镜像至 GHCR"
+        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # =========================================================================
+      # 部署到服务器 2
+      # =========================================================================
       - name: "SSH 部署并平滑上线 (服务器 2)"
+        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST_2 }}
@@ -85,7 +146,7 @@ jobs:
             mkdir -p data/db data/uploads
 
             # 5. 更新 docker-compose.yml
-            cat << COMPOSE_EOF > docker-compose.yml
+            cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
                 image: ghcr.io/${{ github.repository }}:${{ env.TAG }}
