@@ -40,12 +40,19 @@ jobs:
             echo "=== 容器状态 ==="
             docker compose ps
             
-            if [ "${{ github.event.inputs.action || 'logs' }}" = "seed" ]; then
+            if [ "${{ github.event.inputs.action || 'logs' }}" = "push" ]; then
+              echo "=== 正在同步数据库表结构 (prisma db push --accept-data-loss) ==="
+              docker compose exec -T app /usr/local/bin/prisma db push --accept-data-loss --skip-generate
+              echo "=== 重启应用容器 ==="
+              docker compose restart app
+              sleep 2
+            elif [ "${{ github.event.inputs.action || 'logs' }}" = "seed" ]; then
               echo "=== 正在执行数据库初始化种子数据 (prisma seed) ==="
               docker compose exec -T app sh -c "npx tsx prisma/seed.ts || node -e 'console.log(1)'"
             elif [ "${{ github.event.inputs.action || 'logs' }}" = "restart" ]; then
               echo "=== 重启应用容器 ==="
               docker compose restart app
+              sleep 2
             fi
 
             echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
@@ -68,12 +75,19 @@ jobs:
             echo "=== 容器状态 ==="
             docker compose ps
             
-            if [ "${{ github.event.inputs.action || 'logs' }}" = "seed" ]; then
+            if [ "${{ github.event.inputs.action || 'logs' }}" = "push" ]; then
+              echo "=== 正在同步数据库表结构 (prisma db push --accept-data-loss) ==="
+              docker compose exec -T app /usr/local/bin/prisma db push --accept-data-loss --skip-generate
+              echo "=== 重启应用容器 ==="
+              docker compose restart app
+              sleep 2
+            elif [ "${{ github.event.inputs.action || 'logs' }}" = "seed" ]; then
               echo "=== 正在执行数据库初始化种子数据 (prisma seed) ==="
               docker compose exec -T app sh -c "npx tsx prisma/seed.ts || node -e 'console.log(1)'"
             elif [ "${{ github.event.inputs.action || 'logs' }}" = "restart" ]; then
               echo "=== 重启应用容器 ==="
               docker compose restart app
+              sleep 2
             fi
 
             echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
