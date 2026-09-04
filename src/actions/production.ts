@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { getTenant } from "@/config/tenant";
 
+import { getBeijingDateStr } from "@/lib/utils";
+
 // ============================================================================
 // 1. 订单管理 Server Actions
 // ============================================================================
@@ -17,11 +19,17 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
       return { success: false, message: "导入订单列表不能为空" };
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = getBeijingDateStr();
     const importId = `IM${dateStr}${Math.floor(10 + Math.random() * 90)}`;
 
+    const lastOrder = await prisma.order.findFirst({
+      where: { code: { startsWith: `SO${dateStr}` } },
+      orderBy: { code: "desc" },
+      select: { code: true },
+    });
+    let idx = (Number(lastOrder?.code.slice(10)) || 0) + 1;
+
     const ordersToCreate: any[] = [];
-    let idx = 1;
 
     for (const raw of rawOrders) {
       const defaultStore = raw.type === "CRAB_CARD" ? "蟹卡提货 (顺丰速运直发)" : getTenant().storeLabel;
