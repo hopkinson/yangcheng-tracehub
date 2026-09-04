@@ -191,7 +191,7 @@ jobs:
             PORT=3000
             DATABASE_URL="file:/app/data/app.db"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-            NEXT_PUBLIC_TENANT=maoshi
+            NEXT_PUBLIC_TENANT=default
             ENV_EOF
             fi
 
@@ -306,7 +306,7 @@ jobs:
             PORT=3000
             DATABASE_URL="file:/app/data/app.db"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-            NEXT_PUBLIC_TENANT=maoshi
+            NEXT_PUBLIC_TENANT=default
             ENV_EOF
             fi
 

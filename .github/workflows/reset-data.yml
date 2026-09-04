@@ -4,19 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       server:
-        description: "选择目标服务器 (1: 主节点, 2: 第二节点)"
+        description: "选择目标服务器与分系统 (系统自动绑定对应超管与配置)"
         type: choice
-        default: "1"
+        default: "1 (服务器 1: 阳澄股份 - default)"
         options:
-          - "1"
-          - "2"
-      tenant:
-        description: "选择要重置的分系统 (maoshi: 毛氏, default: 阳澄股份)"
-        type: choice
-        default: "maoshi"
-        options:
-          - "maoshi"
-          - "default"
+          - "1 (服务器 1: 阳澄股份 - default)"
+          - "2 (服务器 2: 毛氏水产 - maoshi)"
       confirm:
         description: "确认清空并初始化 (默认 YES 即可直接执行)"
         type: choice
@@ -27,8 +20,8 @@ on:
 
 jobs:
   reset-server1:
-    name: "服务器 1 - 执行数据重置与超管初始化"
-    if: github.event.inputs.server != '2' && github.event.inputs.confirm == 'YES'
+    name: "服务器 1 (阳澄股份) - 执行数据重置与超管初始化"
+    if: (!startsWith(github.event.inputs.server, '2')) && github.event.inputs.confirm == 'YES'
     runs-on: ubuntu-latest
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
@@ -51,8 +44,8 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
-            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
-            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 正在执行阳澄股份数据清理与单超管初始化 (Tenant: default) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
             docker compose restart app
             sleep 2
@@ -72,16 +65,16 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
-            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
-            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 正在执行阳澄股份数据清理与单超管初始化 (Tenant: default) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
             docker compose restart app
             sleep 2
             docker compose ps
 
   reset-server2:
-    name: "服务器 2 - 执行数据重置与超管初始化"
-    if: github.event.inputs.server == '2' && github.event.inputs.confirm == 'YES'
+    name: "服务器 2 (毛氏水产) - 执行数据重置与超管初始化"
+    if: startsWith(github.event.inputs.server, '2') && github.event.inputs.confirm == 'YES'
     runs-on: ubuntu-latest
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
@@ -104,8 +97,8 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
-            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
-            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 正在执行毛氏分系统数据清理与单超管初始化 (Tenant: maoshi) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
             docker compose restart app
             sleep 2
@@ -125,8 +118,8 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
-            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
-            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 正在执行毛氏分系统数据清理与单超管初始化 (Tenant: maoshi) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
             docker compose restart app
             sleep 2
