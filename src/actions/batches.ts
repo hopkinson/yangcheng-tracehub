@@ -65,7 +65,7 @@ export async function createBatchAction(data: {
 
     const directLive = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
     const itemLive = pool.batchItems.reduce((sum, bi) => sum + (bi.inPoolCount - bi.outPoolCount - bi.lossCount), 0);
-    const activeInPool = Math.max(directLive, itemLive);
+    const activeInPool = pool.batchItems.length > 0 ? itemLive : directLive;
     const poolCheck = Invariants.checkPoolSpec(
       { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
       { gender: data.gender, weightTier: data.weightTier }
@@ -207,7 +207,7 @@ export async function createMultiSpecBatchAction(data: {
         });
         const directLive = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
         const itemLive = pool.batchItems.reduce((sum, bi) => sum + (bi.inPoolCount - bi.outPoolCount - bi.lossCount), 0);
-        const activeInPool = Math.max(directLive, itemLive);
+        const activeInPool = pool.batchItems.length > 0 ? itemLive : directLive;
         const poolCheck = Invariants.checkPoolSpec(
           { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
           { gender: it.gender, weightTier: it.weightTier }

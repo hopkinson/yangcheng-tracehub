@@ -118,8 +118,10 @@ export default async function PoolsPage({
           const activeBatches = Array.from(activeBatchesMap.values());
           const isMerged = activeBatches.length >= 2;
 
-          // 当天巡检记录 (严格按巡检时间 checkTime 口径)
-          const poolTodayQCs = todayQCs.filter((q: any) => q.refId === pool.code);
+          // 当天巡检记录 (严格按巡检时间 checkTime 口径，支持全场通用与单池专用)
+          const poolTodayQCs = todayQCs.filter(
+            (q: any) => q.refId === pool.code || q.refId === "全部暂养池" || q.refId === "ALL"
+          );
           const hasTodayException = poolTodayQCs.some((q: any) => q.result === "EXCEPTION");
           const latestTodayQC = poolTodayQCs[0];
 
@@ -279,9 +281,9 @@ export default async function PoolsPage({
                     </div>
                   </div>
 
-                  {/* 4. 当日水质/巡检状态与快捷填报 */}
-                  <div className="flex flex-col gap-1.5 rounded border bg-card/60 p-2">
-                    <div className="flex items-center justify-between text-[11px]">
+                  {/* 4. 当日品控状态与单池损耗登记 */}
+                  <div className="flex items-center justify-between rounded border bg-card/60 px-2.5 py-1.5 text-[11px]">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">今日品控:</span>
                       {latestTodayQC ? (
                         <QCViewDialog
@@ -293,48 +295,12 @@ export default async function PoolsPage({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-border/50">
-                      <QCRecordDialog
-                        config={{
-                          cat: "WATER_QUALITY",
-                          categoryLabel: "水质监测记录表",
-                          defaultTitle: `${pool.code} 水质监测`,
-                          formNoPreset: "YCGF-PZZX-202605",
-                          refType: "POOL",
-                          refId: pool.code,
-                          conclusions: [
-                            "符合暂养水质卫生要求 (水温21.2℃, 溶氧7.5mg/L, 氨氮0.12mg/L)",
-                            "水温偏高 (>24℃)，已开启水循环制冷",
-                            "氨氮 0.28mg/L 超标，已启动换水并安排复检",
-                          ],
-                        }}
-                        triggerLabel="水质监测"
-                      />
-
-                      <QCRecordDialog
-                        config={{
-                          cat: "POOL_INSPECT",
-                          categoryLabel: "暂养巡检记录表",
-                          defaultTitle: `${pool.code} 暂养巡检`,
-                          formNoPreset: "YCGF-PZZX-202604",
-                          refType: "POOL",
-                          refId: pool.code,
-                          conclusions: [
-                            "全部项目合格，暂养环境正常",
-                            "存在轻微异常，已整改，可正常暂养",
-                            "问题未解决，暂停该池暂养，限期整改",
-                          ],
-                        }}
-                        triggerLabel="暂养巡检"
-                      />
-
-                      <PoolLossDialog
-                        pool={pool}
-                        totalLive={totalLive}
-                        userId={currentUserId}
-                        disabled={!isWarehouseOrAdmin || !isOccupied}
-                      />
-                    </div>
+                    <PoolLossDialog
+                      pool={pool}
+                      totalLive={totalLive}
+                      userId={currentUserId}
+                      disabled={!isWarehouseOrAdmin || !isOccupied}
+                    />
                   </div>
 
                   {/* 底部防呆规则 */}
@@ -367,7 +333,39 @@ export default async function PoolsPage({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center flex-wrap gap-2">
+              <QCRecordDialog
+                config={{
+                  cat: "WATER_QUALITY",
+                  categoryLabel: "水质监测记录表",
+                  defaultTitle: "暂养水质监测",
+                  formNoPreset: "YCGF-PZZX-202605",
+                  refType: "POOL",
+                  refId: "全部暂养池",
+                  conclusions: [
+                    "符合暂养水质卫生要求 (水温21.2℃, 溶氧7.5mg/L, 氨氮0.12mg/L)",
+                    "水温偏高 (>24℃)，已开启水循环制冷",
+                    "氨氮 0.28mg/L 超标，已启动换水并安排复检",
+                  ],
+                }}
+                triggerLabel="录入水质监测"
+              />
+              <QCRecordDialog
+                config={{
+                  cat: "POOL_INSPECT",
+                  categoryLabel: "暂养巡检记录表",
+                  defaultTitle: "暂养巡检",
+                  formNoPreset: "YCGF-PZZX-202604",
+                  refType: "POOL",
+                  refId: "全部暂养池",
+                  conclusions: [
+                    "全部项目合格，暂养环境正常",
+                    "存在轻微异常，已整改，可正常暂养",
+                    "问题未解决，暂停该池暂养，限期整改",
+                  ],
+                }}
+                triggerLabel="录入暂养巡检"
+              />
               <LedgerDateFilter selectedDate={selectedDateStr} />
             </div>
           </CardHeader>

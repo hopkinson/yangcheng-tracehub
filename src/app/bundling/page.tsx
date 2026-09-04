@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
 import { formatDateTime } from "@/lib/utils";
+import { Invariants } from "@/lib/invariants";
 
 export const dynamic = "force-dynamic";
 
@@ -70,25 +71,14 @@ export default async function BundlingPage({
     orderBy: { code: "asc" },
   });
 
-  const poolOptions = rawPools.map((p: any) => {
-    const directLive = p.batches.reduce(
-      (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
-      0
-    );
-    const itemLive = p.batchItems.reduce(
-      (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
-      0
-    );
-    const liveCount = Math.max(directLive, itemLive);
-    return {
-      id: p.id,
-      code: p.code,
-      name: p.name,
-      currentGender: p.currentGender,
-      currentWeightTier: p.currentWeightTier,
-      liveCount,
-    };
-  });
+  const poolOptions = rawPools.map((p: any) => ({
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    currentGender: p.currentGender,
+    currentWeightTier: p.currentWeightTier,
+    liveCount: Invariants.calculatePoolLiveCount(p),
+  }));
 
   // 4. 查询捆扎批次
   const batches = await prisma.bundleBatch.findMany({
@@ -246,7 +236,7 @@ export default async function BundlingPage({
                               key={l.id}
                               className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono border"
                             >
-                              {l.pool.code} ({l.gender === "FEMALE" ? "母" : "公"}{l.weightTier}) · {l.count}只
+                              {l.pool.name || l.pool.code} ({l.gender === "FEMALE" ? "母" : "公"}{l.weightTier}) · {l.count}只
                             </span>
                           ))}
                         </div>

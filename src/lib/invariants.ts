@@ -87,6 +87,12 @@ export const Invariants = {
     };
   },
 
+  // 暂养池实时活蟹存量计算（优先多规格明细，回退单批次）
+  calculatePoolLiveCount: (pool: { batches?: any[]; batchItems?: any[] }): number => {
+    const list = pool.batchItems && pool.batchItems.length > 0 ? pool.batchItems : pool.batches || [];
+    return list.reduce((sum: number, x: any) => sum + Math.max(0, x.inPoolCount - (x.outPoolCount || 0) - (x.lossCount || 0)), 0);
+  },
+
   // 2. 暂养池空池入池校验: 严禁混入已有在养存量，必须为空池方可入池并锁定规格
   checkPoolSpec: (
     pool: { currentGender: string | null; currentWeightTier: string | null; activeCount?: number },

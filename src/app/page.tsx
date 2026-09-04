@@ -83,7 +83,7 @@ export default async function DashboardPage() {
       const directLoss = p.batches.reduce((s, b) => s + b.lossCount, 0);
       const directLive = Math.max(0, directIn - directOut - directLoss);
 
-      const totalLive = Math.max(itemLive, directLive);
+      const totalLive = p.batchItems.length > 0 ? itemLive : directLive;
 
       return {
         id: p.id,

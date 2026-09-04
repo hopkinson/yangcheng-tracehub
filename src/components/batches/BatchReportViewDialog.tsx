@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { FileCheck, ExternalLink, Download } from "lucide-react";
 
 interface BatchReportViewDialogProps {
-  batchCode: string;
+  batchCode?: string;
   reportName: string;
   reportUrl: string;
   title?: string;
@@ -44,7 +44,7 @@ export function BatchReportViewDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between pr-6">
-            <span>{title || `原料批次检测报告 (${batchCode})`}</span>
+            <span>{title || (batchCode ? `原料批次检测报告 (${batchCode})` : "文件原件预览")}</span>
           </DialogTitle>
           <DialogDescription className="text-xs">
             文件名称: {reportName}
@@ -70,7 +70,7 @@ export function BatchReportViewDialog({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" className="text-xs gap-1" asChild>
-            <a href={reportUrl} download={reportName || `${batchCode}-report`} target="_blank" rel="noopener noreferrer">
+            <a href={reportUrl} download={reportName || (batchCode ? `${batchCode}-report` : "file")} target="_blank" rel="noopener noreferrer">
               <Download className="size-3.5" />
               下载原件
             </a>

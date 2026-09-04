@@ -159,12 +159,9 @@ export async function createBundleBatchAction(data: {
       const p = pools.find((x) => x.id === line.poolId);
       if (!p) return { success: false, message: `暂养池 ${line.poolId} 不存在` };
 
-      // 强校验池内活蟹归属养殖户，确保蟹扣与原料批次同源可追溯
       const liveOf = (arr: any[]) => arr.reduce((s, x) => s + Math.max(0, x.inPoolCount - x.outPoolCount - x.lossCount), 0);
-      const farmerLive = Math.max(
-        liveOf(p.batches.filter((b) => b.farmerId === tagClaim.farmerId)),
-        liveOf(p.batchItems.filter((bi) => bi.batch?.farmerId === tagClaim.farmerId))
-      );
+      const activePoolList = p.batchItems.length > 0 ? p.batchItems : p.batches;
+      const farmerLive = liveOf(activePoolList.filter((x: any) => (x.batch?.farmerId ?? x.farmerId) === tagClaim.farmerId));
 
       if (farmerLive <= 0) {
         return {

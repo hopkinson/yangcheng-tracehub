@@ -257,7 +257,7 @@ export function BatchIntakeDialog({
                         );
                         return (
                           <SelectItem key={p.id} value={p.id} disabled={isConflict}>
-                            {p.code} - {p.name}{" "}
+                            {p.name || p.code}{" "}
                             {p.currentGender
                               ? `(在养: ${p.currentGender === "MALE" ? "公" : "母"} ${p.currentWeightTier}${isConflict ? " · 规格冲突不可选" : ""})`
                               : "(空池)"}

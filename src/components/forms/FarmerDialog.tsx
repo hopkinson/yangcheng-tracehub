@@ -9,9 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { createFarmerAction, updateFarmerAction } from "@/actions/farmers";
+import { uploadFileAction } from "@/actions/upload";
+import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { farmerFormSchema, type FarmerFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
-import { Plus, Edit2, Scale } from "lucide-react";
+import { Plus, Edit2, Scale, Upload, Loader2, Eye, Trash2, FileText } from "lucide-react";
 
 interface FarmerData {
   id: string;
@@ -30,7 +32,6 @@ interface FarmerData {
 
 const getFarmerValues = (farmer?: FarmerData): FarmerFormValues => ({
   name: farmer?.name || "",
-  phone: farmer?.phone || "",
   farmType: (farmer?.farmType as "LAKE_CRAB" | "POND_CRAB") || "LAKE_CRAB",
   area: farmer?.area ?? 10,
   creditRating: (farmer?.creditRating as "A" | "B" | "C") || "A",
@@ -63,6 +64,7 @@ export function FarmerDialog({
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const isEditing = !!farmer;
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
@@ -88,6 +90,35 @@ export function FarmerDialog({
   const numArea = typeof watchedArea === "number" ? watchedArea : parseFloat(watchedArea) || 0;
   const calculatedQuota = Math.round(Math.max(0, numArea) * 600);
 
+  const watchedContractUrl = form.watch("contractUrl");
+  const watchedContractName = form.watch("contractName");
+
+  async function handleContractUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("合同附件大小不能超过 10MB");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await uploadFileAction(formData);
+      form.setValue("contractUrl", res.url, { shouldDirty: true, shouldValidate: true });
+      form.setValue("contractName", res.name, { shouldDirty: true, shouldValidate: true });
+      toast.success(`合同上传成功: ${res.name}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "合同上传失败";
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
   async function onSubmit(data: FarmerFormValues) {
     const enclosureCodes = data.enclosuresStr
       .split(/[,，\s]+/)
@@ -105,7 +136,6 @@ export function FarmerDialog({
         await updateFarmerAction({
           id: farmer.id,
           name: data.name,
-          phone: data.phone,
           area: Number(data.area),
           creditRating: data.creditRating,
           status: data.status,
@@ -118,7 +148,6 @@ export function FarmerDialog({
       } else {
         await createFarmerAction({
           name: data.name,
-          phone: data.phone,
           area: Number(data.area),
           creditRating: data.creditRating,
           enclosureCodes,
@@ -165,6 +194,7 @@ export function FarmerDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            {/* 1. 养殖户姓名 + 信用等级 (电话已移除) */}
             <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}
@@ -180,22 +210,6 @@ export function FarmerDialog({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>联系电话</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：13812345678" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="creditRating"
@@ -233,7 +247,10 @@ export function FarmerDialog({
                   </FormItem>
                 )}
               />
+            </div>
 
+            {/* 2. 养殖面积 + 名下围网编号 */}
+            <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="area"
@@ -247,22 +264,23 @@ export function FarmerDialog({
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="enclosuresStr"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>名下围网编号</FormLabel>
+                    <FormControl>
+                      <Input placeholder="如：W-01, W-02" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
-            <FormField
-              control={form.control}
-              name="enclosuresStr"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>名下围网编号</FormLabel>
-                  <FormControl>
-                    <Input placeholder="如：W-01, W-02" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
+            {/* 系统实时核定年度总额度 */}
             <div className="rounded-md border bg-primary/5 p-3 flex items-center justify-between">
               <span className="text-xs text-muted-foreground font-medium">系统实时核定年度总额度:</span>
               <span className="font-mono font-bold text-lg text-primary">
@@ -270,34 +288,54 @@ export function FarmerDialog({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
-                name="contractName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>养殖合同附件名称</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：2026年度合作协议.pdf" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="contractUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>合同附件链接 / 路径</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：/contracts/2026-001.pdf" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* 3. 养殖合同附件：上传与预览 */}
+            <div className="flex flex-col gap-1.5">
+              <FormLabel>养殖签约合同附件</FormLabel>
+              {watchedContractUrl ? (
+                <div className="flex items-center justify-between h-9 px-3 border rounded-md bg-muted/20 text-xs">
+                  <div className="flex items-center gap-2 truncate">
+                    <FileText className="size-4 text-primary shrink-0" />
+                    <span className="truncate font-medium">{watchedContractName || "养殖签约合同"}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <BatchReportViewDialog
+                      reportName={watchedContractName || "养殖签约合同"}
+                      reportUrl={watchedContractUrl}
+                      title={`养殖合同预览 · ${form.watch("name") || "养殖户"}`}
+                      trigger={
+                        <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-primary gap-1 px-2">
+                          <Eye className="size-3.5" /> 预览
+                        </Button>
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      title="删除附件"
+                      onClick={() => {
+                        form.setValue("contractUrl", "", { shouldDirty: true });
+                        form.setValue("contractName", "", { shouldDirty: true });
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <label className="h-9 border border-dashed rounded-md flex items-center justify-center gap-2 px-3 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer transition-colors">
+                  {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                  <span>{uploading ? "正在上传合同..." : "点击上传养殖合同附件 (PDF / 图片)"}</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={handleContractUpload}
+                  />
+                </label>
+              )}
             </div>
 
             {isEditing && (
@@ -369,14 +407,8 @@ export function FarmerDetailDialog({
             </DialogTitle>
           </DialogHeader>
 
-          {/* 基础信息 2列网格 */}
+          {/* 基础信息 2列网格 (电话已移除) */}
           <div className="grid grid-cols-2 gap-y-3.5 gap-x-8 py-2 text-sm">
-            {farmer.phone ? (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">联系方式</span>
-                <span className="font-mono font-medium">{farmer.phone}</span>
-              </div>
-            ) : null}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">养殖类型</span>
               <span>{farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}</span>
@@ -401,12 +433,24 @@ export function FarmerDetailDialog({
             </div>
             <div className="col-span-2 flex items-center justify-between border-t border-border/40 pt-2 text-xs">
               <span className="text-muted-foreground">养殖合同附件</span>
-              {farmer.contractName ? (
-                <span className="font-medium text-primary hover:underline cursor-pointer">
-                  📄 {farmer.contractName}
-                </span>
+              {farmer.contractUrl ? (
+                <BatchReportViewDialog
+                  reportName={farmer.contractName || `${farmer.name}_养殖签约合同`}
+                  reportUrl={farmer.contractUrl}
+                  title={`养殖合同原件预览 · ${farmer.name} (${farmer.code})`}
+                  trigger={
+                    <button
+                      type="button"
+                      className="font-medium text-primary hover:underline cursor-pointer flex items-center gap-1.5"
+                    >
+                      <FileText className="size-3.5" />
+                      <span>{farmer.contractName || "查看合同原件"}</span>
+                      <Eye className="size-3" />
+                    </button>
+                  }
+                />
               ) : (
-                <span className="text-muted-foreground">已归档 (标准养殖签约合同.pdf)</span>
+                <span className="text-muted-foreground">{farmer.contractName || "未上传合同"}</span>
               )}
             </div>
           </div>

@@ -11,6 +11,7 @@ import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialo
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import { cn } from "@/lib/utils";
+import { Invariants } from "@/lib/invariants";
 import { CheckCircle2, XCircle, Clock, FileText, FileCheck, ClipboardCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -130,22 +131,14 @@ export default async function BatchesPage({
     };
   });
 
-  const poolOptions = pools.map((p: any) => {
-    const directLive = p.batches?.reduce((sum: number, b: any) => sum + Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount), 0) || 0;
-    const itemLive = p.batchItems?.reduce(
-      (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
-      0
-    ) || 0;
-    const liveCount = Math.max(directLive, itemLive);
-    return {
-      id: p.id,
-      code: p.code,
-      name: p.name,
-      currentGender: p.currentGender,
-      currentWeightTier: p.currentWeightTier,
-      liveCount,
-    };
-  });
+  const poolOptions = pools.map((p: any) => ({
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    currentGender: p.currentGender,
+    currentWeightTier: p.currentWeightTier,
+    liveCount: Invariants.calculatePoolLiveCount(p),
+  }));
 
   return (
     <StaggerContainer className="flex flex-col gap-6">

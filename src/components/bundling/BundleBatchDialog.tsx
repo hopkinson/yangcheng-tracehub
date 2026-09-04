@@ -62,34 +62,36 @@ export function BundleBatchDialog({
   >([]);
 
   const currentTag = tagClaims.find((t) => t.id === selectedTagId);
-  const availableTags = currentTag?.availableCount ?? currentTag?.claimCount ?? 0;
+  const availableTags = currentTag?.availableCount ?? 0;
   const totalCrabs = selectedPools.reduce((acc, cur) => acc + (cur.count || 0), 0);
   const isTagExceeded = totalCrabs > availableTags;
 
-  const handleAddPool = (poolId: string) => {
-    const p = pools.find((x) => x.id === poolId);
-    if (!p) return;
-    if (p.liveCount <= 0) {
-      toast.error(`暂养池 ${p.code} (${p.name}) 为空池，无活蟹可出池捆扎`);
+  const activeSpec = selectedPools[0]
+    ? `${selectedPools[0].gender}-${selectedPools[0].weightTier}`
+    : null;
+
+  const handleTogglePool = (p: PoolOption) => {
+    if (p.liveCount <= 0) return;
+    const isSelected = selectedPools.some((x) => x.poolId === p.id);
+    if (isSelected) {
+      setSelectedPools(selectedPools.filter((x) => x.poolId !== p.id));
       return;
     }
-    if (selectedPools.some((x) => x.poolId === poolId)) {
-      toast.error("该暂养池已在来源列表中");
+    const poolGender = p.currentGender || "MALE";
+    const poolWeightTier = p.currentWeightTier || "4.0两";
+    if (selectedPools[0] && (selectedPools[0].gender !== poolGender || selectedPools[0].weightTier !== poolWeightTier)) {
+      toast.error("严禁混规格捆扎：仅允许勾选同公母、同规格的暂养池");
       return;
     }
     setSelectedPools([
       ...selectedPools,
       {
-        poolId,
-        gender: p.currentGender || "MALE",
-        weightTier: p.currentWeightTier || "4.0两",
-        count: Math.min(500, p.liveCount),
+        poolId: p.id,
+        gender: poolGender,
+        weightTier: poolWeightTier,
+        count: p.liveCount,
       },
     ]);
-  };
-
-  const handleRemovePool = (poolId: string) => {
-    setSelectedPools(selectedPools.filter((x) => x.poolId !== poolId));
   };
 
   const handleCountChange = (poolId: string, count: number) => {
@@ -218,93 +220,118 @@ export function BundleBatchDialog({
             />
           </div>
 
-          {/* 来源暂养池多选 */}
+          {/* 来源暂养池多选 (方案 A: 复选网格/列表，按同规格锁定多选) */}
           <div className="space-y-2 border rounded-lg p-3 bg-muted/20">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-semibold flex items-center gap-1.5">
                 <Waves className="size-4 text-primary" />
-                来源暂养池与出池数量
+                来源暂养池与出池数量（勾选支持多选合并）
               </Label>
-              <Select onValueChange={handleAddPool}>
-                <SelectTrigger className="h-7 w-48 text-xs">
-                  <SelectValue placeholder="+ 添加来源暂养池" />
-                </SelectTrigger>
-                <SelectContent>
-                  {pools.map((p) => (
-                    <SelectItem key={p.id} value={p.id} disabled={p.liveCount <= 0} className="text-xs font-mono">
-                      {p.code} {p.name} ({p.currentGender === "FEMALE" ? "母" : "公"}{p.currentWeightTier || "未定"} · {p.liveCount > 0 ? `存${p.liveCount}只` : "空池"})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedPools.length === 0 ? (
-              <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded">
-                请点击右上角选择需要合并捆扎的暂养池来源（已过滤空池）
-              </div>
-            ) : (
-              <div className="space-y-2 pt-1">
-                {selectedPools.map((item) => {
-                  const p = pools.find((x) => x.id === item.poolId);
-                  const maxLive = p?.liveCount ?? 0;
-                  const isPoolExceeded = item.count > maxLive || maxLive <= 0;
-                  return (
-                    <div
-                      key={item.poolId}
-                      className="flex items-center justify-between gap-3 p-2 bg-background border rounded text-xs"
-                    >
-                      <div>
-                        <span className="font-mono font-bold text-foreground mr-2">{p?.code}</span>
-                        <span className="text-muted-foreground mr-2">{p?.name}</span>
-                        <span className="text-primary font-medium">
-                          {item.gender === "FEMALE" ? "母蟹" : "公蟹"} {item.weightTier}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground ml-2 font-mono">
-                          (在池存活: {maxLive} 只)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-[11px] text-muted-foreground">出池只数:</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={maxLive > 0 ? maxLive : 1}
-                          value={item.count}
-                          onChange={(e) => handleCountChange(item.poolId, parseInt(e.target.value, 10) || 0)}
-                          className={`h-7 w-24 text-xs font-mono text-right ${isPoolExceeded ? "border-destructive text-destructive" : ""}`}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemovePool(item.poolId)}
-                          className="h-7 px-2 text-destructive text-xs"
-                        >
-                          移除
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div className="flex justify-end items-center gap-2 pt-2 text-xs font-mono font-bold text-foreground">
-                  <span>本次捆扎合计只数：</span>
-                  <span className={`text-base ${isTagExceeded ? "text-destructive" : "text-primary"}`}>
-                    {totalCrabs} 只
+              <div className="text-[11px] font-mono">
+                {selectedPools[0] ? (
+                  <span className="text-primary font-medium">
+                    已锁定规格: {selectedPools[0].gender === "FEMALE" ? "母蟹" : "公蟹"} {selectedPools[0].weightTier} (已选 {selectedPools.length} 池)
                   </span>
-                  {currentTag && (
-                    <span className="text-[11px] font-normal text-muted-foreground ml-1">
-                      (所选蟹扣批次可用: {availableTags} 只)
-                    </span>
-                  )}
-                </div>
-                {isTagExceeded && (
-                  <p className="text-[11px] text-destructive text-right font-medium">
-                    ⚠ 蟹的只数 ({totalCrabs}) 不能超过蟹扣可用数 ({availableTags})，禁止建批
-                  </p>
+                ) : (
+                  <span className="text-muted-foreground">勾选任意池后自动锁定同规格</span>
                 )}
               </div>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+              {pools.length === 0 ? (
+                <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded">
+                  暂无可用的暂养池
+                </div>
+              ) : (
+                pools.map((p) => {
+                  const isEmpty = p.liveCount <= 0;
+                  const poolGender = p.currentGender || "MALE";
+                  const poolWeightTier = p.currentWeightTier || "4.0两";
+                  const poolSpec = `${poolGender}-${poolWeightTier}`;
+                  const isIncompatible = activeSpec !== null && activeSpec !== poolSpec && !isEmpty;
+                  const selectedItem = selectedPools.find((x) => x.poolId === p.id);
+                  const isChecked = !!selectedItem;
+
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex items-center justify-between gap-3 p-2 rounded border text-xs transition-colors ${
+                        isEmpty || isIncompatible
+                          ? "opacity-50 bg-muted/30"
+                          : isChecked
+                          ? "bg-primary/10 border-primary/40 font-medium"
+                          : "bg-background hover:bg-muted/40"
+                      }`}
+                    >
+                      <label
+                        className={`flex items-center gap-2 flex-1 select-none ${
+                          isEmpty || isIncompatible ? "cursor-not-allowed" : "cursor-pointer"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={isEmpty || isIncompatible}
+                          onChange={() => handleTogglePool(p)}
+                          className="size-3.5 accent-primary cursor-pointer disabled:cursor-not-allowed"
+                        />
+                        <span className="font-semibold text-foreground">{p.name}</span>
+                        {isEmpty ? (
+                          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">空池</span>
+                        ) : (
+                          <span className={`text-xs ${isChecked ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                            {poolGender === "FEMALE" ? "母蟹" : "公蟹"} {poolWeightTier}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          (在池存活: {p.liveCount} 只)
+                        </span>
+                        {isIncompatible && (
+                          <span className="text-[10px] text-muted-foreground/80 bg-muted px-1 py-0.2 rounded border text-center">
+                            规格不符
+                          </span>
+                        )}
+                      </label>
+
+                      {isChecked && selectedItem && (
+                        <div className="flex items-center gap-1.5">
+                          <Label className="text-[11px] text-muted-foreground">出池只数:</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={p.liveCount}
+                            value={selectedItem.count}
+                            onChange={(e) =>
+                              handleCountChange(p.id, parseInt(e.target.value, 10) || 0)
+                            }
+                            className="h-7 w-20 text-xs font-mono text-right"
+                          />
+                          <span className="text-[11px] text-muted-foreground font-mono">只</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 汇总统计 */}
+            <div className="flex justify-end items-center gap-2 pt-2 text-xs font-mono font-bold text-foreground border-t">
+              <span>本次捆扎合计只数：</span>
+              <span className={`text-base ${isTagExceeded ? "text-destructive" : "text-primary"}`}>
+                {totalCrabs} 只
+              </span>
+              {currentTag && (
+                <span className="text-[11px] font-normal text-muted-foreground ml-1">
+                  (所选蟹扣批次可用: {availableTags} 只)
+                </span>
+              )}
+            </div>
+            {isTagExceeded && (
+              <p className="text-[11px] text-destructive text-right font-medium">
+                ⚠ 蟹的只数 ({totalCrabs}) 不能超过蟹扣可用数 ({availableTags})，禁止建批
+              </p>
             )}
           </div>
 

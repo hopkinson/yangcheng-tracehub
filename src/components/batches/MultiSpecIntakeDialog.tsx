@@ -138,7 +138,7 @@ export function MultiSpecIntakeDialog({
       const it = items[i];
       const p = pools.find((x) => x.id === it.poolId);
       if (p && p.liveCount > 0) {
-        toast.error(`暂养池隔离拦截：${p.code} 当前已有在养存量（${p.liveCount} 只），必须选择空池！`);
+        toast.error(`暂养池隔离拦截：${p.name || p.code} 当前已有在养存量（${p.liveCount} 只），必须选择空池！`);
         return;
       }
       for (let j = i + 1; j < items.length; j++) {
@@ -331,7 +331,7 @@ export function MultiSpecIntakeDialog({
 
                           return (
                             <SelectItem key={p.id} value={p.id} disabled={isDisabled} className="text-xs font-mono">
-                              {p.code} · {p.name} {isOccupied ? `(在养${p.liveCount}只 · 不可选)` : otherRowConflict ? "(本单已选 · 不可选)" : "(空池)"}
+                              {p.name || p.code} {isOccupied ? `(在养${p.liveCount}只 · 不可选)` : otherRowConflict ? "(本单已选 · 不可选)" : "(空池)"}
                             </SelectItem>
                           );
                         })}
