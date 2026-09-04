@@ -141,8 +141,13 @@ export async function approveOutboundOrderAction(data: {
         }
       }
 
-      // 2. 校验原料批次在池存活
-      if (order.batch) {
+      // 2. 校验单票数量一致性
+      if (order.outboundCount !== order.channelOrderCount) {
+        throw new Error(`出库审批拦截: 出库数量 (${order.outboundCount}) 与渠道订单数量 (${order.channelOrderCount}) 不一致`);
+      }
+
+      // 3. 校验与扣减批次（仅未关联保鲜库批次时校验并扣减原料暂养池；基于保鲜库批次出库时，实物早已捆扎出池并入冷库）
+      if (order.batch && !order.coldLogId) {
         const bookInPool = order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount;
         const outboundCheck = Invariants.checkOutbound({
           bookInPool,
@@ -167,7 +172,29 @@ export async function approveOutboundOrderAction(data: {
           },
         });
 
-        // 联动绑扣核销：自动归集扣减该养殖户当日已审批的蟹扣领用
+        // 检查池子是否全部清空，若清空则释放规格锁定
+        const activeBatchesInPool = await tx.batch.findMany({
+          where: {
+            poolId: order.batch.poolId,
+            status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] },
+          },
+        });
+
+        const poolRemaining = activeBatchesInPool.reduce(
+          (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
+          0
+        );
+
+        if (poolRemaining === 0) {
+          await tx.holdingPool.update({
+            where: { id: order.batch.poolId },
+            data: { currentGender: null, currentWeightTier: null },
+          });
+        }
+      }
+
+      // 联动绑扣核销：自动归集扣减该养殖户当日已审批的蟹扣领用
+      if (order.batch) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayClaims = await tx.tagClaim.findMany({

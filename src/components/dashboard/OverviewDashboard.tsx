@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FadeIn, PulseBadge, StaggerContainer, AnimatedNumber } from "@/components/motion/MotionWrapper";
 import { cn } from "@/lib/utils";
+import { getTenant } from "@/config/tenant";
 
 export interface DashboardProps {
   metrics: {
@@ -119,6 +120,8 @@ const DEFAULT_POOL_TEMPS: Record<string, number> = {
 };
 
 export function OverviewDashboard({ metrics, activePools, qcRecords, businessAlerts }: DashboardProps) {
+  const isMaoshi = getTenant().id === "maoshi";
+
   // -------------------------------------------------------------
   // ③ 温度状态管理（种子默认值）
   // -------------------------------------------------------------
@@ -154,58 +157,60 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       time: string;
     }> = [];
 
-    // 1. 室内温度
-    if (indoorTemp > 28.0) {
-      list.push({
-        id: "temp-indoor-danger",
-        level: "SEVERE",
-        category: "TEMPERATURE",
-        catLabel: "环境温控",
-        target: "车间作业区",
-        title: `室温严重超限 (${indoorTemp}℃ > 28℃)`,
-        reason: "温度偏高会导致螃蟹异常情况变多，请加强通风降温与巡检频率",
-        time: "实时监测",
-      });
-    } else if (indoorTemp >= 26.0) {
-      list.push({
-        id: "temp-indoor-warn",
-        level: "WARNING",
-        category: "TEMPERATURE",
-        catLabel: "环境温控",
-        target: "车间作业区",
-        title: `室温偏高预警 (${indoorTemp}℃ ≥ 26℃)`,
-        reason: "温度偏高会导致螃蟹异常情况变多，请加强增氧与巡检",
-        time: "实时监测",
-      });
-    }
-
-    // 2. 暂养池水温
-    activePools.forEach((pool) => {
-      const temp = poolTemps[pool.code] ?? 20.0;
-      if (temp > 24.0) {
+    // 1. 环境与暂养水温（仅毛氏租户展示与预警）
+    if (isMaoshi) {
+      if (indoorTemp > 28.0) {
         list.push({
-          id: `temp-pool-${pool.code}-danger`,
+          id: "temp-indoor-danger",
           level: "SEVERE",
           category: "TEMPERATURE",
-          catLabel: "水温监控",
-          target: `${pool.code} (${pool.name})`,
-          title: `水温严重超阈 (${temp}℃ > 24℃)`,
-          reason: "螃蟹异常风险高！温度偏高会导致螃蟹异常情况变多，请立即加强增氧与巡检",
+          catLabel: "环境温控",
+          target: "车间作业区",
+          title: `室温严重超限 (${indoorTemp}℃ > 28℃)`,
+          reason: "温度偏高会导致螃蟹异常情况变多，请加强通风降温与巡检频率",
           time: "实时监测",
         });
-      } else if (temp >= 22.0) {
+      } else if (indoorTemp >= 26.0) {
         list.push({
-          id: `temp-pool-${pool.code}-warn`,
+          id: "temp-indoor-warn",
           level: "WARNING",
           category: "TEMPERATURE",
-          catLabel: "水温监控",
-          target: `${pool.code} (${pool.name})`,
-          title: `水温偏高预警 (${temp}℃ ≥ 22℃)`,
-          reason: "注意增氧！温度偏高会导致螃蟹异常情况变多，请加强增氧与巡检",
+          catLabel: "环境温控",
+          target: "车间作业区",
+          title: `室温偏高预警 (${indoorTemp}℃ ≥ 26℃)`,
+          reason: "温度偏高会导致螃蟹异常情况变多，请加强增氧与巡检",
           time: "实时监测",
         });
       }
-    });
+
+      // 暂养池水温
+      activePools.forEach((pool) => {
+        const temp = poolTemps[pool.code] ?? 20.0;
+        if (temp > 24.0) {
+          list.push({
+            id: `temp-pool-${pool.code}-danger`,
+            level: "SEVERE",
+            category: "TEMPERATURE",
+            catLabel: "水温监控",
+            target: `${pool.code} (${pool.name})`,
+            title: `水温严重超阈 (${temp}℃ > 24℃)`,
+            reason: "螃蟹异常风险高！温度偏高会导致螃蟹异常情况变多，请立即加强增氧与巡检",
+            time: "实时监测",
+          });
+        } else if (temp >= 22.0) {
+          list.push({
+            id: `temp-pool-${pool.code}-warn`,
+            level: "WARNING",
+            category: "TEMPERATURE",
+            catLabel: "水温监控",
+            target: `${pool.code} (${pool.name})`,
+            title: `水温偏高预警 (${temp}℃ ≥ 22℃)`,
+            reason: "注意增氧！温度偏高会导致螃蟹异常情况变多，请加强增氧与巡检",
+            time: "实时监测",
+          });
+        }
+      });
+    }
 
     // 3. 业务预警
     businessAlerts.frozenBatches.forEach((b) => {
@@ -281,7 +286,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
     });
 
     return list.sort((a, b) => (a.level === "SEVERE" ? -1 : 1));
-  }, [indoorTemp, poolTemps, activePools, qcRecords, businessAlerts]);
+  }, [isMaoshi, indoorTemp, poolTemps, activePools, qcRecords, businessAlerts]);
 
   const severeCount = combinedExceptions.filter((e) => e.level === "SEVERE").length;
   const warningCount = combinedExceptions.filter((e) => e.level === "WARNING").length;
@@ -382,7 +387,12 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       {/* ① 顶部自动垂直轮播广播条（悬停自动暂停，平滑位移动画）      */}
       {/* ========================================================= */}
       <FadeIn direction="down">
-        <div className="h-10 px-3 rounded-lg border bg-card/90 shadow-2xs text-xs flex items-center justify-between gap-3 overflow-hidden backdrop-blur-xs">
+        <div className={cn(
+          "h-10 px-3 rounded-lg border shadow-2xs text-xs flex items-center justify-between gap-3 overflow-hidden backdrop-blur-xs transition-colors",
+          severeCount > 0
+            ? "bg-red-50/80 dark:bg-red-950/20 border-red-200 dark:border-red-900/50"
+            : "bg-card/90 border-border"
+        )}>
           {/* 左侧：广播徽标与严重/预警计数 */}
           <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold text-[11px]">
@@ -487,16 +497,16 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         <div className="rounded-xl border bg-card shadow-2xs overflow-hidden">
           <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 divide-x-0 md:divide-x border-b border-border/70">
             {/* 1. 订单 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-blue-500/10 text-blue-600 font-mono text-[10px] font-bold group-hover:bg-blue-500 group-hover:text-white transition-colors">1</span>
+                  <span className="size-4.5 rounded flex items-center justify-center bg-primary/10 text-primary font-mono text-[10px] font-bold group-hover:bg-primary group-hover:text-primary-foreground transition-colors">1</span>
                   订单需求
                 </span>
-                <ShoppingCart className="size-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                <ShoppingCart className="size-3.5 text-primary group-hover:scale-110 transition-transform" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayOrdersCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
                 </div>
@@ -511,7 +521,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 2. 原料 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-sky-500/10 text-sky-600 font-mono text-[10px] font-bold group-hover:bg-sky-500 group-hover:text-white transition-colors">2</span>
@@ -520,7 +530,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <Layers className="size-3.5 text-sky-500 group-hover:scale-110 transition-transform" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayBatchesCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">批</span>
                 </div>
@@ -535,22 +545,22 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 3. 蟹扣申领 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group relative">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group relative">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-amber-500/10 text-amber-600 font-mono text-[10px] font-bold group-hover:bg-amber-500 group-hover:text-white transition-colors">3</span>
                   蟹扣申领
                 </span>
                 {metrics.pendingTagClaimsCount > 0 ? (
-                  <PulseBadge color="amber" className="text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded">
+                  <span className="text-[10px] font-mono font-medium bg-[var(--brand-50,#eff5fe)] text-[var(--brand-700,#003c96)] dark:bg-blue-950/40 dark:text-blue-300 border border-[var(--brand-100,#d9e8fd)] px-1.5 py-0.5 rounded">
                     待审批 {metrics.pendingTagClaimsCount}
-                  </PulseBadge>
+                  </span>
                 ) : (
                   <Tag className="size-3.5 text-amber-500 group-hover:scale-110 transition-transform" />
                 )}
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayTagClaimsCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
                 </div>
@@ -565,7 +575,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 4. 暂养 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-cyan-500/10 text-cyan-600 font-mono text-[10px] font-bold group-hover:bg-cyan-500 group-hover:text-white transition-colors">4</span>
@@ -574,7 +584,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <Waves className="size-3.5 text-cyan-500 group-hover:scale-110 transition-transform" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayPoolInCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">只入池</span>
                 </div>
@@ -593,7 +603,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
 
           <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 divide-x-0 md:divide-x">
             {/* 5. 捆扎 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-indigo-500/10 text-indigo-600 font-mono text-[10px] font-bold group-hover:bg-indigo-500 group-hover:text-white transition-colors">5</span>
@@ -602,7 +612,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <PackageCheck className="size-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayBundleBatchesCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">批</span>
                 </div>
@@ -617,7 +627,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 6. 分拣 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-purple-500/10 text-purple-600 font-mono text-[10px] font-bold group-hover:bg-purple-500 group-hover:text-white transition-colors">6</span>
@@ -626,7 +636,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <Cpu className="size-3.5 text-purple-500 group-hover:scale-110 transition-transform" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todaySortTasksCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">任务</span>
                 </div>
@@ -642,7 +652,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 7. 预冷 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-teal-500/10 text-teal-600 font-mono text-[10px] font-bold group-hover:bg-teal-500 group-hover:text-white transition-colors">7</span>
@@ -651,7 +661,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <ThermometerSnowflake className="size-3.5 text-teal-500 group-hover:scale-110 transition-transform" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayColdIntakeCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">只入库</span>
                 </div>
@@ -668,22 +678,22 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 8. 出库 */}
-            <div className="p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group relative">
+            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group relative">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="size-4.5 rounded flex items-center justify-center bg-emerald-500/10 text-emerald-600 font-mono text-[10px] font-bold group-hover:bg-emerald-500 group-hover:text-white transition-colors">8</span>
                   出库发运
                 </span>
                 {metrics.pendingOutboundOrdersCount > 0 ? (
-                  <PulseBadge color="amber" className="text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded">
+                  <span className="text-[10px] font-mono font-medium bg-[var(--brand-50,#eff5fe)] text-[var(--brand-700,#003c96)] dark:bg-blue-950/40 dark:text-blue-300 border border-[var(--brand-100,#d9e8fd)] px-1.5 py-0.5 rounded">
                     待审核 {metrics.pendingOutboundOrdersCount}
-                  </PulseBadge>
+                  </span>
                 ) : (
                   <Truck className="size-3.5 text-emerald-500 group-hover:scale-110 transition-transform" />
                 )}
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-foreground">
+                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
                   <AnimatedNumber value={metrics.todayOutboundOrdersCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
                 </div>
@@ -789,142 +799,144 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </Card>
           </FadeIn>
 
-          {/* 2. 环境与水温监控矩阵 */}
-          <FadeIn>
-            <Card className="border-border/80 shadow-xs bg-card overflow-hidden">
-              <CardHeader className="py-2 px-4 border-b bg-muted/20 flex flex-row items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <Thermometer className="size-4 text-primary" />
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider">
-                    环境与暂养水温监控（态势矩阵）
-                  </CardTitle>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] bg-background text-muted-foreground border-border font-normal">
-                    手填报数 · 预留物联网自动采集
-                  </Badge>
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-3">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-stretch">
-                  {/* 室温仪表 (3列宽，更紧凑精致) */}
-                  <div className={cn(
-                    "md:col-span-3 p-3 rounded-lg border flex flex-col justify-between transition-all duration-300",
-                    indoorTemp > 28
-                      ? "border-destructive/60 bg-destructive/10 ring-1 ring-destructive/30"
-                      : indoorTemp >= 26
-                      ? "border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/20"
-                      : "border-border/80 bg-muted/20"
-                  )}>
-                    <div className="flex items-center justify-between pb-1.5 border-b border-border/40">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                        <Wind className="size-3.5 text-primary" />
-                        作业区室温
-                      </div>
-                      <span className={cn(
-                        "size-2 rounded-full transition-colors duration-300",
-                        indoorTemp > 28 ? "bg-destructive animate-ping" : indoorTemp >= 26 ? "bg-amber-500" : "bg-emerald-500"
-                      )} />
-                    </div>
-
-                    <div className="my-2 flex flex-col items-center justify-center">
-                      <div className="flex items-baseline justify-center gap-0.5">
-                        <Input
-                          type="number"
-                          step="0.1"
-                          value={indoorTemp}
-                          onChange={(e) => setIndoorTemp(parseFloat(e.target.value) || 0)}
-                          className="h-8 w-20 bg-transparent hover:bg-muted/50 focus:bg-background border-transparent hover:border-border/60 focus:border-ring shadow-none text-center font-mono font-black text-xl px-0 py-0 focus:ring-1 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <span className="text-sm font-semibold text-muted-foreground">℃</span>
-                      </div>
-                      <div className="text-[10px] font-semibold transition-colors duration-300 mt-1">
-                        {indoorTemp > 28 ? (
-                          <span className="text-destructive font-bold">严重超限 (≤26℃标控)</span>
-                        ) : indoorTemp >= 26 ? (
-                          <span className="text-amber-600 font-bold">偏高预警 (≤26℃标控)</span>
-                        ) : (
-                          <span className="text-emerald-600 font-medium">环境适宜 (≤26℃标控)</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-muted-foreground pt-1.5 border-t border-border/40 text-center">
-                      分拣称重与捆扎作业环境
-                    </div>
+          {/* 2. 环境与水温监控矩阵（仅 maoshi 租户展示） */}
+          {isMaoshi && (
+            <FadeIn>
+              <Card className="border-border/80 shadow-xs bg-card overflow-hidden">
+                <CardHeader className="py-2 px-4 border-b bg-muted/20 flex flex-row items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Thermometer className="size-4 text-primary" />
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider">
+                      环境与暂养水温监控（态势矩阵）
+                    </CardTitle>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] bg-background text-muted-foreground border-border font-normal">
+                      手填报数 · 预留物联网自动采集
+                    </Badge>
+                  </div>
+                </CardHeader>
 
-                  {/* 8个暂养池 4x2 宽裕态势矩阵 (9列宽，每个池获得充足呼吸感) */}
-                  <div className="md:col-span-9 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {activePools.map((pool) => {
-                      const temp = poolTemps[pool.code] ?? 20.0;
-                      const isSevere = temp > 24.0;
-                      const isWarn = temp >= 22.0 && temp <= 24.0;
+                <CardContent className="p-3">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-stretch">
+                    {/* 室温仪表 (3列宽，更紧凑精致) */}
+                    <div className={cn(
+                      "md:col-span-3 p-3 rounded-lg border flex flex-col justify-between transition-all duration-300",
+                      indoorTemp > 28
+                        ? "border-destructive/60 bg-destructive/10 ring-1 ring-destructive/30"
+                        : indoorTemp >= 26
+                        ? "border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/20"
+                        : "border-border/80 bg-muted/20"
+                    )}>
+                      <div className="flex items-center justify-between pb-1.5 border-b border-border/40">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                          <Wind className="size-3.5 text-primary" />
+                          作业区室温
+                        </div>
+                        <span className={cn(
+                          "size-2 rounded-full transition-colors duration-300",
+                          indoorTemp > 28 ? "bg-destructive animate-ping" : indoorTemp >= 26 ? "bg-amber-500" : "bg-emerald-500"
+                        )} />
+                      </div>
 
-                      return (
-                        <div
-                          key={pool.id}
-                          className={cn(
-                            "p-2.5 rounded-lg border flex flex-col justify-between transition-all duration-300 hover:shadow-xs",
-                            isSevere
-                              ? "border-destructive/60 bg-destructive/10 ring-1 ring-destructive/30"
-                              : isWarn
-                              ? "border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/20"
-                              : "border-border/70 bg-muted/20 hover:border-border"
+                      <div className="my-2 flex flex-col items-center justify-center">
+                        <div className="flex items-baseline justify-center gap-0.5">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={indoorTemp}
+                            onChange={(e) => setIndoorTemp(parseFloat(e.target.value) || 0)}
+                            className="h-8 w-20 bg-transparent hover:bg-muted/50 focus:bg-background border-transparent hover:border-border/60 focus:border-ring shadow-none text-center font-mono font-black text-xl px-0 py-0 focus:ring-1 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <span className="text-sm font-semibold text-muted-foreground">℃</span>
+                        </div>
+                        <div className="text-[10px] font-semibold transition-colors duration-300 mt-1">
+                          {indoorTemp > 28 ? (
+                            <span className="text-destructive font-bold">严重超限 (≤26℃标控)</span>
+                          ) : indoorTemp >= 26 ? (
+                            <span className="text-amber-600 font-bold">偏高预警 (≤26℃标控)</span>
+                          ) : (
+                            <span className="text-emerald-600 font-medium">环境适宜 (≤26℃标控)</span>
                           )}
-                        >
-                          {/* 顶栏：池号 + 规格 + 状态指示灯 */}
-                          <div className="flex items-center justify-between text-xs pb-1 border-b border-border/40">
-                            <div className="flex items-center gap-1.5 font-mono font-bold text-foreground">
-                              <span>{pool.code}</span>
-                              <span className="text-[10px] font-normal text-muted-foreground">
-                                {pool.currentWeightTier ? `${pool.currentGender === "FEMALE" ? "母" : "公"}${pool.currentWeightTier}` : "空池"}
+                        </div>
+                      </div>
+
+                      <div className="text-[10px] text-muted-foreground pt-1.5 border-t border-border/40 text-center">
+                        分拣称重与捆扎作业环境
+                      </div>
+                    </div>
+
+                    {/* 8个暂养池 4x2 宽裕态势矩阵 (9列宽，每个池获得充足呼吸感) */}
+                    <div className="md:col-span-9 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {activePools.map((pool) => {
+                        const temp = poolTemps[pool.code] ?? 20.0;
+                        const isSevere = temp > 24.0;
+                        const isWarn = temp >= 22.0 && temp <= 24.0;
+
+                        return (
+                          <div
+                            key={pool.id}
+                            className={cn(
+                              "p-2.5 rounded-lg border flex flex-col justify-between transition-all duration-300 hover:shadow-xs",
+                              isSevere
+                                ? "border-destructive/60 bg-destructive/10 ring-1 ring-destructive/30"
+                                : isWarn
+                                ? "border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/20"
+                                : "border-border/70 bg-muted/20 hover:border-border"
+                            )}
+                          >
+                            {/* 顶栏：池号 + 规格 + 状态指示灯 */}
+                            <div className="flex items-center justify-between text-xs pb-1 border-b border-border/40">
+                              <div className="flex items-center gap-1.5 font-mono font-bold text-foreground">
+                                <span>{pool.code}</span>
+                                <span className="text-[10px] font-normal text-muted-foreground">
+                                  {pool.currentWeightTier ? `${pool.currentGender === "FEMALE" ? "母" : "公"}${pool.currentWeightTier}` : "空池"}
+                                </span>
+                              </div>
+                              <span
+                                className={cn(
+                                  "size-1.5 rounded-full transition-colors duration-300 shrink-0",
+                                  isSevere ? "bg-destructive animate-ping" : isWarn ? "bg-amber-500" : "bg-emerald-500"
+                                )}
+                              />
+                            </div>
+
+                            {/* 中栏：大字号水温 Hero Display (居中通透，隐形编辑) */}
+                            <div className="my-1.5 flex items-baseline justify-center gap-0.5">
+                              <Input
+                                type="number"
+                                step="0.1"
+                                value={temp}
+                                onChange={(e) => handlePoolTempChange(pool.code, e.target.value)}
+                                className="h-7 w-16 bg-transparent hover:bg-muted/50 focus:bg-background border-transparent hover:border-border/60 focus:border-ring shadow-none text-center font-mono font-black text-base px-0 py-0 focus:ring-1 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <span className="text-xs font-semibold text-muted-foreground">℃</span>
+                            </div>
+
+                            {/* 底栏：在池数量 + 状态简标 */}
+                            <div className="pt-1 border-t border-border/40 flex items-center justify-between text-[10px]">
+                              <span className="font-mono text-muted-foreground">
+                                {pool.liveCount.toLocaleString()}只
+                              </span>
+                              <span className="font-medium">
+                                {isSevere ? (
+                                  <span className="text-destructive font-bold">⚠️ 超阈</span>
+                                ) : isWarn ? (
+                                  <span className="text-amber-700 dark:text-amber-400 font-semibold">注意增氧</span>
+                                ) : (
+                                  <span className="text-emerald-600 dark:text-emerald-500">正常 ≤22℃</span>
+                                )}
                               </span>
                             </div>
-                            <span
-                              className={cn(
-                                "size-1.5 rounded-full transition-colors duration-300 shrink-0",
-                                isSevere ? "bg-destructive animate-ping" : isWarn ? "bg-amber-500" : "bg-emerald-500"
-                              )}
-                            />
                           </div>
-
-                          {/* 中栏：大字号水温 Hero Display (居中通透，隐形编辑) */}
-                          <div className="my-1.5 flex items-baseline justify-center gap-0.5">
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={temp}
-                              onChange={(e) => handlePoolTempChange(pool.code, e.target.value)}
-                              className="h-7 w-16 bg-transparent hover:bg-muted/50 focus:bg-background border-transparent hover:border-border/60 focus:border-ring shadow-none text-center font-mono font-black text-base px-0 py-0 focus:ring-1 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
-                            <span className="text-xs font-semibold text-muted-foreground">℃</span>
-                          </div>
-
-                          {/* 底栏：在池数量 + 状态简标 */}
-                          <div className="pt-1 border-t border-border/40 flex items-center justify-between text-[10px]">
-                            <span className="font-mono text-muted-foreground">
-                              {pool.liveCount.toLocaleString()}只
-                            </span>
-                            <span className="font-medium">
-                              {isSevere ? (
-                                <span className="text-destructive font-bold">⚠️ 超阈</span>
-                              ) : isWarn ? (
-                                <span className="text-amber-700 dark:text-amber-400 font-semibold">注意增氧</span>
-                              ) : (
-                                <span className="text-emerald-600 dark:text-emerald-500">正常 ≤22℃</span>
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </FadeIn>
+                </CardContent>
+              </Card>
+            </FadeIn>
+          )}
         </div>
 
         {/* ======================================================= */}

@@ -39,9 +39,10 @@ export interface BatchLossHistoryDialogProps {
       inspector?: { fullName: string } | null;
     }>;
   };
+  trigger?: React.ReactNode;
 }
 
-export function BatchLossHistoryDialog({ batch }: BatchLossHistoryDialogProps) {
+export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialogProps) {
   const [open, setOpen] = useState(false);
   const liveInPool = batch.inPoolCount - batch.outPoolCount - batch.lossCount;
   const lossRate = batch.inPoolCount > 0 ? (batch.lossCount / batch.inPoolCount) * 100 : 0;
@@ -51,18 +52,22 @@ export function BatchLossHistoryDialog({ batch }: BatchLossHistoryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button
-          type="button"
-          className={`inline-flex items-center gap-1 font-mono font-medium hover:underline cursor-pointer transition-colors text-left ${
-            isLossOverLimit ? "text-destructive font-bold" : "text-muted-foreground hover:text-foreground"
-          }`}
-          title="点击查看历次盘点损耗记录"
-        >
-          <span>
-            {batch.lossCount.toLocaleString()} 只 ({lossRate.toFixed(1)}%)
-          </span>
-          {isLossOverLimit && <AlertTriangle className="size-3.5 text-destructive shrink-0" />}
-        </button>
+        {trigger ? (
+          trigger
+        ) : (
+          <button
+            type="button"
+            className={`inline-flex items-center gap-1 font-mono font-medium hover:underline cursor-pointer transition-colors text-left ${
+              isLossOverLimit ? "text-destructive font-bold" : "text-muted-foreground hover:text-foreground"
+            }`}
+            title="点击查看历次盘点损耗记录"
+          >
+            <span>
+              {batch.lossCount.toLocaleString()} 只 ({lossRate.toFixed(1)}%)
+            </span>
+            {isLossOverLimit && <AlertTriangle className="size-3.5 text-destructive shrink-0" />}
+          </button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="space-y-2">

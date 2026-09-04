@@ -100,8 +100,6 @@ export async function resolveTraceQuery(
   const orders = await prisma.order.findMany({
     where: {
       OR: [
-        { orderNo: term },
-        { code: term },
         { orderNo: { contains: term } },
         { code: { contains: term } },
       ],
@@ -111,6 +109,7 @@ export async function resolveTraceQuery(
         include: {
           outboundOrder: {
             include: {
+              coldLog: { include: { store: true } },
               batch: {
                 include: {
                   farmer: { include: { enclosures: true } },
@@ -168,6 +167,7 @@ export async function resolveTraceQuery(
       ...(channelId ? { channelId } : {}),
     },
     include: {
+      coldLog: { include: { store: true } },
       batch: {
         include: {
           farmer: { include: { enclosures: true } },
@@ -219,22 +219,29 @@ async function buildTraceFromOutbound(
     const gender = line.gender || batch.gender;
     const weightTier = line.weightTier || batch.weightTier;
 
+    // 溯源链路层层反向锚定：同一农户、暂养池、规格，贯通称重分拣与预冷入库
     const sortTask = await prisma.sortTask.findFirst({
-      where: { gender, weightTier, status: "COMPLETED" },
+      where: {
+        gender,
+        weightTier,
+        status: "COMPLETED",
+        bundleBatch: { tagClaim: { farmerId: batch.farmerId } },
+      },
       include: { machine: true, bundleBatch: { include: { group: true, tagClaim: true } } },
       orderBy: { doneAt: "desc" },
     });
 
     const bundleBatch = sortTask?.bundleBatch || await prisma.bundleBatch.findFirst({
-      where: { status: "COMPLETED" },
+      where: { status: "COMPLETED", tagClaim: { farmerId: batch.farmerId } },
       include: { group: true, tagClaim: true },
       orderBy: { doneAt: "desc" },
     });
 
-    const coldLog = await prisma.coldLog.findFirst({
+    const coldLog = outOrder.coldLog || (sortTask ? await prisma.coldLog.findFirst({
+      where: { refId: sortTask.code },
       include: { store: true },
       orderBy: { createdAt: "desc" },
-    });
+    }) : null);
 
     const outboundLogistics = line.expressCompany && line.waybillNo
       ? `${line.expressCompany} (${line.waybillNo})`

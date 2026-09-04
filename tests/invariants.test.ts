@@ -177,7 +177,39 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   assert.equal(parsed2.length, 2);
   assert.deepEqual(parsed2[0], { gender: "FEMALE", weightTier: "3.5两", count: 4 });
   assert.deepEqual(parsed2[1], { gender: "MALE", weightTier: "4.0两", count: 4 });
-  console.log("  ✔ 蟹卡规格型号智能拆分测试通过");
+
+  // 真实业务导出数据测试 (含 Unicode 乘号 ×、两、不同公母次序与 Excel 多列格式)
+  const rawModel3 = "4.0母蟹×5只，5.0公蟹×5只";
+  const parsed3 = Invariants.parseCrabCardSpec(rawModel3);
+  assert.equal(parsed3.length, 2);
+  assert.deepEqual(parsed3[0], { gender: "FEMALE", weightTier: "4.0两", count: 5 });
+  assert.deepEqual(parsed3[1], { gender: "MALE", weightTier: "5.0两", count: 5 });
+
+  const rawModel4 = "2.5母蟹×4只，3.5公蟹×4只";
+  const parsed4 = Invariants.parseCrabCardSpec(rawModel4);
+  assert.equal(parsed4.length, 2);
+  assert.deepEqual(parsed4[0], { gender: "FEMALE", weightTier: "2.5两", count: 4 });
+  assert.deepEqual(parsed4[1], { gender: "MALE", weightTier: "3.5两", count: 4 });
+
+  // 测试批量粘贴解析
+  const multiLineClipboard = `
+251228204820877 2026/9/4   山姆紫金呈祥 4.0母蟹×5只，5.0公蟹×5只  8801159803379
+251228204606054 2026/9/4   山姆898型   2.5母蟹×4只，3.5公蟹×4只  880089810391
+`;
+  const parsedBatch = Invariants.parseOrderImportText(multiLineClipboard, "CARD");
+  assert.equal(parsedBatch.length, 4, "2 行订单应准确拆分出 4 条需求明细");
+  assert.equal(parsedBatch[0].orderNo, "251228204820877");
+  assert.equal(parsedBatch[0].weightTier, "4.0两");
+  assert.equal(parsedBatch[0].count, 5);
+  assert.equal(parsedBatch[1].weightTier, "5.0两");
+  assert.equal(parsedBatch[1].count, 5);
+  assert.equal(parsedBatch[2].orderNo, "251228204606054");
+  assert.equal(parsedBatch[2].weightTier, "2.5两");
+  assert.equal(parsedBatch[2].count, 4);
+  assert.equal(parsedBatch[3].weightTier, "3.5两");
+  assert.equal(parsedBatch[3].count, 4);
+
+  console.log("  ✔ 蟹卡规格型号智能拆分与多列导入测试通过");
 }
 
 // 8. 蟹扣逐日轧平对账
@@ -190,7 +222,77 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
     scrappedCount: 50,
   });
   assert.equal(balanced.isBalanced, true, "800 + 150 + 50 == 1000 应轧平");
-  console.log("  ✔ 蟹扣日清日结对账守恒测试通过\n");
+  console.log("  ✔ 蟹扣日清日结对账守恒测试通过");
 }
 
-console.log("🎉 全部 8 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
+// 9. 订单批量导入智能解析与发货日期自适应防爆 (PRD V2.1)
+{
+  console.log("▶ [Test 9] 订单批量导入多列自适应解析与日期安全校验");
+  const pasteText = `251228204820877\t2026/9/4\t山姆紫金呈祥\t4.0母蟹*5只，5.0公蟹*5只\t8801159803379
+251228204606054\t2026/9/4\t山姆898型\t2.5母蟹*4只，3.5公蟹*4只\t880089810391`;
+
+  const parsed = Invariants.parseOrderImportText(pasteText, "CARD");
+  assert.equal(parsed.length, 4, "2 张蟹卡（各2规格）应被拆为 4 条需求明细");
+  assert.equal(parsed[0].deliveryDate, "2026-09-04", "斜杠日期必须标准化为 YYYY-MM-DD");
+  assert.equal(parsed[0].count, 5);
+  assert.equal(parsed[0].weightTier, "4.0两");
+
+  // 日期解析防爆
+  const safeDate = Invariants.normalizeDate("山姆紫金呈祥");
+  assert.ok(!isNaN(safeDate.getTime()), "非法日期格式应安全兜底为有效日期");
+  console.log("  ✔ 订单多列复制自适应拆解与日期防爆测试通过\n");
+}
+
+// 10. 分拣批次预冷入库余量卡控 (PRD V2.1)
+{
+  console.log("▶ [Test 10] 分拣批次合格品入库保鲜预冷余量与上限卡控");
+  // 10.1 正常入库
+  const validIntake = Invariants.checkColdIntake({
+    qualifiedCount: 438,
+    alreadyIntakeCount: 0,
+    intakeCount: 400,
+    taskStatus: "COMPLETED",
+    taskCode: "FJR2026092101",
+  });
+  assert.equal(validIntake.valid, true);
+  assert.equal(validIntake.remaining, 38);
+  assert.equal(validIntake.availableCount, 438);
+
+  // 10.2 刚好入完全部合格量
+  const fullIntake = Invariants.checkColdIntake({
+    qualifiedCount: 438,
+    alreadyIntakeCount: 400,
+    intakeCount: 38,
+    taskStatus: "COMPLETED",
+    taskCode: "FJR2026092101",
+  });
+  assert.equal(fullIntake.valid, true);
+  assert.equal(fullIntake.remaining, 0);
+
+  // 10.3 超额入库拦截
+  const overIntake = Invariants.checkColdIntake({
+    qualifiedCount: 438,
+    alreadyIntakeCount: 400,
+    intakeCount: 50,
+    taskStatus: "COMPLETED",
+    taskCode: "FJR2026092101",
+  });
+  assert.equal(overIntake.valid, false, "申请 50 只超出剩余 38 只必须被拦截");
+  assert.equal(overIntake.availableCount, 38);
+  assert.equal(overIntake.excess, 12);
+
+  // 10.4 未完成分拣批次拦截
+  const pendingTaskIntake = Invariants.checkColdIntake({
+    qualifiedCount: 0,
+    alreadyIntakeCount: 0,
+    intakeCount: 100,
+    taskStatus: "PENDING",
+    taskCode: "FJR2026092102",
+  });
+  assert.equal(pendingTaskIntake.valid, false, "待分拣任务禁止直接入库");
+
+  console.log("  ✔ 分拣批次保鲜入库余量与超额拦截测试通过\n");
+}
+
+console.log("🎉 全部 10 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
+

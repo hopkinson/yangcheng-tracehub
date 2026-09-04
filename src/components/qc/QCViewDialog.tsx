@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileSearch, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { FileSearch, Clock, AlertTriangle, CheckCircle2, ExternalLink, Download, FileWarning } from "lucide-react";
 
 export function QCViewDialog({
   record,
@@ -34,13 +34,14 @@ export function QCViewDialog({
   triggerText?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const checkDateStr = typeof record.checkTime === "string" ? record.checkTime : record.checkTime.toISOString().slice(5, 16).replace("T", " ");
   const uploadDateStr = typeof record.uploadTime === "string" ? record.uploadTime : record.uploadTime.toISOString().slice(5, 16).replace("T", " ");
   const isException = record.result === "EXCEPTION";
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) setImageError(false); }}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-primary gap-1">
           <FileSearch className="size-3" />
@@ -103,12 +104,66 @@ export function QCViewDialog({
           {/* 原件照片 */}
           <div className="border rounded-lg overflow-hidden bg-muted/20 p-2 flex items-center justify-center min-h-48">
             {record.fileUrl ? (
-              <img src={record.fileUrl} alt="品控原件" className="max-h-72 object-contain rounded border shadow-xs" />
+              imageError ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
+                  <FileWarning className="size-8 text-amber-500" />
+                  <span className="text-xs text-muted-foreground">原件暂无法直接内嵌预览</span>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1 mt-1" asChild>
+                    <a href={record.fileUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="size-3" />
+                      在新窗口尝试打开
+                    </a>
+                  </Button>
+                </div>
+              ) : (
+                <a
+                  href={record.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="点击在新窗口查看大图原件"
+                  className="group relative block"
+                >
+                  <img
+                    src={record.fileUrl}
+                    alt="品控原件"
+                    onError={() => setImageError(true)}
+                    className="max-h-72 object-contain rounded border shadow-xs transition-opacity group-hover:opacity-90 cursor-zoom-in"
+                  />
+                </a>
+              )
             ) : (
               <div className="text-xs text-muted-foreground">现场纸质件留档（纯原图展示）</div>
             )}
           </div>
         </div>
+
+        {/* 底部操作按钮栏 */}
+        {record.fileUrl && (
+          <div className="flex items-center justify-between pt-2 border-t text-xs">
+            <span className="text-muted-foreground truncate max-w-[240px]">
+              {record.fileName || "品控凭证原件"}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
+                <a
+                  href={record.fileUrl}
+                  download={record.fileName || `${record.code}-proof`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Download className="size-3.5" />
+                  下载原件
+                </a>
+              </Button>
+              <Button variant="default" size="sm" className="h-7 text-xs gap-1" asChild>
+                <a href={record.fileUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-3.5" />
+                  新窗口打开
+                </a>
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

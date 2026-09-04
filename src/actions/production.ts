@@ -9,16 +9,7 @@ import { getTenant } from "@/config/tenant";
 // 1. 订单管理 Server Actions
 // ============================================================================
 
-export interface RawImportOrder {
-  orderNo: string;
-  type: "STORE_ORDER" | "CRAB_CARD";
-  storeName?: string;
-  specModel?: string;
-  gender: string;
-  weightTier: string;
-  count: number;
-  deliveryDate: string; // YYYY-MM-DD
-}
+import type { RawImportOrder } from "@/lib/invariants";
 
 export async function importOrdersAction(rawOrders: RawImportOrder[]) {
   try {
@@ -33,42 +24,19 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
     let idx = 1;
 
     for (const raw of rawOrders) {
-      if (raw.type === "CRAB_CARD" && raw.specModel) {
-        // 使用正则智能拆分多规格行
-        const parsedItems = Invariants.parseCrabCardSpec(raw.specModel);
-        if (parsedItems.length > 0) {
-          for (const item of parsedItems) {
-            ordersToCreate.push({
-              code: `SO${dateStr}${String(idx++).padStart(3, "0")}`,
-              importId,
-              orderNo: raw.orderNo,
-              type: "CRAB_CARD",
-              storeName: "蟹卡提货 (顺丰速运直发)",
-              specModel: raw.specModel,
-              gender: item.gender,
-              weightTier: item.weightTier,
-              count: item.count,
-              deliveryDate: new Date(raw.deliveryDate),
-              status: "PENDING",
-            });
-          }
-          continue;
-        }
-      }
-
-      // 门店订单或普通单
+      const defaultStore = raw.type === "CRAB_CARD" ? "蟹卡提货 (顺丰速运直发)" : getTenant().storeLabel;
       ordersToCreate.push({
-        code: `SO${dateStr}${String(idx++).padStart(3, "0")}`,
         importId,
+        code: `SO${dateStr}${String(idx++).padStart(3, "0")}`,
         orderNo: raw.orderNo,
         type: raw.type,
-        storeName: raw.storeName || getTenant().storeLabel,
+        storeName: raw.storeName || defaultStore,
         specModel: raw.specModel || null,
+        deliveryDate: Invariants.normalizeDate(raw.deliveryDate),
         gender: raw.gender === "母" || raw.gender === "FEMALE" ? "FEMALE" : "MALE",
-        weightTier: raw.weightTier.endsWith("两") ? raw.weightTier : `${raw.weightTier}两`,
-        count: Number(raw.count),
-        deliveryDate: new Date(raw.deliveryDate),
-        status: "PENDING",
+        weightTier: raw.weightTier?.endsWith("两") ? raw.weightTier : `${raw.weightTier || "4.0"}两`,
+        count: Number(raw.count || 1),
+        status: "PENDING" as const,
       });
     }
 
@@ -137,12 +105,71 @@ export async function createBundleBatchAction(data: {
       return { success: false, message: "必须至少选择一个有效来源池并输入正确只数" };
     }
 
-    // 校验蟹扣是否为 APPROVED 状态
+    // 校验蟹扣是否为 APPROVED 状态及可用余量
     const tagClaim = await prisma.tagClaim.findUnique({
       where: { id: data.tagClaimId },
+      include: {
+        farmer: true,
+        bundleBatches: { include: { lines: true } },
+      },
     });
     if (!tagClaim || tagClaim.status !== "APPROVED") {
       return { success: false, message: "所选蟹扣批次未通过审核，禁止用于捆扎" };
+    }
+
+    const totalCrabs = data.lines.reduce((acc, l) => acc + l.count, 0);
+    const alreadyUsed = tagClaim.bundleBatches.flatMap((b) => b.lines).reduce((sum, l) => sum + l.count, 0);
+    const availableTags = Math.max(
+      0,
+      tagClaim.claimCount -
+        Math.max(alreadyUsed, tagClaim.boundCount || 0) -
+        (tagClaim.returnedCount || 0) -
+        (tagClaim.scrappedCount || 0)
+    );
+
+    if (totalCrabs > availableTags) {
+      return {
+        success: false,
+        message: `本次捆扎只数 (${totalCrabs} 只) 超出所选蟹扣批次可用余量 (${availableTags} 只，总额 ${tagClaim.claimCount} 只)`,
+      };
+    }
+
+    // 校验暂养池存活：单次批查并强校验农户一致性（杜绝张冠李戴）
+    const poolIds = Array.from(new Set(data.lines.map((l) => l.poolId)));
+    const pools = await prisma.holdingPool.findMany({
+      where: { id: { in: poolIds } },
+      include: {
+        batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+        batchItems: {
+          where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+          include: { batch: true },
+        },
+      },
+    });
+
+    for (const line of data.lines) {
+      const p = pools.find((x) => x.id === line.poolId);
+      if (!p) return { success: false, message: `暂养池 ${line.poolId} 不存在` };
+
+      // 强校验池内活蟹归属养殖户，确保蟹扣与原料批次同源可追溯
+      const liveOf = (arr: any[]) => arr.reduce((s, x) => s + Math.max(0, x.inPoolCount - x.outPoolCount - x.lossCount), 0);
+      const farmerLive = Math.max(
+        liveOf(p.batches.filter((b) => b.farmerId === tagClaim.farmerId)),
+        liveOf(p.batchItems.filter((bi) => bi.batch?.farmerId === tagClaim.farmerId))
+      );
+
+      if (farmerLive <= 0) {
+        return {
+          success: false,
+          message: `暂养池 ${p.code} (${p.name}) 内无养殖户 [${tagClaim.farmer?.name || "所选户"}] 的在养活蟹，禁止跨户绑扣捆扎`,
+        };
+      }
+      if (line.count > farmerLive) {
+        return {
+          success: false,
+          message: `暂养池 ${p.code} 出池只数 (${line.count} 只) 超出养殖户 [${tagClaim.farmer?.name || "所选户"}] 在池存活上限 (${farmerLive} 只)`,
+        };
+      }
     }
 
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -439,7 +466,50 @@ export async function createColdIntakeAction(data: {
   operator: string;
 }) {
   try {
-    if (data.count <= 0) return { success: false, message: "入库只数必须大于 0" };
+    if (!data.storeId) return { success: false, message: "请选择目标保鲜库" };
+    if (!data.count || data.count <= 0) return { success: false, message: "入库只数必须大于 0" };
+
+    const refCode = data.refId?.trim();
+    if (!refCode) {
+      return { success: false, message: "必须选择关联的分拣批次任务" };
+    }
+
+    // 查询关联的分拣任务 (支持 code 或 id)
+    const sortTask = await prisma.sortTask.findFirst({
+      where: {
+        OR: [
+          { code: refCode },
+          { id: refCode },
+        ],
+      },
+    });
+
+    if (!sortTask) {
+      return { success: false, message: `未找到关联的分拣批次任务 [${refCode}]，请重新选择` };
+    }
+
+    // 统计已入库数量 (直接在数据库做 SUM 聚合)
+    const logAgg = await prisma.coldLog.aggregate({
+      where: {
+        refId: { in: [sortTask.code, sortTask.id] },
+        type: "INTAKE",
+      },
+      _sum: { count: true },
+    });
+    const alreadyIntakeCount = logAgg._sum.count || 0;
+
+    // 纯函数守恒硬卡控：入库数量不得多于分拣合格余量
+    const checkRes = Invariants.checkColdIntake({
+      qualifiedCount: sortTask.qualifiedCount,
+      alreadyIntakeCount,
+      intakeCount: data.count,
+      taskStatus: sortTask.status,
+      taskCode: sortTask.code,
+    });
+
+    if (!checkRes.valid) {
+      return { success: false, message: checkRes.reason };
+    }
 
     const count = await prisma.coldLog.count();
     const code = `CR-${String(count + 901).padStart(4, "0")}`;
@@ -450,15 +520,21 @@ export async function createColdIntakeAction(data: {
         storeId: data.storeId,
         type: "INTAKE",
         count: data.count,
-        refType: data.refType || "SORT",
-        refId: data.refId || null,
+        refType: "SORT",
+        refId: sortTask.code,
         operator: data.operator || "李仓管",
       },
     });
 
     revalidatePath("/cold-storage");
+    revalidatePath("/sorting");
+    revalidatePath("/outbound");
     revalidatePath("/");
-    return { success: true, code, message: `入库登记成功，生成入库单号 ${code}` };
+    return {
+      success: true,
+      code,
+      message: `分拣批次 [${sortTask.code}] 预冷入库登记成功（入库 ${data.count} 只，生成单号 ${code}）`,
+    };
   } catch (error: any) {
     console.error("createColdIntakeAction error:", error);
     return { success: false, message: error.message || "预冷入库登记失败" };

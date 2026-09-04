@@ -50,7 +50,7 @@ export default async function OutboundPage({
     sortTasks,
     outboundLines,
     qcRecords,
-    rawBatches,
+    coldLogs,
   ] = await Promise.all([
     getCurrentUser(),
     prisma.outboundOrder.count(),
@@ -58,6 +58,7 @@ export default async function OutboundPage({
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
+        coldLog: { include: { store: true } },
         batch: { include: { farmer: true, pool: true } },
         store: { include: { channel: true } },
         channel: true,
@@ -77,6 +78,14 @@ export default async function OutboundPage({
     }),
     prisma.sortTask.findMany({
       where: { status: "COMPLETED" },
+      include: {
+        bundleBatch: {
+          include: {
+            tagClaim: { include: { farmer: true } },
+            lines: { include: { pool: true } },
+          },
+        },
+      },
     }),
     prisma.outboundLine.findMany({
       where: { outboundOrder: { status: { not: "REJECTED" } } },
@@ -88,12 +97,13 @@ export default async function OutboundPage({
       orderBy: { checkTime: "desc" },
       take: 10,
     }),
-    prisma.batch.findMany({
-      where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+    prisma.coldLog.findMany({
+      where: { type: "INTAKE" },
       include: {
-        farmer: true,
-        pool: true,
-        items: { include: { pool: true } },
+        store: true,
+        outboundOrders: {
+          where: { status: { not: "REJECTED" } },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -102,21 +112,31 @@ export default async function OutboundPage({
   const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
 
-  // 格式化可供关联的原料批次信息
-  const rawBatchOptions = rawBatches.map((b: any) => {
-    const liveInBatch = Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount);
-    const specSummary =
-      b.items && b.items.length > 0
-        ? b.items.map((it: any) => `${it.gender === "FEMALE" ? "母" : "公"}${it.weightTier}`).join(" / ")
-        : `${b.gender === "FEMALE" ? "母" : "公"}${b.weightTier}`;
+  const sortTaskMap = new Map(sortTasks.map((t: any) => [t.code, t]));
+
+  // 格式化保鲜库在库批次信息（供出库调拨核对）
+  const coldBatchOptions = coldLogs.map((log: any) => {
+    const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId);
+    const gender = task?.gender || "MALE";
+    const weightTier = task?.weightTier || "4.0两";
+    const specLabel = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}`;
+    const used = log.outboundOrders?.reduce((acc: number, o: any) => acc + o.outboundCount, 0) || 0;
+    const availableCount = Math.max(0, log.count - used);
+    const farmer = task?.bundleBatch?.tagClaim?.farmer;
+
     return {
-      id: b.id,
-      code: b.code,
-      farmerName: b.farmer?.name || "签约养殖户",
-      farmerCode: b.farmer?.code || "",
-      poolCode: b.pool?.code || "ZY-01",
-      specSummary,
-      liveCount: liveInBatch,
+      id: log.id,
+      code: log.code,
+      storeName: log.store.name,
+      storeCode: log.store.code,
+      targetTemp: log.store.targetTemp,
+      gender,
+      weightTier,
+      specLabel,
+      intakeCount: log.count,
+      availableCount,
+      refTaskCode: task?.code || log.refId || undefined,
+      farmerSummary: farmer ? `${farmer.name} (${farmer.code})` : undefined,
     };
   });
 
@@ -162,14 +182,14 @@ export default async function OutboundPage({
             <CardOutboundDialog
               pendingCardOrders={pendingCardOrders}
               specStocks={specStocks}
-              rawBatches={rawBatchOptions}
+              coldBatches={coldBatchOptions}
               userId={currentUserId}
             />
             <StoreOutboundDialog
               stores={stores.map((s: any) => ({ id: s.id, name: s.name, code: s.code }))}
               pendingOrders={pendingStoreOrders}
               specStocks={specStocks}
-              rawBatches={rawBatchOptions}
+              coldBatches={coldBatchOptions}
               userId={currentUserId}
             />
           </div>
@@ -277,8 +297,12 @@ export default async function OutboundPage({
                             <span className="font-mono font-bold text-foreground text-xs">
                               {order.code}
                             </span>
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                              {order.lines?.length || 1} 笔明细合单
+                            <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                              {order.coldLog ? (
+                                <span className="text-primary font-medium">{order.coldLog.code} ({order.coldLog.store.code})</span>
+                              ) : (
+                                <span>{order.lines?.length || 1} 笔明细合单</span>
+                              )}
                             </span>
                           </div>
                         </TableCell>
@@ -397,6 +421,8 @@ export default async function OutboundPage({
                                 type: order.type,
                                 storeName: order.store?.name || order.storeName,
                                 channelName: order.channel?.name,
+                                coldLogCode: order.coldLog?.code,
+                                coldStoreName: order.coldLog?.store?.name,
                                 outboundCount: order.outboundCount,
                                 logisticsNo: order.logisticsNo,
                                 status: order.status,

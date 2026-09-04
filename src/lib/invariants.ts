@@ -42,6 +42,14 @@ export interface ColdStorageInventoryCheck {
   gender?: string;
 }
 
+export interface ColdIntakeCheck {
+  qualifiedCount: number;
+  alreadyIntakeCount: number;
+  intakeCount: number;
+  taskStatus?: string;
+  taskCode?: string;
+}
+
 export interface SortingLossCheck {
   inputCount: number;
   qualifiedCount: number;
@@ -51,6 +59,18 @@ export interface ParsedSpecItem {
   gender: "MALE" | "FEMALE";
   weightTier: string;
   count: number;
+}
+
+export interface RawImportOrder {
+  orderNo: string;
+  type: "STORE_ORDER" | "CRAB_CARD";
+  storeName?: string;
+  specModel?: string;
+  gender: string;
+  weightTier: string;
+  count: number;
+  deliveryDate: string; // YYYY-MM-DD
+  isPreSplit?: boolean;
 }
 
 export const Invariants = {
@@ -179,6 +199,42 @@ export const Invariants = {
     };
   },
 
+  // 7.1 分拣合格品入库保鲜预冷余量卡控 (PRD V2.1)
+  // 入库数量不得多于分拣合格剩余未入库只数: count <= qualifiedCount - alreadyIntakeCount
+  checkColdIntake: ({
+    qualifiedCount,
+    alreadyIntakeCount,
+    intakeCount,
+    taskStatus,
+    taskCode,
+  }: ColdIntakeCheck) => {
+    if (taskStatus && taskStatus !== "COMPLETED") {
+      return {
+        valid: false,
+        availableCount: 0,
+        reason: `分拣批次${taskCode ? ` [${taskCode}] ` : ""}尚未完成称重分拣（当前状态：${taskStatus}），暂不可办理保鲜预冷入库`,
+      };
+    }
+    const availableCount = Math.max(0, qualifiedCount - alreadyIntakeCount);
+    if (intakeCount <= 0) {
+      return { valid: false, availableCount, reason: "入库数量必须大于 0" };
+    }
+    if (intakeCount > availableCount) {
+      return {
+        valid: false,
+        availableCount,
+        excess: intakeCount - availableCount,
+        reason: `超额入库拦截：申请入库 ${intakeCount} 只，该分拣批次${taskCode ? ` [${taskCode}] ` : ""}当前仅剩 ${availableCount} 只可入库（分拣合格 ${qualifiedCount} 只，已预冷入库 ${alreadyIntakeCount} 只）`,
+      };
+    }
+    return {
+      valid: true,
+      availableCount,
+      remaining: availableCount - intakeCount,
+      reason: `分拣批次余量核验通过，准予入库登记（入库 ${intakeCount} 只，入库后剩余 ${availableCount - intakeCount} 只）`,
+    };
+  },
+
   // 8. 分拣称重损耗计算与 5% 红线告警 (PRD V2.1)
   calculateSortingLoss: ({ inputCount, qualifiedCount }: SortingLossCheck) => {
     if (inputCount <= 0) {
@@ -204,13 +260,120 @@ export const Invariants = {
   // 9. 蟹卡规格型号正则智能拆分 (PRD V2.1)
   parseCrabCardSpec: (specModel: string): ParsedSpecItem[] => {
     if (!specModel || typeof specModel !== "string") return [];
-    const pattern = /([0-9]+(?:\.[0-9]+)?)\s*(公|母)(?:蟹)?\s*(?:X|x|\*|\s|共|各)?\s*(\d+)(?:只)?/g;
+    const pattern = /(?:([0-9]+(?:\.[0-9]+)?)\s*(?:两)?\s*(公|母)|(公|母)(?:蟹)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:两)?)(?:蟹)?\s*(?:[×✕✖\*＊xX共各\+/\-]|只\s*[\*×xX])?\s*(\d+)(?:只)?/g;
     return Array.from(specModel.matchAll(pattern))
-      .map(([, weight, sex, countStr]) => ({
-        gender: (sex === "母" ? "FEMALE" : "MALE") as "FEMALE" | "MALE",
-        weightTier: weight.endsWith("两") ? weight : `${weight}两`,
-        count: parseInt(countStr, 10),
-      }))
+      .map((match) => {
+        const rawWeight = match[1] || match[4];
+        const sex = match[2] || match[3];
+        const count = parseInt(match[5], 10);
+        const formattedWeight = rawWeight.includes(".") ? rawWeight : `${rawWeight}.0`;
+        return {
+          gender: (sex === "母" ? "FEMALE" : "MALE") as "FEMALE" | "MALE",
+          weightTier: `${formattedWeight}两`,
+          count,
+        };
+      })
       .filter((item) => item.count > 0);
   },
+
+  // 10. 日期安全解析与标准化
+  normalizeDate: (val?: string | Date | null): Date => {
+    if (val instanceof Date && !isNaN(val.getTime())) return val;
+    if (typeof val === "string") {
+      const s = val.trim();
+      const m = s.match(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/) || s.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
+      if (m) {
+        const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T00:00:00.000Z`);
+        if (!isNaN(d.getTime())) return d;
+      }
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  },
+
+  normalizeDateStr: (val?: string | Date | null): string => Invariants.normalizeDate(val).toISOString().slice(0, 10),
+
+  // 11. 蟹卡导入单行智能识别 (支持 Excel 多列复制/格式自适应)
+  parseCrabCardImportLine: (line: string): RawImportOrder[] => {
+    const trimmed = line.trim();
+    if (!trimmed || (/^(订单号|序号|单号|NO|No|ID)/i.test(trimmed) && /(规格|发货|日期|型号)/.test(trimmed))) return [];
+
+    const cells = trimmed.split(trimmed.includes("\t") ? "\t" : /\s+/).map((c) => c.trim()).filter(Boolean);
+    const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b)/.test(c);
+    const dateCell = cells.find(isDate);
+    const deliveryDate = Invariants.normalizeDateStr(dateCell || trimmed);
+
+    // 识别规格明细
+    const items = Invariants.parseCrabCardSpec(trimmed);
+    const isSpec = (c: string) => /(?:公|母)/.test(c);
+
+    // 识别订单号与型号（排除日期、规格与条码）
+    const orderNo = cells.find((c) => !isDate(c) && !isSpec(c) && /^[A-Za-z0-9_-]{6,}$/.test(c)) || cells[0] || `KK${Date.now()}`;
+    const otherParts = cells.filter((c) => !isDate(c) && !isSpec(c) && c !== orderNo && !/^\d{10,14}$/.test(c));
+    const modelName = otherParts.join(" ").trim();
+
+    const base = {
+      orderNo,
+      type: "CRAB_CARD" as const,
+      storeName: modelName ? `蟹卡提货 (${modelName})` : "蟹卡提货",
+      deliveryDate,
+      isPreSplit: true,
+    };
+
+    const targetItems = items.length ? items : [{ gender: "FEMALE" as const, weightTier: "3.5两", count: 10 }];
+
+    return targetItems.map((it) => {
+      const spec = `${it.weightTier}${it.gender === "FEMALE" ? "母蟹" : "公蟹"}×${it.count}只`;
+      return {
+        ...base,
+        specModel: modelName ? `${modelName} (${spec})` : spec,
+        gender: it.gender,
+        weightTier: it.weightTier,
+        count: it.count,
+      };
+    });
+  },
+
+  // 12. 门店订单单行智能识别
+  parseStoreOrderImportLine: (line: string, defaultStoreName = "山姆会员店"): RawImportOrder | null => {
+    const trimmed = line.trim();
+    if (!trimmed || (/^(订单号|序号|单号|NO|No|ID)/i.test(trimmed) && /(门店|规格|只数|日期)/.test(trimmed))) return null;
+
+    const cells = trimmed.split(trimmed.includes("\t") ? "\t" : /\s+/).map((c) => c.trim()).filter(Boolean);
+    const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b)/.test(c);
+    const dateCell = cells.find(isDate);
+    const deliveryDate = Invariants.normalizeDateStr(dateCell || trimmed);
+
+    const genderCell = cells.find((c) => !isDate(c) && (/^(母|母蟹|female)$/i.test(c) || /^(公|公蟹|male)$/i.test(c)));
+    const gender: "MALE" | "FEMALE" = genderCell && /母|female/i.test(genderCell) ? "FEMALE" : "MALE";
+
+    const weightCell = cells.find((c) => !isDate(c) && c !== genderCell && /^([1-9](?:\.[0-9])?)(?:两)?$/.test(c));
+    const weightTier = weightCell ? (weightCell.endsWith("两") ? weightCell : `${Number(weightCell).toFixed(1)}两`) : "4.0两";
+
+    const countCell = cells.find((c) => !isDate(c) && c !== genderCell && c !== weightCell && /^\d+(?:只)?$/.test(c));
+    const count = countCell ? parseInt(countCell, 10) : 100;
+
+    const orderNo = cells.find((c) => !isDate(c) && c !== genderCell && c !== weightCell && c !== countCell && /^[A-Za-z0-9_-]{6,}$/.test(c)) || cells[0] || `SO${Date.now()}`;
+
+    const storeCell = cells.find((c) => !isDate(c) && c !== genderCell && c !== weightCell && c !== countCell && c !== orderNo);
+    const storeName = storeCell || defaultStoreName;
+
+    return { orderNo, type: "STORE_ORDER", storeName, gender, weightTier, count, deliveryDate, isPreSplit: true };
+  },
+
+  // 13. 多行批量文本智能拆单解析
+  parseOrderImportText: (
+    text: string,
+    type: "STORE" | "CARD",
+    defaultStoreName = "山姆会员店"
+  ): RawImportOrder[] => {
+    return text.trim().split("\n").flatMap((line) => {
+      if (!line.trim()) return [];
+      if (type === "CARD") return Invariants.parseCrabCardImportLine(line);
+      const item = Invariants.parseStoreOrderImportLine(line, defaultStoreName);
+      return item ? [item] : [];
+    });
+  },
 };
+

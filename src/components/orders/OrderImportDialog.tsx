@@ -15,8 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { FileSpreadsheet, UploadCloud, Loader2, Info } from "lucide-react";
-import { importOrdersAction, RawImportOrder } from "@/actions/production";
-import { Invariants } from "@/lib/invariants";
+import { importOrdersAction } from "@/actions/production";
+import { Invariants, type RawImportOrder } from "@/lib/invariants";
 import { getTenant } from "@/config/tenant";
 
 export function OrderImportDialog() {
@@ -29,60 +29,7 @@ export function OrderImportDialog() {
   const [parsedPreview, setParsedPreview] = useState<RawImportOrder[]>([]);
 
   const parseText = (text: string, type: "STORE" | "CARD") => {
-    const lines = text.trim().split("\n");
-    const list: RawImportOrder[] = [];
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const parts = line.split(/[\t,，\s]+/);
-
-      if (type === "CARD") {
-        // 格式: 订单号 规格型号 发货日期
-        const orderNo = parts[0] || `KK${Date.now()}`;
-        const specModel = parts[1] || "";
-        const deliveryDate = parts[2] || "2026-09-22";
-
-        // 拆分
-        const items = Invariants.parseCrabCardSpec(specModel);
-        if (items.length > 0) {
-          items.forEach((it) => {
-            list.push({
-              orderNo,
-              type: "CRAB_CARD",
-              storeName: "蟹卡提货",
-              specModel,
-              gender: it.gender,
-              weightTier: it.weightTier,
-              count: it.count,
-              deliveryDate,
-            });
-          });
-        } else {
-          list.push({
-            orderNo,
-            type: "CRAB_CARD",
-            storeName: "蟹卡提货",
-            specModel,
-            gender: "FEMALE",
-            weightTier: "3.5两",
-            count: 10,
-            deliveryDate,
-          });
-        }
-      } else {
-        // 格式: 订单号 门店名称 公母 规格 只数 发货日期
-        list.push({
-          orderNo: parts[0] || `SO${Date.now()}`,
-          type: "STORE_ORDER",
-          storeName: parts[1] || getTenant().storeLabel,
-          gender: parts[2] === "母" ? "FEMALE" : "MALE",
-          weightTier: parts[3] || "4.0两",
-          count: parseInt(parts[4], 10) || 100,
-          deliveryDate: parts[5] || "2026-09-22",
-        });
-      }
-    }
-
+    const list = Invariants.parseOrderImportText(text, type, getTenant().storeLabel);
     setParsedPreview(list);
   };
 
@@ -161,7 +108,7 @@ export function OrderImportDialog() {
               onChange={(e) => handleTextChange(e.target.value)}
               placeholder={
                 activeTab === "CARD"
-                  ? "格式：订单号 规格型号 发货日期（例如：KK20260921102 4.0母蟹X5只，5.0公蟹X5只 2026-09-22）"
+                  ? "支持直接粘贴 Excel 行（例如：订单号 日期 礼盒型号 规格详情 条码，或 订单号 规格 发货日期）"
                   : `格式：订单号 门店名称 公母 规格 只数 发货日期（例如：SO20260921008 ${getTenant().storeLabel}(深圳店) 公 4.0两 1500 2026-09-22）`
               }
               className="font-mono text-xs h-24 resize-none"
@@ -191,7 +138,7 @@ export function OrderImportDialog() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-bold text-foreground">{item.orderNo}</span>
                       <Badge variant="secondary" className="text-[10px] h-5">
-                        {item.type === "CRAB_CARD" ? "蟹卡提货" : item.storeName}
+                        {item.storeName}
                       </Badge>
                       {item.specModel && (
                         <span className="text-[11px] text-muted-foreground truncate max-w-[200px]" title={item.specModel}>

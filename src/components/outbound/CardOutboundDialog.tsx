@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShoppingBag, Loader2, AlertTriangle } from "lucide-react";
 import { createCardUnifiedOutboundAction } from "@/actions/outbound";
-import { BatchLineageSelect, type RawBatchOption } from "./BatchLineageSelect";
+import { ColdBatchSelect, type ColdBatchOption } from "./BatchLineageSelect";
 
 export interface SpecStockInfo {
   gender: string;
@@ -26,7 +26,7 @@ export interface SpecStockInfo {
 export function CardOutboundDialog({
   pendingCardOrders,
   specStocks = [],
-  rawBatches = [],
+  coldBatches = [],
   userId,
 }: {
   pendingCardOrders: Array<{
@@ -38,14 +38,14 @@ export function CardOutboundDialog({
     deliveryDate: Date | string;
   }>;
   specStocks?: SpecStockInfo[];
-  rawBatches?: RawBatchOption[];
+  coldBatches?: ColdBatchOption[];
   userId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [transportCompany, setTransportCompany] = useState("顺丰冷运速递");
 
-  const [selectedBatchId, setSelectedBatchId] = useState(rawBatches[0]?.id || "");
+  const [selectedBatchId, setSelectedBatchId] = useState(coldBatches[0]?.id || "");
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
@@ -84,7 +84,7 @@ export function CardOutboundDialog({
       try {
         const res = await createCardUnifiedOutboundAction({
           orderIds: selectedOrderIds,
-          batchId: selectedBatchId || undefined,
+          coldLogId: selectedBatchId || undefined,
           transportCompany,
           applicantId: userId,
         });
@@ -146,9 +146,9 @@ export function CardOutboundDialog({
             </div>
           </div>
 
-          {/* 关联原料批次确认卡片 */}
-          <BatchLineageSelect
-            rawBatches={rawBatches}
+          {/* 关联保鲜库预冷批次确认卡片 */}
+          <ColdBatchSelect
+            coldBatches={coldBatches}
             selectedBatchId={selectedBatchId}
             onSelectBatchId={setSelectedBatchId}
           />

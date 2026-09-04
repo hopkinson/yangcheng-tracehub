@@ -32,6 +32,29 @@ export default async function ColdStoragePage() {
     orderBy: { checkTime: "desc" },
   });
 
+  // 4. 查询已完成分拣任务并统计预冷入库余量 (基于分拣批次入库与数量卡控)
+  const completedSortTasks = await prisma.sortTask.findMany({
+    where: { status: "COMPLETED" },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+  });
+
+  const sortTaskOptions = completedSortTasks.map((t) => {
+    const taskLogs = logs.filter((l) => l.refId === t.code || l.refId === t.id);
+    const alreadyIntakeCount = taskLogs.reduce((acc, l) => acc + l.count, 0);
+    const availableCount = Math.max(0, t.qualifiedCount - alreadyIntakeCount);
+    return {
+      id: t.id,
+      code: t.code,
+      gender: t.gender,
+      weightTier: t.weightTier,
+      qualifiedCount: t.qualifiedCount,
+      alreadyIntakeCount,
+      availableCount,
+    };
+  });
+
+  const taskMap = new Map(sortTaskOptions.map((t) => [t.code, t]));
+
   const storeOptions = stores.map((s) => ({
     id: s.id,
     code: s.code,
@@ -65,7 +88,7 @@ export default async function ColdStoragePage() {
               _count: s._count,
             }))}
           />
-          <ColdIntakeDialog stores={storeOptions} />
+          <ColdIntakeDialog stores={storeOptions} sortTasks={sortTaskOptions} />
         </div>
       </div>
 
@@ -121,6 +144,7 @@ export default async function ColdStoragePage() {
                   <div className="pt-1">
                     <ColdIntakeDialog
                       stores={storeOptions}
+                      sortTasks={sortTaskOptions}
                       defaultStoreId={s.id}
                       trigger={
                         <Button variant="outline" size="sm" className="w-full h-8 text-xs font-medium gap-1.5 shadow-2xs">
@@ -187,8 +211,21 @@ export default async function ColdStoragePage() {
                     <td className="px-3 py-2.5 font-mono font-bold text-primary">
                       +{log.count} 只
                     </td>
-                    <td className="px-3 py-2.5 font-mono text-muted-foreground">
-                      {log.refId || "—"}
+                    <td className="px-3 py-2.5">
+                      {log.refId ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge variant="outline" className="text-[10px] bg-muted/40 font-mono">
+                            {log.refId}
+                          </Badge>
+                          {taskMap.get(log.refId) && (
+                            <span className="text-[11px] text-muted-foreground">
+                              ({taskMap.get(log.refId)!.gender === "FEMALE" ? "母蟹" : "公蟹"} {taskMap.get(log.refId)!.weightTier})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground font-mono">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       {log.operator}

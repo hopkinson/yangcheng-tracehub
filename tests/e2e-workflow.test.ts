@@ -313,6 +313,7 @@ async function runE2EWorkflowTests() {
     // 正常发起蟹扣领用 6,000 只
     const tagClaim = await prisma.tagClaim.create({
       data: {
+        code: `XK-E2E-${timestamp}`,
         claimDate: new Date(),
         farmerId: farmer.id,
         claimCount: 6000,
@@ -324,6 +325,7 @@ async function runE2EWorkflowTests() {
       },
     });
     assert.equal(tagClaim.claimCount, 6000);
+    assert.ok(tagClaim.code, "蟹扣批次编码必须存在");
     console.log(`  ✔ 蟹扣领用申请与品控主管审核通过 (领用 ${tagClaim.claimCount} 只)\n`);
 
     // -------------------------------------------------------------------------

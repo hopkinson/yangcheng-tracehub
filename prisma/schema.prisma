@@ -338,6 +338,8 @@ model ColdLog {
   refId           String?         // 关联 KZD/FJR 编号
   operator        String          // 经手人
   createdAt       DateTime        @default(now())
+
+  outboundOrders  OutboundOrder[]
 }
 
 // -------------------------------------------------------------
@@ -409,7 +411,11 @@ model OutboundOrder {
   channelId         String
   channel           Channel         @relation(fields: [channelId], references: [id])
   
-  // 关联批次
+  // 关联保鲜库批次 (保鲜入库 CR-XXXX)
+  coldLogId         String?
+  coldLog           ColdLog?        @relation(fields: [coldLogId], references: [id])
+
+  // 关联批次 (原料履约追溯)
   batchId           String
   batch             Batch           @relation(fields: [batchId], references: [id])
   

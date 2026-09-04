@@ -300,7 +300,7 @@ async function main() {
   });
 
   // YL2026092001: 张卫民 部分出库批次
-  await prisma.batch.create({
+  const ylZhang = await prisma.batch.create({
     data: {
       code: "YL2026092001",
       farmerId: farmerZhang.id,
@@ -720,7 +720,7 @@ async function main() {
 
   await prisma.coldLog.createMany({
     data: [
-      { code: "CR-0901", storeId: bx01.id, type: "INTAKE", count: 600, refType: "BUNDLE", refId: "KZD2026092101", operator: "李仓管" },
+      { code: "CR-0901", storeId: bx01.id, type: "INTAKE", count: 438, refType: "SORT", refId: "FJR2026092101", operator: "李仓管" },
       { code: "CR-0902", storeId: bx02.id, type: "INTAKE", count: 1200, refType: "BUNDLE", refId: "KZD2026092102", operator: "李仓管" },
       { code: "CR-0903", storeId: bx02.id, type: "INTAKE", count: 1180, refType: "SORT", refId: "FJR2026092001", operator: "李仓管" },
       { code: "CR-0904", storeId: bx03.id, type: "INTAKE", count: 985, refType: "SORT", refId: "FJR2026092002", operator: "李仓管" },
@@ -775,7 +775,7 @@ async function main() {
   await prisma.outboundOrder.create({
     data: {
       code: "CK2026092101",
-      batchId: yl03.id,
+      batchId: ylZhang.id,
       type: "STORE_ORDER",
       storeId: storeMap["ST-01"],
       storeName: "山姆会员店 (深圳福田店)",

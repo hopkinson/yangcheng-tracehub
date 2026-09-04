@@ -23,10 +23,12 @@ async function main() {
 
   // 2. 待审核蟹扣领用申请 (TagClaim: PENDING)
   const today = new Date();
+  const todayDateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
 
   // 申请 1: 张阿二申请 800 只 (在池存活充足，符合规则)
   const tagClaim1 = await prisma.tagClaim.create({
     data: {
+      code: `XK${todayDateStr}01`,
       claimDate: today,
       farmerId: farmer1.id,
       claimCount: 800,
@@ -42,6 +44,7 @@ async function main() {
   // 申请 2: 刘金根申请 1200 只
   const tagClaim2 = await prisma.tagClaim.create({
     data: {
+      code: `XK${todayDateStr}02`,
       claimDate: today,
       farmerId: farmer2.id,
       claimCount: 1200,
@@ -57,6 +60,7 @@ async function main() {
   // 申请 3: 张阿二申请 500 只 (早间特快发货备扣)
   const tagClaim3 = await prisma.tagClaim.create({
     data: {
+      code: `XK${todayDateStr}03`,
       claimDate: today,
       farmerId: farmer1.id,
       claimCount: 500,

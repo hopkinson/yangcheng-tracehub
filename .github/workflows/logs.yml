@@ -12,7 +12,7 @@ on:
         required: false
         default: "100"
       action:
-        description: "执行操作 (logs / push / seed / restart / status)"
+        description: "执行操作 (logs / push / seed / restart / status / reset-maoshi / reset-yangcheng)"
         required: false
         default: "logs"
 
@@ -58,6 +58,12 @@ jobs:
               echo "=== 重启应用容器 ==="
               docker compose restart app
               sleep 2
+            elif [ "${{ github.event.inputs.action }}" = "reset-maoshi" ]; then
+              echo "=== 正在执行毛氏分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
+            elif [ "${{ github.event.inputs.action }}" = "reset-yangcheng" ]; then
+              echo "=== 正在执行阳澄股份分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             fi
 
             echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
@@ -93,6 +99,12 @@ jobs:
               echo "=== 重启应用容器 ==="
               docker compose restart app
               sleep 2
+            elif [ "${{ github.event.inputs.action }}" = "reset-maoshi" ]; then
+              echo "=== 正在执行毛氏分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
+            elif [ "${{ github.event.inputs.action }}" = "reset-yangcheng" ]; then
+              echo "=== 正在执行阳澄股份分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             fi
 
             echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
@@ -139,6 +151,12 @@ jobs:
               echo "=== 重启应用容器 ==="
               docker compose restart app
               sleep 2
+            elif [ "${{ github.event.inputs.action }}" = "reset-maoshi" ]; then
+              echo "=== 正在执行毛氏分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
+            elif [ "${{ github.event.inputs.action }}" = "reset-yangcheng" ]; then
+              echo "=== 正在执行阳澄股份分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             fi
 
             echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="
@@ -174,6 +192,12 @@ jobs:
               echo "=== 重启应用容器 ==="
               docker compose restart app
               sleep 2
+            elif [ "${{ github.event.inputs.action }}" = "reset-maoshi" ]; then
+              echo "=== 正在执行毛氏分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
+            elif [ "${{ github.event.inputs.action }}" = "reset-yangcheng" ]; then
+              echo "=== 正在执行阳澄股份分系统数据清理与单超管初始化 ==="
+              docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             fi
 
             echo "=== 应用容器日志 (后 ${{ github.event.inputs.lines || '100' }} 行) ==="

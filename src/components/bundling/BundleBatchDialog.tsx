@@ -31,6 +31,7 @@ export interface TagClaimOption {
   code: string | null;
   farmerName: string;
   claimCount: number;
+  availableCount?: number;
 }
 
 export interface GroupOption {
@@ -60,9 +61,18 @@ export function BundleBatchDialog({
     Array<{ poolId: string; gender: string; weightTier: string; count: number }>
   >([]);
 
+  const currentTag = tagClaims.find((t) => t.id === selectedTagId);
+  const availableTags = currentTag?.availableCount ?? currentTag?.claimCount ?? 0;
+  const totalCrabs = selectedPools.reduce((acc, cur) => acc + (cur.count || 0), 0);
+  const isTagExceeded = totalCrabs > availableTags;
+
   const handleAddPool = (poolId: string) => {
     const p = pools.find((x) => x.id === poolId);
     if (!p) return;
+    if (p.liveCount <= 0) {
+      toast.error(`暂养池 ${p.code} (${p.name}) 为空池，无活蟹可出池捆扎`);
+      return;
+    }
     if (selectedPools.some((x) => x.poolId === poolId)) {
       toast.error("该暂养池已在来源列表中");
       return;
@@ -73,7 +83,7 @@ export function BundleBatchDialog({
         poolId,
         gender: p.currentGender || "MALE",
         weightTier: p.currentWeightTier || "4.0两",
-        count: Math.min(500, p.liveCount || 500),
+        count: Math.min(500, p.liveCount),
       },
     ]);
   };
@@ -83,12 +93,13 @@ export function BundleBatchDialog({
   };
 
   const handleCountChange = (poolId: string, count: number) => {
+    const p = pools.find((x) => x.id === poolId);
+    const max = p?.liveCount ?? 1;
+    const clamped = Math.max(1, Math.min(max, count));
     setSelectedPools(
-      selectedPools.map((x) => (x.poolId === poolId ? { ...x, count: Math.max(1, count) } : x))
+      selectedPools.map((x) => (x.poolId === poolId ? { ...x, count: clamped } : x))
     );
   };
-
-  const totalCrabs = selectedPools.reduce((acc, cur) => acc + (cur.count || 0), 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +109,17 @@ export function BundleBatchDialog({
     }
     if (selectedPools.length === 0) {
       toast.error("请至少选择一个来源暂养池");
+      return;
+    }
+    if (isTagExceeded) {
+      toast.error(`本次捆扎只数 (${totalCrabs} 只) 超出蟹扣批次可用余量 (${availableTags} 只)`);
+      return;
+    }
+    if (selectedPools.some((i) => {
+      const p = pools.find((x) => x.id === i.poolId);
+      return !p || p.liveCount <= 0 || i.count > p.liveCount;
+    })) {
+      toast.error("所选来源池存活不足或为空池，禁止出池建批");
       return;
     }
 
@@ -112,7 +134,6 @@ export function BundleBatchDialog({
       if (res.success) {
         toast.success(res.message);
         setOpen(false);
-        setSelectedPools([]);
       } else {
         toast.error(res.message);
       }
@@ -175,7 +196,7 @@ export function BundleBatchDialog({
                   ) : (
                     tagClaims.map((t) => (
                       <SelectItem key={t.id} value={t.id} className="text-xs font-mono">
-                        {t.code || t.id.slice(0, 10)} · {t.farmerName} ({t.claimCount} 只)
+                        {t.code || "—"} · {t.farmerName} (可用: {t.availableCount ?? t.claimCount} / 领: {t.claimCount})
                       </SelectItem>
                     ))
                   )}
@@ -205,13 +226,13 @@ export function BundleBatchDialog({
                 来源暂养池与出池数量
               </Label>
               <Select onValueChange={handleAddPool}>
-                <SelectTrigger className="h-7 w-44 text-xs">
+                <SelectTrigger className="h-7 w-48 text-xs">
                   <SelectValue placeholder="+ 添加来源暂养池" />
                 </SelectTrigger>
                 <SelectContent>
                   {pools.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="text-xs font-mono">
-                      {p.code} {p.name} ({p.currentGender === "FEMALE" ? "母" : "公"}{p.currentWeightTier || "未定"} · 存{p.liveCount})
+                    <SelectItem key={p.id} value={p.id} disabled={p.liveCount <= 0} className="text-xs font-mono">
+                      {p.code} {p.name} ({p.currentGender === "FEMALE" ? "母" : "公"}{p.currentWeightTier || "未定"} · {p.liveCount > 0 ? `存${p.liveCount}只` : "空池"})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -220,12 +241,14 @@ export function BundleBatchDialog({
 
             {selectedPools.length === 0 ? (
               <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded">
-                请点击右上角选择需要合并捆扎的暂养池来源
+                请点击右上角选择需要合并捆扎的暂养池来源（已过滤空池）
               </div>
             ) : (
               <div className="space-y-2 pt-1">
                 {selectedPools.map((item) => {
                   const p = pools.find((x) => x.id === item.poolId);
+                  const maxLive = p?.liveCount ?? 0;
+                  const isPoolExceeded = item.count > maxLive || maxLive <= 0;
                   return (
                     <div
                       key={item.poolId}
@@ -237,16 +260,19 @@ export function BundleBatchDialog({
                         <span className="text-primary font-medium">
                           {item.gender === "FEMALE" ? "母蟹" : "公蟹"} {item.weightTier}
                         </span>
+                        <span className="text-[10px] text-muted-foreground ml-2 font-mono">
+                          (在池存活: {maxLive} 只)
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Label className="text-[11px] text-muted-foreground">出池只数:</Label>
                         <Input
                           type="number"
                           min={1}
-                          max={p?.liveCount || 10000}
+                          max={maxLive > 0 ? maxLive : 1}
                           value={item.count}
                           onChange={(e) => handleCountChange(item.poolId, parseInt(e.target.value, 10) || 0)}
-                          className="h-7 w-24 text-xs font-mono text-right"
+                          className={`h-7 w-24 text-xs font-mono text-right ${isPoolExceeded ? "border-destructive text-destructive" : ""}`}
                         />
                         <Button
                           type="button"
@@ -264,8 +290,20 @@ export function BundleBatchDialog({
 
                 <div className="flex justify-end items-center gap-2 pt-2 text-xs font-mono font-bold text-foreground">
                   <span>本次捆扎合计只数：</span>
-                  <span className="text-base text-primary">{totalCrabs} 只</span>
+                  <span className={`text-base ${isTagExceeded ? "text-destructive" : "text-primary"}`}>
+                    {totalCrabs} 只
+                  </span>
+                  {currentTag && (
+                    <span className="text-[11px] font-normal text-muted-foreground ml-1">
+                      (所选蟹扣批次可用: {availableTags} 只)
+                    </span>
+                  )}
                 </div>
+                {isTagExceeded && (
+                  <p className="text-[11px] text-destructive text-right font-medium">
+                    ⚠ 蟹的只数 ({totalCrabs}) 不能超过蟹扣可用数 ({availableTags})，禁止建批
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -277,7 +315,7 @@ export function BundleBatchDialog({
             <Button
               type="submit"
               size="sm"
-              disabled={isPending || selectedPools.length === 0}
+              disabled={isPending || selectedPools.length === 0 || isTagExceeded || totalCrabs <= 0}
               className="gap-1.5 bg-primary text-primary-foreground font-medium"
             >
               {isPending && <Loader2 className="size-3.5 animate-spin" />}

@@ -49,7 +49,10 @@ export default async function BundlingPage({
   // 2. 查询可用于捆扎的已审批蟹扣 (status=APPROVED)
   const approvedTagClaims = await prisma.tagClaim.findMany({
     where: { status: "APPROVED" },
-    include: { farmer: true },
+    include: {
+      farmer: true,
+      bundleBatches: { include: { lines: true } },
+    },
     orderBy: { claimDate: "desc" },
   });
 
@@ -57,6 +60,9 @@ export default async function BundlingPage({
   const rawPools = await prisma.holdingPool.findMany({
     where: { status: "ACTIVE" },
     include: {
+      batches: {
+        where: { status: { not: "FROZEN" } },
+      },
       batchItems: {
         where: { batch: { status: { not: "FROZEN" } } },
       },
@@ -65,10 +71,15 @@ export default async function BundlingPage({
   });
 
   const poolOptions = rawPools.map((p: any) => {
-    const liveCount = p.batchItems.reduce(
+    const directLive = p.batches.reduce(
       (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
       0
     );
+    const itemLive = p.batchItems.reduce(
+      (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
+      0
+    );
+    const liveCount = Math.max(directLive, itemLive);
     return {
       id: p.id,
       code: p.code,
@@ -115,12 +126,16 @@ export default async function BundlingPage({
           <BundleGroupDialog groups={groups} />
           <BundleBatchDialog
             groups={groups.map((g: any) => ({ id: g.id, code: g.code, name: g.name }))}
-            tagClaims={approvedTagClaims.map((t: any) => ({
-              id: t.id,
-              code: t.code,
-              farmerName: t.farmer.name,
-              claimCount: t.claimCount,
-            }))}
+            tagClaims={approvedTagClaims.map((t: any) => {
+              const used = t.bundleBatches?.flatMap((b: any) => b.lines || []).reduce((s: number, l: any) => s + l.count, 0) || 0;
+              return {
+                id: t.id,
+                code: t.code,
+                farmerName: t.farmer.name,
+                claimCount: t.claimCount,
+                availableCount: Math.max(0, t.claimCount - Math.max(used, t.boundCount || 0) - (t.returnedCount || 0) - (t.scrappedCount || 0)),
+              };
+            })}
             pools={poolOptions}
           />
         </div>
@@ -215,7 +230,7 @@ export default async function BundlingPage({
                       <td className="px-3 py-2 font-mono">
                         <div className="text-primary font-medium flex items-center gap-1">
                           <Tag className="size-3" />
-                          {batch.tagClaim.code || batch.tagClaim.id.slice(0, 10)}
+                          {batch.tagClaim.code || "—"}
                         </div>
                         <div className="text-[10px] text-muted-foreground">
                           {batch.tagClaim.farmer.name}

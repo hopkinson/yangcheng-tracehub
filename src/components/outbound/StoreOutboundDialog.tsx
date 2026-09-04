@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Loader2, Store as StoreIcon, AlertTriangle } from "lucide-react";
 import { createStoreOutboundAction } from "@/actions/outbound";
-import { BatchLineageSelect, type RawBatchOption } from "./BatchLineageSelect";
+import { ColdBatchSelect, type ColdBatchOption } from "./BatchLineageSelect";
 
 export interface PendingOrderOption {
   id: string;
@@ -44,19 +44,19 @@ export function StoreOutboundDialog({
   stores,
   pendingOrders,
   specStocks = [],
-  rawBatches = [],
+  coldBatches = [],
   userId,
 }: {
   stores: StoreOption[];
   pendingOrders: PendingOrderOption[];
   specStocks?: SpecStockInfo[];
-  rawBatches?: RawBatchOption[];
+  coldBatches?: ColdBatchOption[];
   userId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const [selectedBatchId, setSelectedBatchId] = useState(rawBatches[0]?.id || "");
+  const [selectedBatchId, setSelectedBatchId] = useState(coldBatches[0]?.id || "");
 
   // 仅保留有待发货订单的门店可选（14.3 规范）
   const activeStores = useMemo(() => {
@@ -119,7 +119,7 @@ export function StoreOutboundDialog({
         const res = await createStoreOutboundAction({
           storeId: selectedStoreId,
           orderIds: selectedOrderIds,
-          batchId: selectedBatchId || undefined,
+          coldLogId: selectedBatchId || undefined,
           transportCompany,
           licensePlate,
           applicantId: userId,
@@ -197,9 +197,9 @@ export function StoreOutboundDialog({
             </div>
           </div>
 
-          {/* 关联原料批次确认卡片 */}
-          <BatchLineageSelect
-            rawBatches={rawBatches}
+          {/* 关联保鲜库预冷批次确认卡片 */}
+          <ColdBatchSelect
+            coldBatches={coldBatches}
             selectedBatchId={selectedBatchId}
             onSelectBatchId={setSelectedBatchId}
           />

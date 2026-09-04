@@ -16,27 +16,35 @@ interface BatchReportViewDialogProps {
   batchCode: string;
   reportName: string;
   reportUrl: string;
+  title?: string;
+  trigger?: React.ReactNode;
 }
 
 export function BatchReportViewDialog({
   batchCode,
   reportName,
   reportUrl,
+  title,
+  trigger,
 }: BatchReportViewDialogProps) {
   const isPdf = reportName.toLowerCase().endsWith(".pdf") || reportUrl.startsWith("data:application/pdf");
 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 text-xs text-primary gap-1 px-2 font-medium">
-          <FileCheck className="size-3.5" />
-          查看报告
-        </Button>
+        {trigger ? (
+          trigger
+        ) : (
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-primary gap-1 px-2 font-medium">
+            <FileCheck className="size-3.5" />
+            查看报告
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between pr-6">
-            <span>原料批次检测报告 ({batchCode})</span>
+            <span>{title || `原料批次检测报告 (${batchCode})`}</span>
           </DialogTitle>
           <DialogDescription className="text-xs">
             文件名称: {reportName}

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PoolDialog } from "@/components/forms/PoolDialog";
 import { ClearPoolDialog } from "@/components/forms/ClearPoolDialog";
+import { PoolLossDialog } from "@/components/forms/PoolLossDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
@@ -252,16 +253,29 @@ export default async function PoolsPage({
                           {totalOut.toLocaleString()}
                         </span>
                       </div>
-                      <div className="rounded border bg-background/60 p-1">
-                        <span className="text-muted-foreground block">损耗</span>
-                        <span
-                          className={`font-mono font-semibold ${
-                            Number(lossRate) > 5 ? "text-rose-600" : "text-foreground"
-                          }`}
-                        >
-                          {totalLoss.toLocaleString()} ({lossRate}%)
-                        </span>
-                      </div>
+                      <PoolLossDialog
+                        pool={pool}
+                        totalLive={totalLive}
+                        userId={currentUserId}
+                        disabled={!isWarehouseOrAdmin || !isOccupied}
+                        trigger={
+                          <button
+                            type="button"
+                            disabled={!isWarehouseOrAdmin || !isOccupied}
+                            className="rounded border bg-background/60 p-1 text-center transition-colors cursor-pointer hover:bg-muted/50 disabled:cursor-default disabled:hover:bg-background/60"
+                            title={isOccupied ? "点击登记该池死蟹/盘点损耗" : "空池无在养存活"}
+                          >
+                            <span className="text-muted-foreground block text-[10px]">损耗</span>
+                            <span
+                              className={`font-mono font-semibold block ${
+                                Number(lossRate) > 5 ? "text-rose-600" : "text-foreground"
+                              }`}
+                            >
+                              {totalLoss.toLocaleString()} ({lossRate}%)
+                            </span>
+                          </button>
+                        }
+                      />
                     </div>
                   </div>
 
@@ -279,7 +293,7 @@ export default async function PoolsPage({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-border/50">
+                    <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-border/50">
                       <QCRecordDialog
                         config={{
                           cat: "WATER_QUALITY",
@@ -312,6 +326,13 @@ export default async function PoolsPage({
                           ],
                         }}
                         triggerLabel="暂养巡检"
+                      />
+
+                      <PoolLossDialog
+                        pool={pool}
+                        totalLive={totalLive}
+                        userId={currentUserId}
+                        disabled={!isWarehouseOrAdmin || !isOccupied}
                       />
                     </div>
                   </div>

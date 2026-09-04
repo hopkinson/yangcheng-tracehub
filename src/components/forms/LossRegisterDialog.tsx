@@ -16,6 +16,7 @@ import { AlertTriangle, ClipboardList } from "lucide-react";
 export function LossRegisterDialog({
   batch,
   userId,
+  trigger,
 }: {
   batch: {
     id: string;
@@ -25,6 +26,7 @@ export function LossRegisterDialog({
     lossCount: number;
   };
   userId: string;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -94,10 +96,14 @@ export function LossRegisterDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <ClipboardList className="size-3.5" data-icon="inline-start" />
-          盘点损耗
-        </Button>
+        {trigger ? (
+          trigger
+        ) : (
+          <Button variant="outline" size="sm">
+            <ClipboardList className="size-3.5" data-icon="inline-start" />
+            盘点损耗
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

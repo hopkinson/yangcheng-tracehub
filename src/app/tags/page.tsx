@@ -8,6 +8,7 @@ import { ResubmitTagClaimDialog } from "@/components/forms/ResubmitTagClaimDialo
 import { SettleTagClaimDialog } from "@/components/forms/SettleTagClaimDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { formatDate } from "@/lib/utils";
+import { Tag } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +136,7 @@ export default async function TagsPage({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[140px]">蟹扣批次 (XK)</TableHead>
                   <TableHead>领用日期</TableHead>
                   <TableHead>来源养殖户</TableHead>
                   <TableHead>申请领扣数</TableHead>
@@ -147,13 +149,19 @@ export default async function TagsPage({
               <TableBody>
                 {tagClaims.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
                       暂无蟹扣领用申请记录
                     </TableCell>
                   </TableRow>
                 ) : (
                   tagClaims.map((claim) => (
                     <TableRow key={claim.id}>
+                      <TableCell className="font-mono text-xs font-semibold text-primary">
+                        <div className="flex items-center gap-1">
+                          <Tag className="size-3" />
+                          <span>{claim.code || "—"}</span>
+                        </div>
+                      </TableCell>
                       <TableCell className="font-mono text-xs">
                         {formatDate(claim.claimDate)}
                       </TableCell>

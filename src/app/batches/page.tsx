@@ -6,12 +6,70 @@ import { Badge } from "@/components/ui/badge";
 import { MultiSpecIntakeDialog } from "@/components/batches/MultiSpecIntakeDialog";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchRowActions } from "@/components/batches/BatchRowActions";
+import { BatchInspectionDialog } from "@/components/batches/BatchInspectionDialog";
+import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, FileText } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, FileText, FileCheck, ClipboardCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+function InspectionTag({
+  status,
+  url,
+  label,
+  batchCode,
+  reportName,
+}: {
+  status?: string | null;
+  url?: string | null;
+  label: string;
+  batchCode: string;
+  reportName?: string | null;
+}) {
+  if (status === "QUALIFIED") {
+    const text = `${label}合格`;
+    if (url) {
+      return (
+        <BatchReportViewDialog
+          batchCode={batchCode}
+          reportName={reportName || text}
+          reportUrl={url}
+          title={`${label}报告 (${batchCode})`}
+          trigger={
+            <button
+              type="button"
+              className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline text-left cursor-pointer group"
+              title="查看报告原件"
+            >
+              <CheckCircle2 className="size-3 shrink-0" />
+              <span>{text}</span>
+              <FileCheck className="size-2.5 opacity-60 group-hover:opacity-100" />
+            </button>
+          }
+        />
+      );
+    }
+    return (
+      <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+        <CheckCircle2 className="size-3 shrink-0" /> {text}
+      </span>
+    );
+  }
+  if (status === "UNQUALIFIED") {
+    return (
+      <span className="flex items-center gap-1 text-destructive font-medium">
+        <XCircle className="size-3 shrink-0" /> {label}不合格
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-500 font-medium">
+      <Clock className="size-3 shrink-0" /> {label}待检
+    </span>
+  );
+}
 
 export default async function BatchesPage({
   searchParams,
@@ -47,7 +105,8 @@ export default async function BatchesPage({
     prisma.holdingPool.findMany({
       where: { status: "ACTIVE" },
       include: {
-        batchItems: true,
+        batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+        batchItems: { where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
       },
     }),
   ]);
@@ -72,10 +131,12 @@ export default async function BatchesPage({
   });
 
   const poolOptions = pools.map((p: any) => {
-    const liveCount = p.batchItems?.reduce(
+    const directLive = p.batches?.reduce((sum: number, b: any) => sum + Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount), 0) || 0;
+    const itemLive = p.batchItems?.reduce(
       (acc: number, cur: any) => acc + Math.max(0, cur.inPoolCount - cur.outPoolCount - cur.lossCount),
       0
     ) || 0;
+    const liveCount = Math.max(directLive, itemLive);
     return {
       id: p.id,
       code: p.code,
@@ -118,6 +179,7 @@ export default async function BatchesPage({
                     const liveInPool = Math.max(0, batch.inPoolCount - batch.outPoolCount - batch.lossCount);
                     const livePct = batch.inPoolCount > 0 ? Math.min(100, Math.round((liveInPool / batch.inPoolCount) * 100)) : 0;
                     const hasMultiItems = batch.items && batch.items.length > 0;
+                    const isPendingQc = batch.quickCheck !== "QUALIFIED" || batch.sampleCheck !== "QUALIFIED";
 
                     return (
                       <TableRow key={batch.id} className="hover:bg-muted/30 transition-colors">
@@ -206,12 +268,41 @@ export default async function BatchesPage({
                         {/* 5. 品控快检/抽检 */}
                         <TableCell className="align-middle">
                           <div className="flex flex-col gap-1 text-[11px]">
-                            <span className="flex items-center gap-1 text-emerald-600">
-                              <CheckCircle2 className="size-3" /> 农残快检合格
-                            </span>
-                            <span className="flex items-center gap-1 text-emerald-600">
-                              <CheckCircle2 className="size-3" /> 试吃抽检合格
-                            </span>
+                            <InspectionTag
+                              status={batch.quickCheck}
+                              url={batch.quickCheckUrl || batch.reportUrl}
+                              label="农残快检"
+                              batchCode={batch.code}
+                              reportName={batch.quickCheckName || batch.reportName}
+                            />
+                            <InspectionTag
+                              status={batch.sampleCheck}
+                              url={batch.sampleCheckUrl}
+                              label="试吃抽检"
+                              batchCode={batch.code}
+                              reportName={batch.sampleCheckName}
+                            />
+
+                            {(isQaOrAdmin || isWarehouseOrAdmin) && (
+                              <BatchInspectionDialog
+                                batch={batch}
+                                userId={currentUserId}
+                                trigger={
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      "text-[10px] text-left cursor-pointer transition-colors pt-0.5",
+                                      isPendingQc
+                                        ? "inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.5 rounded mt-0.5 w-fit"
+                                        : "text-muted-foreground hover:text-primary hover:underline"
+                                    )}
+                                  >
+                                    {isPendingQc && <ClipboardCheck className="size-3 text-amber-600 dark:text-amber-400 shrink-0" />}
+                                    <span>{isPendingQc ? "录入检测报告" : "✎ 完善检测报告"}</span>
+                                  </button>
+                                }
+                              />
+                            )}
                           </div>
                         </TableCell>
 

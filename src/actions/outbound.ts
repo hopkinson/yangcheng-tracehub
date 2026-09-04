@@ -33,12 +33,52 @@ async function getColdStorageStock(gender: string, weightTier: string) {
   };
 }
 
+// 辅助：从保鲜入库批次穿透追溯原始批次
+async function resolveBatchFromColdLog(
+  tx: any,
+  coldLogId?: string | null,
+  explicitBatchId?: string | null
+): Promise<string> {
+  if (explicitBatchId) return explicitBatchId;
+  if (coldLogId) {
+    const coldLog = await tx.coldLog.findUnique({
+      where: { id: coldLogId },
+    });
+    if (coldLog?.refId) {
+      const sortTask = await tx.sortTask.findFirst({
+        where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
+        include: {
+          bundleBatch: {
+            include: {
+              lines: { include: { pool: { include: { batches: true } } } },
+              tagClaim: { include: { farmer: { include: { batches: true } } } },
+            },
+          },
+        },
+      });
+      const resolvedBatch =
+        sortTask?.bundleBatch?.tagClaim?.farmer?.batches?.[0] ||
+        sortTask?.bundleBatch?.lines?.[0]?.pool?.batches?.[0];
+      if (resolvedBatch) {
+        return resolvedBatch.id;
+      }
+    }
+  }
+
+  const defaultBatch = await tx.batch.findFirst({
+    where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+    orderBy: { createdAt: "desc" },
+  });
+  return defaultBatch?.id || "";
+}
+
 /**
  * 门店订单出库申请 (合单)
  */
 export async function createStoreOutboundAction(data: {
   storeId: string;
   orderIds: string[];
+  coldLogId?: string;
   batchId?: string;
   transportCompany?: string;
   licensePlate?: string;
@@ -86,18 +126,13 @@ export async function createStoreOutboundAction(data: {
     const countToday = await tx.outboundOrder.count();
     const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
 
-    let chosenBatchId = data.batchId;
-    if (!chosenBatchId) {
-      const defaultBatch = await tx.batch.findFirst({
-        where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-        orderBy: { createdAt: "desc" },
-      });
-      chosenBatchId = defaultBatch?.id || "";
-    }
+    const chosenColdLogId = data.coldLogId || null;
+    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
         code: orderCode,
+        coldLogId: chosenColdLogId,
         batchId: chosenBatchId,
         storeId: data.storeId,
         channelId: store.channelId,
@@ -151,6 +186,7 @@ export async function createStoreOutboundAction(data: {
  */
 export async function createCardUnifiedOutboundAction(data: {
   orderIds: string[];
+  coldLogId?: string;
   batchId?: string;
   transportCompany?: string;
   applicantId: string;
@@ -198,18 +234,13 @@ export async function createCardUnifiedOutboundAction(data: {
     const countToday = await tx.outboundOrder.count();
     const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
 
-    let chosenBatchId = data.batchId;
-    if (!chosenBatchId) {
-      const defaultBatch = await tx.batch.findFirst({
-        where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-        orderBy: { createdAt: "desc" },
-      });
-      chosenBatchId = defaultBatch?.id || "";
-    }
+    const chosenColdLogId = data.coldLogId || null;
+    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
         code: orderCode,
+        coldLogId: chosenColdLogId,
         batchId: chosenBatchId,
         type: "CRAB_CARD",
         storeId: defaultStore.id,

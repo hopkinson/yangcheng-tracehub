@@ -80,6 +80,7 @@ export function Logo({
   size = "md",
 }: LogoProps) {
   const tenant = getTenant();
+  const isMaoshi = tenant.id === "maoshi";
   return (
     <div
       className={cn(
@@ -88,16 +89,28 @@ export function Logo({
         className
       )}
     >
-      <CrabLogoIcon
+      <div
         className={cn(
-          ICON_SIZES[size],
-          "transition-transform duration-200 group-hover:scale-105 shrink-0",
-          iconClassName
+          "rounded-md overflow-hidden shrink-0 flex items-center justify-center",
+          isMaoshi ? "bg-white p-0.5 shadow-xs" : ""
         )}
-      />
+      >
+        <CrabLogoIcon
+          className={cn(
+            ICON_SIZES[size],
+            "transition-transform duration-200 group-hover:scale-105 shrink-0",
+            iconClassName
+          )}
+        />
+      </div>
 
       {!collapsed && (
-        <span className="text-xs font-bold tracking-tight text-foreground truncate">
+        <span
+          className={cn(
+            "text-xs font-bold tracking-tight truncate",
+            isMaoshi ? "text-white" : "text-foreground"
+          )}
+        >
           {tenant.name}
         </span>
       )}

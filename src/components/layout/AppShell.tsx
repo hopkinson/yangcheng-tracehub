@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { UserRoleSwitcher } from "./UserRoleSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
+import { getTenant } from "@/config/tenant";
 
 interface NavItem {
   href: string;
@@ -103,6 +104,8 @@ export function AppShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const tenant = getTenant();
+  const isMaoshi = tenant.id === "maoshi";
 
   if (pathname === "/login") return <>{children}</>;
 
@@ -119,49 +122,114 @@ export function AppShell({
       {visibleGroups.map((group, groupIdx) => (
         <div key={group.title} className="space-y-0.5">
           {!isCollapsed ? (
-            <div className="px-2 pt-1 pb-1 text-[11px] font-medium text-muted-foreground/75 tracking-wider">
+            <div
+              className={cn(
+                "px-2 pt-1 pb-1 text-[11px] font-medium tracking-wider",
+                isMaoshi ? "text-white/60 font-semibold" : "text-muted-foreground/75"
+              )}
+            >
               {group.title}
             </div>
           ) : (
-            groupIdx > 0 && <div className="my-2 mx-1 border-t border-border/50" />
+            groupIdx > 0 && (
+              <div
+                className={cn(
+                  "my-2 mx-1 border-t",
+                  isMaoshi ? "border-white/10" : "border-border/50"
+                )}
+              />
+            )
           )}
           <div className="space-y-0.5">
             {group.items.map(({ href, label, icon: Icon }) => {
               const isActive = pathname === href;
               const showAlert = href === "/approvals" && pendingAlertCount > 0;
+              const alertText = pendingAlertCount > 99 ? "99+" : pendingAlertCount;
+
+              const icon = (
+                <Icon
+                  className={cn(
+                    "size-4 shrink-0 transition-colors",
+                    isMaoshi
+                      ? isActive
+                        ? "text-[#003c96]"
+                        : "text-white/80 group-hover:text-white"
+                      : isActive
+                        ? "text-primary"
+                        : "text-muted-foreground/70 group-hover:text-foreground"
+                  )}
+                />
+              );
 
               return (
                 <Link
                   key={href}
                   href={href}
                   onClick={() => setMobileOpen(false)}
-                  title={isCollapsed ? label : undefined}
+                  title={isCollapsed ? (showAlert ? `${label} (${alertText}条待办)` : label) : undefined}
                   className={cn(
-                    "group relative flex items-center justify-between gap-2 rounded-lg px-2.5 h-8.5 text-xs font-medium transition-colors w-full",
-                    isActive
-                      ? "bg-primary/15 text-primary font-semibold"
-                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                    "group relative flex items-center rounded-lg text-xs font-medium transition-colors w-full h-8.5 select-none",
+                    isCollapsed ? "justify-center px-0" : "justify-between px-2.5 gap-2",
+                    isMaoshi
+                      ? isActive
+                        ? "bg-[#eff5fe] text-[#003c96] font-bold shadow-xs"
+                        : "text-white/80 hover:bg-white/10 hover:text-white"
+                      : isActive
+                        ? "bg-primary/15 text-primary font-semibold shadow-2xs"
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                   )}
                 >
-                  {isActive && (
-                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-primary" />
-                  )}
-                  <div className="flex items-center gap-2.5 truncate">
-                    <Icon
+                  {/* 展开态激活竖条（折叠态不显示，保持圆角按钮匀称完整，避免出现左侧缺角） */}
+                  {isActive && !isCollapsed && (
+                    <span
                       className={cn(
-                        "size-4 shrink-0 transition-colors",
-                        isActive ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground"
+                        "absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r",
+                        isMaoshi ? "bg-[#003c96]" : "bg-primary"
                       )}
                     />
-                    {!isCollapsed && <span className="truncate">{label}</span>}
-                  </div>
-                  {!isCollapsed && showAlert && (
-                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive/15 text-destructive ring-1 ring-destructive/30 px-1 text-[10px] font-bold">
-                      {pendingAlertCount}
-                    </span>
                   )}
-                  {isCollapsed && showAlert && (
-                    <span className="size-1.5 rounded-full bg-destructive" />
+
+                  {isCollapsed ? (
+                    /* 折叠态：居中图标 + 右上角微型数字角标 */
+                    <div className="relative flex items-center justify-center">
+                      {icon}
+                      {showAlert && (
+                        <span
+                          className={cn(
+                            "absolute -top-1.5 -right-2.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold shrink-0 shadow-xs leading-none",
+                            isMaoshi
+                              ? isActive
+                                ? "bg-red-500 text-white ring-2 ring-[#eff5fe]"
+                                : "bg-red-500 text-white ring-2 ring-[#003c96]"
+                              : isActive
+                                ? "bg-destructive text-white ring-2 ring-primary/15"
+                                : "bg-destructive text-white ring-2 ring-background"
+                          )}
+                        >
+                          {alertText}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    /* 展开态：图标 + 标题 + 右侧数字徽标 */
+                    <>
+                      <div className="flex items-center gap-2.5 truncate min-w-0">
+                        {icon}
+                        <span className="truncate">{label}</span>
+                      </div>
+                      {showAlert && (
+                        <span
+                          className={cn(
+                            "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold shrink-0 leading-none",
+                            isMaoshi
+                              ? "bg-red-500 text-white ring-1 ring-red-300"
+                              : "bg-destructive/15 text-destructive ring-1 ring-destructive/30"
+                          )}
+                        >
+                          {alertText}
+                        </span>
+                      )}
+                    </>
                   )}
                 </Link>
               );
@@ -177,14 +245,18 @@ export function AppShell({
       {/* 桌面端侧边栏 */}
       <aside
         className={cn(
-          "hidden md:flex flex-col border-r border-border/80 bg-sidebar/50 dark:bg-sidebar/30 backdrop-blur-md sticky top-0 h-screen transition-all duration-200 z-30 shrink-0 select-none",
+          "hidden md:flex flex-col sticky top-0 h-screen transition-all duration-200 z-30 shrink-0 select-none",
+          isMaoshi
+            ? "bg-[#003c96] text-white border-r border-[#002d73] shadow-md"
+            : "border-r border-border/80 bg-background text-foreground backdrop-blur-md",
           collapsed ? "w-14" : "w-56"
         )}
       >
         {/* Logo 区域 */}
         <div
           className={cn(
-            "flex h-14 items-center border-b border-border/80 px-2 transition-all",
+            "flex h-14 items-center px-2 transition-all",
+            isMaoshi ? "border-b border-[#002d73] bg-[#003c96]" : "border-b border-border/80",
             collapsed ? "justify-center" : "justify-start"
           )}
         >
@@ -192,11 +264,10 @@ export function AppShell({
             href="/"
             className={cn(
               "group flex items-center rounded-lg transition-colors",
-              collapsed
-                ? "justify-center size-9 hover:bg-muted/70"
-                : "w-full px-2.5 h-9 hover:bg-muted/70"
+              isMaoshi ? "hover:bg-white/10" : "hover:bg-muted/70",
+              collapsed ? "justify-center size-9" : "w-full px-2.5 h-9"
             )}
-            title={collapsed ? "阳澄湖大闸蟹溯源品控系统" : undefined}
+            title={collapsed ? tenant.name : undefined}
           >
             <Logo collapsed={collapsed} size="sm" />
           </Link>
@@ -206,13 +277,18 @@ export function AppShell({
         {renderNavList(collapsed)}
 
         {/* 侧栏底部折叠按钮 */}
-        <div className="border-t border-border/80 p-2">
+        <div className={cn("p-2", isMaoshi ? "border-t border-[#002d73]" : "border-t border-border/80")}>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full h-8 text-muted-foreground/80 hover:text-foreground hover:bg-muted/70 text-xs rounded-lg justify-center gap-1.5"
-            title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
+            className={cn(
+              "w-full h-8 text-xs rounded-lg justify-center gap-1.5",
+              isMaoshi
+                ? "text-white/70 hover:text-white hover:bg-white/10"
+                : "text-muted-foreground/80 hover:text-foreground hover:bg-muted/70"
+            )}
+            title={collapsed ? "展开侧边栏" : "收起侧边栏"}
           >
             {collapsed ? <PanelLeftOpen className="size-4" /> : (
               <>
@@ -231,16 +307,36 @@ export function AppShell({
             className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border/80 bg-background shadow-xl">
-            <div className="flex h-14 items-center justify-between border-b border-border/80 px-3">
+          <aside
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 flex w-60 flex-col shadow-xl",
+              isMaoshi
+                ? "bg-[#003c96] text-white border-r border-[#002d73]"
+                : "border-r border-border/80 bg-background"
+            )}
+          >
+            <div
+              className={cn(
+                "flex h-14 items-center justify-between px-3",
+                isMaoshi ? "border-b border-[#002d73]" : "border-b border-border/80"
+              )}
+            >
               <Link
                 href="/"
                 onClick={() => setMobileOpen(false)}
-                className="group flex items-center px-2 h-9 rounded-lg hover:bg-muted/70"
+                className={cn(
+                  "group flex items-center px-2 h-9 rounded-lg",
+                  isMaoshi ? "hover:bg-white/10" : "hover:bg-muted/70"
+                )}
               >
                 <Logo collapsed={false} size="sm" />
               </Link>
-              <Button variant="ghost" size="icon" className="size-8 rounded-lg" onClick={() => setMobileOpen(false)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn("size-8 rounded-lg", isMaoshi ? "text-white/80 hover:text-white hover:bg-white/10" : "")}
+                onClick={() => setMobileOpen(false)}
+              >
                 <X className="size-4" />
               </Button>
             </div>

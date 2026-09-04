@@ -1,9 +1,9 @@
 import prisma from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderImportDialog } from "@/components/orders/OrderImportDialog";
 import { OrderDeleteButton } from "@/components/orders/OrderDeleteButton";
+import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -14,13 +14,30 @@ export default async function OrdersPage({
   searchParams: Promise<{ date?: string; status?: string }>;
 }) {
   const params = await searchParams;
-  const targetDateStr = params.date || "2026-09-21";
-  const targetDate = new Date(targetDateStr);
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
 
   // 1. 查询全部订单
-  const orders = await prisma.order.findMany({
+  const allOrders = await prisma.order.findMany({
     orderBy: [{ deliveryDate: "asc" }, { createdAt: "desc" }],
   });
+
+  const availableDates = Array.from(
+    new Set(allOrders.map((o) => o.deliveryDate.toISOString().slice(0, 10)))
+  ).sort();
+
+  const targetDateStr = params.date || "all";
+
+  // 联动过滤订单明细列表
+  const displayedOrders =
+    targetDateStr === "all"
+      ? allOrders
+      : allOrders.filter(
+          (o: any) => o.deliveryDate.toISOString().slice(0, 10) === targetDateStr
+        );
 
   // 2. 查询当前暂养池在池存活数 (按公母+规格聚合)
   const batchItems = await prisma.batchItem.findMany({
@@ -36,17 +53,13 @@ export default async function OrdersPage({
     poolStockMap[key] = (poolStockMap[key] || 0) + live;
   }
 
-  // 3. 汇总当前所选发货日期的发货需求
-  const dateOrders = orders.filter(
-    (o: any) => o.deliveryDate.toISOString().slice(0, 10) === targetDateStr
-  );
-
+  // 3. 汇总当前所选范围的发货需求
   const demandSummaryMap: Record<
     string,
     { gender: string; weightTier: string; totalNeeded: number; shippedCount: number; pendingCount: number }
   > = {};
 
-  for (const o of dateOrders) {
+  for (const o of displayedOrders) {
     const key = `${o.gender}_${o.weightTier}`;
     if (!demandSummaryMap[key]) {
       demandSummaryMap[key] = {
@@ -86,29 +99,15 @@ export default async function OrdersPage({
           <div className="flex items-center gap-2">
             <Calendar className="size-4 text-primary" />
             <CardTitle className="text-sm font-semibold">
-              发货需求汇总对照（发货日：{targetDateStr}）
+              发货需求汇总对照（{targetDateStr === "all" ? "全部发货日" : `发货日：${targetDateStr}`}）
             </CardTitle>
           </div>
-          <div className="flex items-center gap-1.5">
-            <a href="/orders?date=2026-09-21">
-              <Button
-                variant={targetDateStr === "2026-09-21" ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs px-2.5"
-              >
-                当日 (09-21)
-              </Button>
-            </a>
-            <a href="/orders?date=2026-09-22">
-              <Button
-                variant={targetDateStr === "2026-09-22" ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs px-2.5"
-              >
-                次日 (09-22)
-              </Button>
-            </a>
-          </div>
+          <OrderDateFilter
+            currentDate={targetDateStr}
+            todayStr={todayStr}
+            tomorrowStr={tomorrowStr}
+            availableDates={availableDates}
+          />
         </CardHeader>
         <CardContent className="p-4">
           {demandSummaries.length === 0 ? (
@@ -170,8 +169,17 @@ export default async function OrdersPage({
         <CardHeader className="py-3 px-4 border-b bg-muted/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="size-4 text-primary" />
-            <CardTitle className="text-sm font-semibold">全量订单台账（共 {orders.length} 条需求明细）</CardTitle>
+            <CardTitle className="text-sm font-semibold">
+              {targetDateStr === "all"
+                ? `全量订单台账（共 ${displayedOrders.length} 条需求明细）`
+                : `订单台账明细（发货日：${targetDateStr}，共 ${displayedOrders.length} 条需求明细）`}
+            </CardTitle>
           </div>
+          {targetDateStr !== "all" && (
+            <Badge variant="outline" className="text-xs font-mono">
+              已过滤: {targetDateStr}
+            </Badge>
+          )}
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
@@ -188,14 +196,16 @@ export default async function OrdersPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
-              {orders.length === 0 ? (
+              {displayedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-8 text-muted-foreground">
-                    暂无订单数据，请点击右上角「Excel 批量导入订单」
+                    {targetDateStr === "all"
+                      ? "暂无订单数据，请点击右上角「Excel 批量导入订单」"
+                      : `所选发货日期（${targetDateStr}）暂无订单明细，可点击「全部」切换查看`}
                   </td>
                 </tr>
               ) : (
-                orders.map((order: any) => (
+                displayedOrders.map((order: any) => (
                   <tr key={order.id} className="hover:bg-muted/40 transition-colors">
                     <td className="px-3 py-2.5 font-mono">
                       <div className="font-bold text-foreground">{order.code}</div>

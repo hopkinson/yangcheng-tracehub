@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Thermometer, Droplets, User, CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react";
+import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
+import { FileText, Thermometer, Droplets, User, CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, ExternalLink, Download, FileWarning, FileCheck } from "lucide-react";
 
 export interface BatchDetailProps {
   batch: {
@@ -29,7 +30,13 @@ export interface BatchDetailProps {
     isException?: boolean;
     exceptionReason?: string | null;
     quickCheck?: string | null;
+    quickCheckUrl?: string | null;
+    quickCheckName?: string | null;
     sampleCheck?: string | null;
+    sampleCheckUrl?: string | null;
+    sampleCheckName?: string | null;
+    reportUrl?: string | null;
+    reportName?: string | null;
     inPoolCount: number;
     outPoolCount: number;
     lossCount: number;
@@ -54,6 +61,7 @@ export interface BatchDetailProps {
 
 export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
   const [open, setOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const rawTime = batch.inPoolTime || batch.createdAt || new Date();
   const inDateStr = typeof rawTime === "string" ? rawTime : rawTime.toISOString().slice(5, 16).replace("T", " ");
@@ -125,18 +133,69 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
           <div className="flex items-center gap-3 p-2.5 rounded bg-muted/20 border text-xs">
             <ShieldCheck className="size-4 text-primary shrink-0" />
             <div className="flex items-center gap-4 flex-wrap">
-              <span>
-                农残快检：
-                <Badge variant="outline" className="ml-1 text-emerald-600 border-emerald-500/30 text-[10px]">
-                  <CheckCircle2 className="size-3 mr-0.5" /> 合格 (未检出)
-                </Badge>
-              </span>
-              <span>
-                品质抽检与试吃：
-                <Badge variant="outline" className="ml-1 text-emerald-600 border-emerald-500/30 text-[10px]">
-                  <CheckCircle2 className="size-3 mr-0.5" /> 合格 (甘甜紧实)
-                </Badge>
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">农残快检：</span>
+                {batch.quickCheck === "QUALIFIED" ? (
+                  <>
+                    <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px]">
+                      <CheckCircle2 className="size-3 mr-0.5" /> 合格 (未检出)
+                    </Badge>
+                    {(batch.quickCheckUrl || batch.reportUrl) && (
+                      <BatchReportViewDialog
+                        batchCode={batch.code}
+                        reportName={batch.quickCheckName || batch.reportName || `${batch.code}_农残快检报告`}
+                        reportUrl={batch.quickCheckUrl || batch.reportUrl!}
+                        title={`农残快检报告 (${batch.code})`}
+                        trigger={
+                          <Button variant="link" size="sm" className="h-5 px-1 text-[11px] text-primary gap-0.5">
+                            <FileCheck className="size-3" /> 查看报告
+                          </Button>
+                        }
+                      />
+                    )}
+                  </>
+                ) : batch.quickCheck === "UNQUALIFIED" ? (
+                  <Badge variant="destructive" className="text-[10px]">
+                    <XCircle className="size-3 mr-0.5" /> 不合格 (超标拦截)
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-amber-600 border-amber-500/30 bg-amber-500/10 text-[10px]">
+                    <Clock className="size-3 mr-0.5" /> 待检测 / 待上传
+                  </Badge>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">品质抽检与试吃：</span>
+                {batch.sampleCheck === "QUALIFIED" ? (
+                  <>
+                    <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px]">
+                      <CheckCircle2 className="size-3 mr-0.5" /> 合格 (甘甜紧实)
+                    </Badge>
+                    {batch.sampleCheckUrl && (
+                      <BatchReportViewDialog
+                        batchCode={batch.code}
+                        reportName={batch.sampleCheckName || `${batch.code}_品质试吃记录`}
+                        reportUrl={batch.sampleCheckUrl}
+                        title={`品质抽检试吃记录 (${batch.code})`}
+                        trigger={
+                          <Button variant="link" size="sm" className="h-5 px-1 text-[11px] text-primary gap-0.5">
+                            <FileCheck className="size-3" /> 查看记录
+                          </Button>
+                        }
+                      />
+                    )}
+                  </>
+                ) : batch.sampleCheck === "UNQUALIFIED" ? (
+                  <Badge variant="destructive" className="text-[10px]">
+                    <XCircle className="size-3 mr-0.5" /> 不合格 (异味/空壳)
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-amber-600 border-amber-500/30 bg-amber-500/10 text-[10px]">
+                    <Clock className="size-3 mr-0.5" /> 待抽检
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
 
@@ -190,12 +249,66 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
           {/* 纸质码单照片原件 */}
           <div className="border rounded-lg overflow-hidden bg-muted/20 p-2 flex items-center justify-center min-h-40">
             {batch.slipUrl ? (
-              <img src={batch.slipUrl} alt="入库码单原件" className="max-h-64 object-contain rounded border shadow-xs" />
+              imageError ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
+                  <FileWarning className="size-8 text-amber-500" />
+                  <span className="text-xs text-muted-foreground">码单原件暂无法直接内嵌预览</span>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1 mt-1" asChild>
+                    <a href={batch.slipUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="size-3" />
+                      在新窗口尝试打开
+                    </a>
+                  </Button>
+                </div>
+              ) : (
+                <a
+                  href={batch.slipUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="点击在新窗口查看大图码单原件"
+                  className="group relative block"
+                >
+                  <img
+                    src={batch.slipUrl}
+                    alt="入库码单原件"
+                    onError={() => setImageError(true)}
+                    className="max-h-64 object-contain rounded border shadow-xs transition-opacity group-hover:opacity-90 cursor-zoom-in"
+                  />
+                </a>
+              )
             ) : (
               <div className="text-xs text-muted-foreground">纸质码单照片留档（纯原图展示）</div>
             )}
           </div>
         </div>
+
+        {/* 底部操作栏 */}
+        {batch.slipUrl && (
+          <div className="flex items-center justify-between pt-2 border-t text-xs">
+            <span className="text-muted-foreground truncate max-w-[240px]">
+              {batch.code} 纸质入库码单原件
+            </span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
+                <a
+                  href={batch.slipUrl}
+                  download={`${batch.code}-slip`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Download className="size-3.5" />
+                  下载原件
+                </a>
+              </Button>
+              <Button variant="default" size="sm" className="h-7 text-xs gap-1" asChild>
+                <a href={batch.slipUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-3.5" />
+                  新窗口打开
+                </a>
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

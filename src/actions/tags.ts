@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { getBeijingDateStr } from "@/lib/utils";
 
 export async function requestTagClaimAction(data: {
   farmerId: string;
@@ -50,8 +51,13 @@ export async function requestTagClaimAction(data: {
       throw new Error("该养殖户存在前日未轧平的蟹扣记录，须先完成退废核销方可再次领用");
     }
 
+    const prefix = `XK${getBeijingDateStr(today)}`;
+    const count = await tx.tagClaim.count({ where: { code: { startsWith: prefix } } });
+    const code = `${prefix}${String(count + 1).padStart(2, "0")}`;
+
     const claim = await tx.tagClaim.create({
       data: {
+        code,
         claimDate: today,
         farmerId: data.farmerId,
         claimCount: data.claimCount,

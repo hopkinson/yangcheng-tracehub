@@ -25,6 +25,8 @@ export function OutboundDetailDialog({
     type: string;
     storeName?: string | null;
     channelName?: string | null;
+    coldLogCode?: string | null;
+    coldStoreName?: string | null;
     outboundCount: number;
     logisticsNo?: string | null;
     status: string;
@@ -116,6 +118,21 @@ export function OutboundDetailDialog({
               </span>
             </div>
           </div>
+
+          {order.coldLogCode && (
+            <div className="px-3 py-2 rounded-lg border bg-muted/15 flex items-center justify-between text-xs font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground text-[11px]">出库调拨保鲜批次:</span>
+                <span className="font-bold text-foreground">{order.coldLogCode}</span>
+                {order.coldStoreName && (
+                  <Badge variant="outline" className="text-[10px]">
+                    {order.coldStoreName}
+                  </Badge>
+                )}
+              </div>
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">冷库预冷锁鲜成品调拨</span>
+            </div>
+          )}
 
           {/* 审批留痕卡片 */}
           <div className="p-3 rounded-lg border bg-muted/10 space-y-1.5">

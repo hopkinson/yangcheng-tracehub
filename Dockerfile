@@ -36,6 +36,7 @@ RUN mkdir -p /app/data /app/public/uploads
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
+COPY scripts ./scripts
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh

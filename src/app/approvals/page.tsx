@@ -122,7 +122,7 @@ export default async function ApprovalsPage({
         return {
           id: claim.id,
           type: "TAG_CLAIM" as const,
-          code: claim.code || `XK-${claim.id.slice(-8).toUpperCase()}`,
+          code: claim.code || "—",
           createdAt: new Date(claim.createdAt || claim.claimDate),
           summary: `${claim.farmer.name} · 领用蟹扣 ${claim.claimCount.toLocaleString()} 只`,
           subSummary: `${claim.farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}养殖户 · 户号 ${claim.farmer.code}`,
@@ -401,7 +401,7 @@ export default async function ApprovalsPage({
                         ...processedTagClaims.map((c) => ({
                           id: c.id,
                           type: "TAG" as const,
-                          code: c.code || `XK-${c.id.slice(-8).toUpperCase()}`,
+                          code: c.code || "—",
                           summary: `${c.farmer.name} · 领用蟹扣 ${c.claimCount.toLocaleString()} 只`,
                           applicant: c.applicant.fullName,
                           status: c.status,
