@@ -39,12 +39,12 @@ export const TENANTS: Record<string, TenantConfig> = {
 };
 
 export function getTenant(): TenantConfig {
-  let tenantId = process.env.NEXT_PUBLIC_TENANT || process.env.TENANT || "maoshi";
+  let tenantId = process.env.NEXT_PUBLIC_TENANT || process.env.TENANT;
   if (typeof document !== "undefined") {
     const attr = document.documentElement.getAttribute("data-tenant");
     if (attr && TENANTS[attr]) {
       tenantId = attr;
     }
   }
-  return TENANTS[tenantId] || TENANTS.maoshi;
+  return TENANTS[tenantId || "default"] || TENANTS.default;
 }
