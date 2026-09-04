@@ -1,0 +1,133 @@
+name: "数据运维 · 一键重置清空业务数据 (超管初始化)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: "选择目标服务器 (1: 主节点, 2: 第二节点)"
+        type: choice
+        default: "1"
+        options:
+          - "1"
+          - "2"
+      tenant:
+        description: "选择要重置的分系统 (maoshi: 毛氏, default: 阳澄股份)"
+        type: choice
+        default: "maoshi"
+        options:
+          - "maoshi"
+          - "default"
+      confirm:
+        description: "确认清空并初始化 (默认 YES 即可直接执行)"
+        type: choice
+        default: "YES"
+        options:
+          - "YES"
+          - "NO"
+
+jobs:
+  reset-server1:
+    name: "服务器 1 - 执行数据重置与超管初始化"
+    if: github.event.inputs.server != '2' && github.event.inputs.confirm == 'YES'
+    runs-on: ubuntu-latest
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER_1 || vars.SERVER_USER_1 || secrets.SERVER_USER || vars.SERVER_USER || 'root' }}
+      SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+    steps:
+      - name: "SSH 执行重置指令 (密码模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_PASSWORD }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "5m"
+          script: |
+            TARGET_DIR="/opt/yangcheng-tracehub"
+            [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
+            cd "$TARGET_DIR"
+            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 重置完成，重启应用容器以刷新状态 ==="
+            docker compose restart app
+            sleep 2
+            docker compose ps
+
+      - name: "SSH 执行重置指令 (密钥模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SERVER_SSH_KEY }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "5m"
+          script: |
+            TARGET_DIR="/opt/yangcheng-tracehub"
+            [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
+            cd "$TARGET_DIR"
+            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 重置完成，重启应用容器以刷新状态 ==="
+            docker compose restart app
+            sleep 2
+            docker compose ps
+
+  reset-server2:
+    name: "服务器 2 - 执行数据重置与超管初始化"
+    if: github.event.inputs.server == '2' && github.event.inputs.confirm == 'YES'
+    runs-on: ubuntu-latest
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
+      SERVER_USER: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || secrets.SERVER_2_USER || vars.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
+      SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || secrets.SERVER_PORT_1 || 22 }}
+    steps:
+      - name: "SSH 执行重置指令 (密码模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_PASSWORD }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "5m"
+          script: |
+            TARGET_DIR="/opt/yangcheng-tracehub"
+            [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
+            cd "$TARGET_DIR"
+            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 重置完成，重启应用容器以刷新状态 ==="
+            docker compose restart app
+            sleep 2
+            docker compose ps
+
+      - name: "SSH 执行重置指令 (密钥模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SERVER_SSH_KEY }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "5m"
+          script: |
+            TARGET_DIR="/opt/yangcheng-tracehub"
+            [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
+            cd "$TARGET_DIR"
+            echo "=== 正在执行分系统数据清理与单超管初始化 (Tenant: ${{ github.event.inputs.tenant }}) ==="
+            docker compose exec -T app node scripts/reset-tenant.js --tenant=${{ github.event.inputs.tenant }} --force
+            echo "=== 重置完成，重启应用容器以刷新状态 ==="
+            docker compose restart app
+            sleep 2
+            docker compose ps

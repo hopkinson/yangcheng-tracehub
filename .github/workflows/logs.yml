@@ -5,16 +5,26 @@ on:
     inputs:
       server:
         description: "选择服务器 (1: 主节点, 2: 第二节点)"
-        required: false
+        type: choice
         default: "1"
+        options:
+          - "1"
+          - "2"
+      action:
+        description: "执行操作 (查看日志 / 清理重置数据 / 重启 / 结构同步 / 种子数据)"
+        type: choice
+        default: "logs"
+        options:
+          - "logs"
+          - "reset-maoshi"
+          - "reset-yangcheng"
+          - "restart"
+          - "push"
+          - "seed"
       lines:
-        description: "查看日志行数 (默认: 100)"
+        description: "查看日志行数 (仅在 action=logs 时有效)"
         required: false
         default: "100"
-      action:
-        description: "执行操作 (logs / push / seed / restart / status / reset-maoshi / reset-yangcheng)"
-        required: false
-        default: "logs"
 
 jobs:
   server1-diag:
