@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { createStoreAction, updateStoreAction, deleteStoreAction } from "@/actions/stores";
 import { storeFormSchema, type StoreFormValues } from "@/lib/validations/schemas";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Store as StoreIcon } from "lucide-react";
 
@@ -80,12 +81,15 @@ export function StoreDialog({
     }
   }
 
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   async function handleDelete() {
-    if (!store || !confirm(`确认删除门店【${store.code} - ${store.name}】吗？`)) return;
+    if (!store) return;
     setLoading(true);
     try {
       await deleteStoreAction({ id: store.id, userId });
       toast.success("门店已删除！");
+      setConfirmDeleteOpen(false);
       setOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "删除失败";
@@ -198,7 +202,7 @@ export function StoreDialog({
                   size="sm"
                   className="text-xs gap-1"
                   disabled={loading || store?.hasOutboundOrders}
-                  onClick={handleDelete}
+                  onClick={() => setConfirmDeleteOpen(true)}
                   title={store?.hasOutboundOrders ? "已有出库记录的门店不可删除，可设为停用" : "删除门店"}
                 >
                   <Trash2 className="size-3.5" />
@@ -220,6 +224,16 @@ export function StoreDialog({
           </form>
         </Form>
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="确认删除门店"
+        description={`确定要删除门店【${store?.code} - ${store?.name}】吗？\n\n注意：此操作不可撤销，若门店已有出库单等关联数据将禁止删除。`}
+        confirmText="确认删除"
+        loading={loading}
+        onConfirm={handleDelete}
+      />
     </Dialog>
   );
 }

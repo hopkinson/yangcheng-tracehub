@@ -399,3 +399,84 @@ export async function toggleBatchFreezeAction(data: {
   return updated;
 }
 
+export async function deleteBatchAction(data: { batchId: string; userId?: string }) {
+  try {
+    const operator = await requireRole(["ADMIN"]);
+
+    const res = await prisma.$transaction(async (tx) => {
+      const batch = await tx.batch.findUniqueOrThrow({
+        where: { id: data.batchId },
+        include: {
+          items: true,
+          outboundOrders: true,
+        },
+      });
+
+      if (batch.outPoolCount > 0 || batch.outboundOrders.length > 0) {
+        throw new Error(`批次【${batch.code}】已有出库记录或关联出库单，禁止删除！`);
+      }
+
+      // 收集关联的暂养池 ID 以便删除后重置空池状态
+      const poolIds = Array.from(
+        new Set([batch.poolId, ...batch.items.map((it) => it.poolId)].filter(Boolean))
+      );
+
+      // 清理无级联外键的关联记录并删除批次 (BatchItem 自动 Cascade)
+      await tx.lossRecord.deleteMany({ where: { batchId: batch.id } });
+      await tx.qCRecord.deleteMany({ where: { refType: "BATCH", refId: batch.code } });
+      await tx.batch.delete({ where: { id: batch.id } });
+
+      // 检查并重置池状态（若已空池则解除公母与规格锁定）
+      for (const poolId of poolIds) {
+        const pool = await tx.holdingPool.findUnique({
+          where: { id: poolId },
+          include: {
+            batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+            batchItems: { where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
+          },
+        });
+        if (pool) {
+          const targets = pool.batchItems.length > 0 ? pool.batchItems : pool.batches;
+          const activeCount = targets.reduce(
+            (sum, x) => sum + (x.inPoolCount - x.outPoolCount - x.lossCount),
+            0
+          );
+          if (activeCount === 0) {
+            await tx.holdingPool.update({
+              where: { id: poolId },
+              data: { currentGender: null, currentWeightTier: null },
+            });
+          }
+        }
+      }
+
+      // 审计留痕
+      await tx.auditLog.create({
+        data: {
+          operatorId: operator.id || data.userId || "",
+          action: "DELETE_BATCH",
+          entityType: "BATCH",
+          entityId: batch.id,
+          details: JSON.stringify({
+            batchCode: batch.code,
+            farmerId: batch.farmerId,
+            inPoolCount: batch.inPoolCount,
+          }),
+        },
+      });
+
+      return { code: batch.code };
+    });
+
+    revalidatePath("/batches");
+    revalidatePath("/pools");
+    revalidatePath("/ledgers");
+    revalidatePath("/dashboard");
+
+    return { success: true, message: `原料批次【${res.code}】已成功删除` };
+  } catch (err: any) {
+    return { success: false, error: err.message || "删除批次失败" };
+  }
+}
+
+

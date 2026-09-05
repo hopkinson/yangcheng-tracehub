@@ -78,7 +78,7 @@ export function LogisticsBatchImportDialog({
       .trim()
       .split("\n")
       .map((row) => row.split(/[\t,， ]+/).filter(Boolean))
-      .filter((parts) => parts.length >= 2 && !/^(订单号|单号|序号)/i.test(parts[0]))
+      .filter((parts) => parts.length >= 2 && !/^(订单号|单号|序号|提货单号|发货单号|系统单号)/i.test(parts[0]))
       .map((parts) => ({
         orderNo: parts[0],
         expressCompany: parts.length === 2 ? "顺丰冷运" : parts[1],

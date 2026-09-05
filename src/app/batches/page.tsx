@@ -325,6 +325,7 @@ export default async function BatchesPage({
                             userId={currentUserId}
                             isWarehouseOrAdmin={isWarehouseOrAdmin}
                             isQaOrAdmin={isQaOrAdmin}
+                            isAdmin={isAdmin}
                           />
                         </TableCell>
                       </TableRow>

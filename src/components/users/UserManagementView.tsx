@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserDialog, ROLE_LABELS } from "@/components/forms/UserDialog";
 import { resetPasswordAction, deleteUserAction } from "@/actions/users";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import {
@@ -119,24 +120,59 @@ export function UserManagementView({
     return matchQuery && matchRole;
   });
 
-  const handleResetPassword = async (user: UserItem) => {
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmText?: string;
+    variant?: "destructive" | "default";
+    action: () => Promise<void>;
+  }>({
+    open: false,
+    title: "",
+    description: "",
+    action: async () => {},
+  });
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handleResetPassword = (user: UserItem) => {
     const expectedReset = user.phone ? user.phone.slice(-6) : "123456";
-    if (!confirm(`确认将用户 "${user.fullName}" (${user.phone || user.username}) 的密码重置为手机后6位 "${expectedReset}" 吗？`)) return;
-    try {
-      const res = await resetPasswordAction({ id: user.id, operatorId: currentUserId });
-      toast.success(`用户 "${user.fullName}" 密码已重置为: ${res.newPassword}`);
-    } catch (err: any) {
-      toast.error(err.message || "重置密码失败");
-    }
+    setConfirmDialog({
+      open: true,
+      title: "确认重置密码",
+      description: `确认将用户 "${user.fullName}" (${user.phone || user.username}) 的密码重置为手机后6位 "${expectedReset}" 吗？`,
+      confirmText: "确认重置",
+      variant: "default",
+      action: async () => {
+        const res = await resetPasswordAction({ id: user.id, operatorId: currentUserId });
+        toast.success(`用户 "${user.fullName}" 密码已重置为: ${res.newPassword}`);
+      },
+    });
   };
 
-  const handleDeleteUser = async (user: UserItem) => {
-    if (!confirm(`确定要删除用户 "${user.fullName}" (${user.username}) 吗？`)) return;
+  const handleDeleteUser = (user: UserItem) => {
+    setConfirmDialog({
+      open: true,
+      title: "确认删除用户",
+      description: `确定要删除用户 "${user.fullName}" (${user.username}) 吗？此操作不可撤销。`,
+      confirmText: "确认删除",
+      variant: "destructive",
+      action: async () => {
+        await deleteUserAction({ id: user.id, operatorId: currentUserId });
+        toast.success(`用户 "${user.fullName}" 已删除`);
+      },
+    });
+  };
+
+  const handleExecuteConfirm = async () => {
+    setActionLoading(true);
     try {
-      await deleteUserAction({ id: user.id, operatorId: currentUserId });
-      toast.success(`用户 "${user.fullName}" 已删除`);
+      await confirmDialog.action();
+      setConfirmDialog((prev) => ({ ...prev, open: false }));
     } catch (err: any) {
-      toast.error(err.message || "删除失败");
+      toast.error(err.message || "操作失败");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -395,6 +431,17 @@ export function UserManagementView({
           </CardContent>
         </Card>
       </TabsContent>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmText={confirmDialog.confirmText}
+        variant={confirmDialog.variant}
+        loading={actionLoading}
+        onConfirm={handleExecuteConfirm}
+      />
     </Tabs>
   );
 }

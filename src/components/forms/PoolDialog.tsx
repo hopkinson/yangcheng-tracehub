@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { createPoolAction, updatePoolAction, deletePoolAction } from "@/actions/pools";
 import { poolFormSchema, type PoolFormValues } from "@/lib/validations/schemas";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Waves } from "lucide-react";
 
@@ -63,12 +64,15 @@ export function PoolDialog({
     }
   }
 
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   async function handleDelete() {
-    if (!pool || !confirm(`确认删除暂养池【${pool.code} - ${pool.name}】吗？`)) return;
+    if (!pool) return;
     setLoading(true);
     try {
       await deletePoolAction({ id: pool.id, userId });
       toast.success("暂养池已删除！");
+      setConfirmDeleteOpen(false);
       setOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "删除失败";
@@ -124,7 +128,7 @@ export function PoolDialog({
                   size="sm"
                   className="text-xs gap-1"
                   disabled={loading}
-                  onClick={handleDelete}
+                  onClick={() => setConfirmDeleteOpen(true)}
                 >
                   <Trash2 className="size-3.5" />
                   删除池子
@@ -145,6 +149,16 @@ export function PoolDialog({
           </form>
         </Form>
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="确认删除暂养池"
+        description={`确定要删除暂养池【${pool?.code} - ${pool?.name}】吗？\n\n注意：仅允许删除无活蟹且无历史关联的空池，此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={loading}
+        onConfirm={handleDelete}
+      />
     </Dialog>
   );
 }

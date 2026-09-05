@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,21 +13,49 @@ import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { BatchInspectionDialog } from "@/components/batches/BatchInspectionDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
-import { MoreHorizontal, FileText, ShieldAlert, ShieldCheck, ClipboardCheck, History } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  MoreHorizontal,
+  FileText,
+  ShieldAlert,
+  ShieldCheck,
+  ClipboardCheck,
+  History,
+  Trash2,
+} from "lucide-react";
+import { deleteBatchAction } from "@/actions/batches";
+import { toast } from "sonner";
 
 export function BatchRowActions({
   batch,
   userId,
   isWarehouseOrAdmin,
   isQaOrAdmin,
+  isAdmin,
 }: {
   batch: any;
   userId: string;
   isWarehouseOrAdmin: boolean;
   isQaOrAdmin: boolean;
+  isAdmin?: boolean;
 }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
   const isCompleted = batch.status === "COMPLETED";
   const isFrozen = batch.status === "FROZEN";
+
+  const handleDelete = () => {
+    startTransition(async () => {
+      const res = await deleteBatchAction({ batchId: batch.id, userId });
+      if (res.success) {
+        toast.success(res.message || "批次已删除");
+        setDeleteOpen(false);
+      } else {
+        toast.error(res.error || "删除失败");
+      }
+    });
+  };
 
   return (
     <div className="flex items-center justify-end gap-1.5">
@@ -113,8 +142,35 @@ export function BatchRowActions({
               />
             </>
           )}
+
+          {/* 3. 超管删除操作 */}
+          {isAdmin && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => setDeleteOpen(true)}
+                className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
+              >
+                <Trash2 className="size-3.5 mr-2" />
+                <span>删除批次</span>
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="确认删除原料批次"
+        description={`确定要彻底删除原料批次【${batch.code}】吗？\n\n注意：删除后将彻底清理规格明细并释放暂养池占用，此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={isPending}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
+
+

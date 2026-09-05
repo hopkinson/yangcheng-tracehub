@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
  */
 export async function readExcelFile(file: File): Promise<string> {
   const data = new Uint8Array(await file.arrayBuffer());
-  const workbook = XLSX.read(data, { type: "array" });
+  const workbook = XLSX.read(data, { type: "array", cellDates: true, dateNF: "YYYY-MM-DD" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   return firstSheet ? XLSX.utils.sheet_to_csv(firstSheet, { FS: "\t" }) : "";
 }

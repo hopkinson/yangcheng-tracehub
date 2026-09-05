@@ -240,7 +240,19 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   // 日期解析防爆
   const safeDate = Invariants.normalizeDate("山姆紫金呈祥");
   assert.ok(!isNaN(safeDate.getTime()), "非法日期格式应安全兜底为有效日期");
-  console.log("  ✔ 订单多列复制自适应拆解与日期防爆测试通过\n");
+
+  // 回归测试：Excel 表头首行过滤与 9/8/26 日期格式解析 (避免首行表头被误判读且标题过长)
+  const excelContentWithHeader =
+    "提货单号\t提货规格型号\t要求发货日期\n" +
+    "KK20260901001\t(4.0两公蟹×4只, 3.0两母蟹×4只)\t9/8/26";
+  const parsedExcel = Invariants.parseOrderImportText(excelContentWithHeader, "CARD");
+  assert.equal(parsedExcel.length, 2, "表头行必须被安全过滤，不应被判读为虚构订单行");
+  assert.equal(parsedExcel[0].orderNo, "KK20260901001", "首条订单单号应为数据行单号，而非表头文字");
+  assert.equal(parsedExcel[0].storeName, "蟹卡提货", "蟹卡渠道标题应简洁规范，严禁拼接表头或日期");
+  assert.equal(parsedExcel[0].deliveryDate, "2026-09-08", "9/8/26 短格式日期必须被精确解析为 2026-09-08");
+  assert.equal(parsedExcel[0].count + parsedExcel[1].count, 8, "总只数必须严格等于 8 只（4公+4母），严禁虚增 10 只");
+
+  console.log("  ✔ 订单多列复制自适应拆解与表头首行安全过滤测试通过\n");
 }
 
 // 10. 分拣批次预冷入库余量卡控 (PRD V2.1)

@@ -61,6 +61,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 - 表单必须使用 `Form` + `FormField` + `FormItem` + `FormLabel` + `FormControl` + `FormMessage` 标准组件树（结合 `react-hook-form` 与 `zodResolver`）。
 - 弹窗必须使用带 `DialogTitle`、`DialogDescription`（或视觉隐藏加 `sr-only`）的规范 `Dialog` 组件。
+- **二次确认与弹窗交互**：严禁使用浏览器原生 `window.confirm()` 或 `window.alert()`。所有删除、重置、重要状态流转的二次确认必须统一采用规范的 shadcn/ui 对话框组件（包含明确风险提示、取消与确认动作），普通提示统一采用 `toast`。
 - 严禁硬编码颜色类名（如 `text-blue-600`），必须使用语义化设计令牌（`bg-background`, `text-foreground`, `bg-primary`, `text-destructive` 等）。
 - 间距使用 `gap-*`，尺寸使用 `size-*`，禁止手写过时的 `space-x-*` / `space-y-*`。
 

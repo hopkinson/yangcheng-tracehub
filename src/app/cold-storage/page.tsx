@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ColdIntakeDialog } from "@/components/coldStore/ColdIntakeDialog";
 import { ColdStoreDialog } from "@/components/coldStore/ColdStoreDialog";
 import { ThermometerSnowflake, CheckSquare, Info, Plus, Activity, ShieldCheck, AlertTriangle } from "lucide-react";
+import { formatISODate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export default async function ColdStoragePage() {
   }));
 
   // 获取今日日期字符串用于统计今日入库 (兼容仿真固定日期 2026-09-21 或真实当天)
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = formatISODate();
 
   return (
     <div className="space-y-6">
@@ -98,7 +99,7 @@ export default async function ColdStoragePage() {
           const totalStored = s.logs.reduce((a, b) => a + b.count, 0);
           // 今日入库计算 (当天的入库量，若无则取最近一天数据呈现)
           const todayStored = s.logs
-            .filter((l) => l.createdAt.toISOString().slice(0, 10) === todayStr || l.createdAt.toISOString().slice(0, 10) === "2026-09-21")
+            .filter((l) => formatISODate(l.createdAt) === todayStr || formatISODate(l.createdAt) === "2026-09-21")
             .reduce((a, b) => a + b.count, 0);
           const hasStock = totalStored > 0;
 

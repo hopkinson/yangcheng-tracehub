@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { OverviewDashboard } from "@/components/dashboard/OverviewDashboard";
+import { formatISODate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const TODAY_STR = new Date().toISOString().slice(0, 10);
+const TODAY_STR = formatISODate();
 const isTodayOrDemo = (d: Date | string | null | undefined): boolean => {
   if (!d) return false;
-  const s = (typeof d === "string" ? d : d.toISOString()).slice(0, 10);
+  const s = formatISODate(d);
   return s === "2026-09-21" || s === TODAY_STR;
 };
 

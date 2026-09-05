@@ -283,40 +283,71 @@ export const Invariants = {
   },
 
   // 10. 日期安全解析与标准化
-  normalizeDate: (val?: string | Date | null): Date => {
-    if (val instanceof Date && !isNaN(val.getTime())) return val;
+  normalizeDateStr: (val?: string | Date | null): string => {
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, "0");
+      const d = String(val.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
     if (typeof val === "string") {
       const s = val.trim();
-      const m = s.match(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/) || s.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
+      // 1. YYYY[-/.年]M[-/.月]D (如 2026-09-08, 2026/9/8)
+      let m = s.match(/(?:^|[^\d])(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+      if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+
+      // 2. M/D/YY 或 M/D/YYYY (Excel 常见美式短日期导出 9/8/26, 09/08/2026)
+      m = s.match(/(?:^|[^\d])(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})(?:$|[^\d])/);
       if (m) {
-        const d = new Date(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T00:00:00.000Z`);
-        if (!isNaN(d.getTime())) return d;
+        const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+        return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
       }
-      const d = new Date(s);
-      if (!isNaN(d.getTime())) return d;
+
+      // 3. YYYYMMDD (如 20260908)
+      m = s.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
+      if (m) return `${m[1]}-${m[2]}-${m[3]}`;
     }
-    return new Date();
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   },
 
-  normalizeDateStr: (val?: string | Date | null): string => Invariants.normalizeDate(val).toISOString().slice(0, 10),
+  normalizeDate: (val?: string | Date | null): Date =>
+    new Date(`${Invariants.normalizeDateStr(val)}T00:00:00.000Z`),
 
   // 11. 蟹卡导入单行智能识别 (支持 Excel 多列复制/格式自适应)
   parseCrabCardImportLine: (line: string): RawImportOrder[] => {
     const trimmed = line.trim();
-    if (!trimmed || (/^(订单号|序号|单号|NO|No|ID)/i.test(trimmed) && /(规格|发货|日期|型号)/.test(trimmed))) return [];
+    if (!trimmed || (/(?:订单号|序号|单号|提货单号|NO|No|ID)/i.test(trimmed) && /(?:规格|发货|日期|型号)/.test(trimmed))) return [];
 
     const cells = trimmed.split(trimmed.includes("\t") ? "\t" : /\s+/).map((c) => c.trim()).filter(Boolean);
-    const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b)/.test(c);
+    const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b|^\d{1,2}[-/]\d{1,2}[-/](?:\d{2}|\d{4})$)/.test(c);
     const dateCell = cells.find(isDate);
     const deliveryDate = Invariants.normalizeDateStr(dateCell || trimmed);
 
     // 识别规格明细
     const items = Invariants.parseCrabCardSpec(trimmed);
+    // 守恒硬约束：必须有明确的规格与只数明细；无规格行绝对禁止虚构订单
+    if (items.length === 0) return [];
+
     const isSpec = (c: string) => /(?:公|母)/.test(c);
 
-    // 识别订单号与型号（排除日期、规格与条码）
-    const orderNo = cells.find((c) => !isDate(c) && !isSpec(c) && /^[A-Za-z0-9_-]{6,}$/.test(c)) || cells[0] || `KK${Date.now()}`;
-    const otherParts = cells.filter((c) => !isDate(c) && !isSpec(c) && c !== orderNo && !/^\d{10,14}$/.test(c));
+    // 识别订单号与型号（排除日期、规格、条码与表头字段关键字）
+    const orderNo =
+      cells.find((c) => !isDate(c) && !isSpec(c) && /^[A-Za-z0-9_-]{6,}$/.test(c)) ||
+      cells[0] ||
+      `KK${Date.now()}`;
+
+    const otherParts = cells.filter(
+      (c) =>
+        !isDate(c) &&
+        !isSpec(c) &&
+        c !== orderNo &&
+        !/^\d{10,14}$/.test(c) &&
+        !/(?:提货单号|发货单号|单号|规格|型号|发货|日期)/.test(c)
+    );
     const modelName = otherParts.join(" ").trim();
 
     const base = {
@@ -327,9 +358,7 @@ export const Invariants = {
       isPreSplit: true,
     };
 
-    const targetItems = items.length ? items : [{ gender: "FEMALE" as const, weightTier: "3.5两", count: 10 }];
-
-    return targetItems.map((it) => {
+    return items.map((it) => {
       const spec = `${it.weightTier}${it.gender === "FEMALE" ? "母蟹" : "公蟹"}×${it.count}只`;
       return {
         ...base,
@@ -348,13 +377,13 @@ export const Invariants = {
     storeCounter: Record<string, number> = {}
   ): RawImportOrder | null => {
     const trimmed = line.trim();
-    if (!trimmed || (/(?:发货|日期|单号|序号|门店)/.test(trimmed) && /(?:规格|只数|公母|时间)/.test(trimmed))) return null;
+    if (!trimmed || (/(?:发货|日期|单号|序号|门店|提货)/.test(trimmed) && /(?:规格|只数|公母|时间|型号)/.test(trimmed))) return null;
 
     const cells = trimmed.split(trimmed.includes("\t") ? "\t" : /\s+/).map((c) => c.trim()).filter(Boolean);
     if (cells.length < 2) return null;
 
-    // 1. 日期识别 (支持 20260904, 2026-09-04, 2026/9/4)
-    const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b)/.test(c);
+    // 1. 日期识别 (支持 20260904, 2026-09-04, 2026/9/4, 9/8/26)
+    const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b|^\d{1,2}[-/]\d{1,2}[-/](?:\d{2}|\d{4})$)/.test(c);
     const dateCell = cells.find(isDate);
     const deliveryDate = Invariants.normalizeDateStr(dateCell || trimmed);
     const dateCompact = deliveryDate.replace(/-/g, "");
@@ -431,20 +460,29 @@ export const Invariants = {
     const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
     if (lines.length < 2) return [];
 
-    // 1. 识别日期 (从标题或全文提取，如 "10月26日发货计划" 或 "20261026")
+    // 1. 识别日期 (从标题或全文提取，如 "10月26日发货计划"、"2026-10-26"、"2026/10/26" 或 "20261026")
     let deliveryDate: string | null = null;
-    const dateMatch = text.match(/(?:(20\d{2})[-/.年])?(\d{1,2})月(\d{1,2})日/) || text.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
+    const dateMatch =
+      text.match(/(?:(20\d{2})[-/.年])?(\d{1,2})月(\d{1,2})日/) ||
+      text.match(/(?:^|[^\d])(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/) ||
+      text.match(/\b(20\d{2})(\d{2})(\d{2})\b/) ||
+      text.match(/(?:^|[^\d])(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})(?:$|[^\d])/);
     if (dateMatch) {
       if (dateMatch[0].includes("月")) {
         const y = dateMatch[1] || String(defaultYear);
         const m = dateMatch[2].padStart(2, "0");
         const d = dateMatch[3].padStart(2, "0");
         deliveryDate = `${y}-${m}-${d}`;
-      } else {
-        deliveryDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+      } else if (dateMatch[1] && dateMatch[2] && dateMatch[3]) {
+        if (dateMatch[1].length === 4) {
+          deliveryDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[3].padStart(2, "0")}`;
+        } else {
+          const year = dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3];
+          deliveryDate = `${year}-${dateMatch[1].padStart(2, "0")}-${dateMatch[2].padStart(2, "0")}`;
+        }
       }
     }
-    const safeDate = Invariants.normalizeDateStr(deliveryDate);
+    const safeDate = Invariants.normalizeDateStr(deliveryDate || text);
     const dateCompact = safeDate.replace(/-/g, "");
 
     // 2. 查找规格列所在表头行 (含 2.5母, 3.5公, 3.0母, 4.0公 等)

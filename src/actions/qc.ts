@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
+import { getBeijingDateStr } from "@/lib/utils";
 
 export interface CreateQCRecordData {
   cat: string;
@@ -35,7 +36,7 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       result = "EXCEPTION";
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = getBeijingDateStr();
     const count = await prisma.qCRecord.count();
     
     // 生成前缀 (JC/SC/XJ/SZ/KZ/JZ/FJ/BX/BZ/CL)

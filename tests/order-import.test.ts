@@ -227,4 +227,36 @@ SO20260921009\t山姆(上海店)\t母\t3.5两\t800\t2026-09-22`;
   console.log("  ✔ 矩阵式发货计划二维表整表自动拆单与确定性订单号测试通过\n");
 }
 
+// 8. 用户真实 Excel 导入报障场景回归测试 (Excel 常见美式短日期 9/8/26 与表头过滤)
+{
+  console.log("▶ [Test 8] 用户真实场景：Excel 常见短日期 9/8/26 解析与提货单号表头过滤");
+  const excelText = `提货单号\t提货规格型号\t要求发货日期
+20260901073\t8只装礼盒(3.0母蟹X4只, 4.0公蟹X4只)\t9/8/26
+20260901074\t8只装礼盒(3.0母蟹X4只, 4.0公蟹X4只)\t2026/9/8`;
+
+  const parsed = Invariants.parseOrderImportText(excelText, "CARD");
+
+  // 表头被过滤，2 行各 2 规格，共 4 条明细
+  assert.equal(parsed.length, 4, "表头必须被过滤，2 行数据应解析为 4 条明细");
+
+  // 校验 9/8/26 必须被标准化为 2026-09-08
+  const item0 = parsed[0]!;
+  const item1 = parsed[1]!;
+  const item2 = parsed[2]!;
+  assert.equal(item0.deliveryDate, "2026-09-08", "9/8/26 必须正确解析为 2026-09-08");
+  assert.equal(item1.deliveryDate, "2026-09-08");
+  assert.equal(item2.deliveryDate, "2026-09-08");
+
+  // 校验型号与店铺名不被日期污染
+  assert.ok(!item0.storeName?.includes("9/8/26"), "店铺名不应包含日期文本");
+  assert.ok(!item0.specModel?.includes("9/8/26"), "型号不应包含日期文本");
+  assert.equal(item0.orderNo, "20260901073");
+  assert.equal(item0.gender, "FEMALE");
+  assert.equal(item0.weightTier, "3.0两");
+  assert.equal(item0.count, 4);
+
+  console.log("  ✔ 用户真实场景 9/8/26 与表头过滤回归测试通过\n");
+}
+
 console.log("🎉 订单导入智能拆分与日期防爆单元测试全部 100% 通过！");
+

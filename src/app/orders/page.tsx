@@ -5,6 +5,7 @@ import { OrderImportDialog } from "@/components/orders/OrderImportDialog";
 import { OrderDeleteButton } from "@/components/orders/OrderDeleteButton";
 import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
+import { formatISODate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +16,10 @@ export default async function OrdersPage({
 }) {
   const params = await searchParams;
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = formatISODate(now);
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const tomorrowStr = formatISODate(tomorrow);
 
   // 1. 查询全部订单
   const allOrders = await prisma.order.findMany({
@@ -26,7 +27,7 @@ export default async function OrdersPage({
   });
 
   const availableDates = Array.from(
-    new Set(allOrders.map((o) => o.deliveryDate.toISOString().slice(0, 10)))
+    new Set(allOrders.map((o) => formatISODate(o.deliveryDate)))
   ).sort();
 
   const targetDateStr = params.date || "all";
@@ -36,7 +37,7 @@ export default async function OrdersPage({
     targetDateStr === "all"
       ? allOrders
       : allOrders.filter(
-          (o: any) => o.deliveryDate.toISOString().slice(0, 10) === targetDateStr
+          (o: any) => formatISODate(o.deliveryDate) === targetDateStr
         );
 
   // 2. 查询当前暂养池在池存活数 (按公母+规格聚合)
@@ -232,7 +233,7 @@ export default async function OrdersPage({
                     </td>
                     <td className="px-3 py-2.5 font-mono font-bold text-foreground">{order.count} 只</td>
                     <td className="px-3 py-2.5 font-mono text-muted-foreground">
-                      {order.deliveryDate.toISOString().slice(0, 10)}
+                      {formatISODate(order.deliveryDate)}
                     </td>
                     <td className="px-3 py-2.5">
                       {order.status === "SHIPPED" ? (

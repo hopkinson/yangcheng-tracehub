@@ -31,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { createChannelAction, deleteChannelAction } from "@/actions/channels";
 import { channelFormSchema, type ChannelFormValues } from "@/lib/validations/schemas";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { Building2, Plus, Trash2, Loader2 } from "lucide-react";
 
@@ -82,7 +83,9 @@ export function ChannelManagerDialog({
     }
   }
 
-  async function handleDelete(channel: ChannelItem) {
+  const [confirmChannel, setConfirmChannel] = useState<ChannelItem | null>(null);
+
+  function handleDelete(channel: ChannelItem) {
     const storeCount = channel._count?.stores ?? 0;
     const orderCount = channel._count?.outboundOrders ?? 0;
     const userCount = channel._count?.users ?? 0;
@@ -94,12 +97,16 @@ export function ChannelManagerDialog({
       return;
     }
 
-    if (!confirm(`确定要删除渠道【${channel.name} (${channel.code})】吗？`)) return;
+    setConfirmChannel(channel);
+  }
 
-    setDeletingId(channel.id);
+  async function handleConfirmDelete() {
+    if (!confirmChannel) return;
+    setDeletingId(confirmChannel.id);
     try {
-      await deleteChannelAction({ id: channel.id, userId });
+      await deleteChannelAction({ id: confirmChannel.id, userId });
       toast.success("渠道删除成功！");
+      setConfirmChannel(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "删除失败";
       toast.error(msg);
@@ -237,6 +244,16 @@ export function ChannelManagerDialog({
           </Table>
         </div>
       </DialogContent>
+
+      <ConfirmDialog
+        open={!!confirmChannel}
+        onOpenChange={(open) => !open && setConfirmChannel(null)}
+        title="确认删除销售渠道"
+        description={`确定要删除渠道【${confirmChannel?.name} (${confirmChannel?.code})】吗？\n\n注意：此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={!!deletingId}
+        onConfirm={handleConfirmDelete}
+      />
     </Dialog>
   );
 }

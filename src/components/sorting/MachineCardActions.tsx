@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   MoreHorizontal,
   CheckCircle2,
@@ -53,6 +54,7 @@ export function MachineCardActions({
 }) {
   const [isPending, startTransition] = useTransition();
   const [renameOpen, setRenameOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [newName, setNewName] = useState(machine.name);
 
   const handleSetCalibration = (status: "QUALIFIED" | "PENDING" | "EXCEPTION") => {
@@ -93,12 +95,18 @@ export function MachineCardActions({
       toast.error("该设备名下已有分拣任务，禁止删除！");
       return;
     }
-    if (!confirm(`确认删除分拣设备 ${machine.name} (${machine.code}) 吗？`)) return;
+    setConfirmDeleteOpen(true);
+  };
 
+  const handleConfirmDelete = () => {
     startTransition(async () => {
       const res = await deleteSortMachineAction(machine.id);
-      if (res.success) toast.success(res.message);
-      else toast.error(res.message);
+      if (res.success) {
+        toast.success(res.message);
+        setConfirmDeleteOpen(false);
+      } else {
+        toast.error(res.message);
+      }
     });
   };
 
@@ -233,6 +241,16 @@ export function MachineCardActions({
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="确认删除分拣设备"
+        description={`确认删除分拣设备【${machine.name} (${machine.code})】吗？\n\n注意：此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </>
   );
 }

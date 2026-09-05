@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, Plus, Trash2, Loader2 } from "lucide-react";
 import { createBundleGroupAction, deleteBundleGroupAction } from "@/actions/production";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function BundleGroupDialog({
   groups,
@@ -24,6 +25,7 @@ export function BundleGroupDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,13 +42,14 @@ export function BundleGroupDialog({
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm("确认删除该捆扎班组吗？")) return;
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
 
     startTransition(async () => {
-      const res = await deleteBundleGroupAction(id);
+      const res = await deleteBundleGroupAction(deleteTarget.id);
       if (res.success) {
         toast.success(res.message);
+        setDeleteTarget(null);
       } else {
         toast.error(res.message);
       }
@@ -101,9 +104,10 @@ export function BundleGroupDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(g.id)}
+                    onClick={() => setDeleteTarget({ id: g.id, name: g.name })}
                     disabled={isPending}
                     className="h-6 px-1.5 text-destructive text-xs"
+                    title="删除班组"
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
@@ -113,6 +117,16 @@ export function BundleGroupDialog({
           })}
         </div>
       </DialogContent>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="确认删除捆扎班组"
+        description={`确定要删除班组【${deleteTarget?.name}】吗？\n\n注意：此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </Dialog>
   );
 }

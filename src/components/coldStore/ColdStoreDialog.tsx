@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThermometerSnowflake, Plus, Trash2, Edit2, Check, X, Loader2 } from "lucide-react";
 import { createColdStoreAction, updateColdStoreAction, deleteColdStoreAction } from "@/actions/production";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function ColdStoreDialog({
   stores,
@@ -31,6 +32,7 @@ export function ColdStoreDialog({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editTemp, setEditTemp] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,13 +74,14 @@ export function ColdStoreDialog({
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm("确认删除该保鲜库位吗？")) return;
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
 
     startTransition(async () => {
-      const res = await deleteColdStoreAction(id);
+      const res = await deleteColdStoreAction(deleteTarget.id);
       if (res.success) {
         toast.success(res.message);
+        setDeleteTarget(null);
       } else {
         toast.error(res.message);
       }
@@ -207,10 +210,10 @@ export function ColdStoreDialog({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(s.id)}
+                      onClick={() => setDeleteTarget({ id: s.id, name: s.name })}
                       disabled={isPending}
                       className="h-6 px-1.5 text-destructive text-xs"
-                      title="删除"
+                      title="删除库位"
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -221,6 +224,16 @@ export function ColdStoreDialog({
           })}
         </div>
       </DialogContent>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="确认删除保鲜库位"
+        description={`确定要删除保鲜库位【${deleteTarget?.name}】吗？\n\n注意：此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </Dialog>
   );
 }

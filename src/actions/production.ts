@@ -191,7 +191,7 @@ export async function createBundleBatchAction(data: {
       }
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = getBeijingDateStr();
     const count = await prisma.bundleBatch.count();
     const code = `KZD${dateStr}${String(count + 1).padStart(2, "0")}`;
 
@@ -325,7 +325,7 @@ export async function createSortTaskAction(data: {
       return { success: false, message: `投入只数超出捆扎该规格总数（上限 ${maxAllowed} 只）` };
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = getBeijingDateStr();
     const count = await prisma.sortTask.count();
     const code = `FJR${dateStr}${String(count + 1).padStart(2, "0")}`;
 
