@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileSearch, Clock, AlertTriangle, CheckCircle2, ExternalLink, Download, FileWarning, FileText } from "lucide-react";
-import { getPreviewFileUrl } from "@/lib/storage";
+import { getPreviewFileUrl } from "@/lib/utils";
 
 export function QCViewDialog({
   record,

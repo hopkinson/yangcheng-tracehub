@@ -7,18 +7,7 @@ export interface UploadResult {
   name: string;
 }
 
-/**
- * 获取统一的文件安全预览 URL
- * - 本地文件或云端文件：统一通过 /api/files/preview 提供同源安全渲染代理，解决跨域、私有鉴权与 OSS 强制下载问题
- */
-export function getPreviewFileUrl(rawUrl?: string | null, fileName?: string): string {
-  if (!rawUrl) return "";
-  if (rawUrl.startsWith("data:")) return rawUrl;
-
-  const params = new URLSearchParams({ url: rawUrl });
-  if (fileName) params.set("name", fileName);
-  return `/api/files/preview?${params.toString()}`;
-}
+export { getPreviewFileUrl } from "./utils";
 
 /**
  * 阿里云 OSS REST PUT 直传 (原生 HMAC-SHA1 签名，零外部第三方依赖)

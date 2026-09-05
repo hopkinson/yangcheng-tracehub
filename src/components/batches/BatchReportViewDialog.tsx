@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { getPreviewFileUrl } from "@/lib/storage";
+import { getPreviewFileUrl } from "@/lib/utils";
 import { FileCheck, ExternalLink, Download, Loader2, AlertCircle } from "lucide-react";
 
 interface BatchReportViewDialogProps {
