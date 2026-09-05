@@ -34,6 +34,7 @@ export async function GET(
       return new NextResponse(new Uint8Array(file), {
         headers: {
           "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+          "Content-Disposition": "inline",
           "Cache-Control": "public, max-age=31536000, immutable",
         },
       });

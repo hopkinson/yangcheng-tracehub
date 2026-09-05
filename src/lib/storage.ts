@@ -8,6 +8,19 @@ export interface UploadResult {
 }
 
 /**
+ * 获取统一的文件安全预览 URL
+ * - 本地文件或云端文件：统一通过 /api/files/preview 提供同源安全渲染代理，解决跨域、私有鉴权与 OSS 强制下载问题
+ */
+export function getPreviewFileUrl(rawUrl?: string | null, fileName?: string): string {
+  if (!rawUrl) return "";
+  if (rawUrl.startsWith("data:")) return rawUrl;
+
+  const params = new URLSearchParams({ url: rawUrl });
+  if (fileName) params.set("name", fileName);
+  return `/api/files/preview?${params.toString()}`;
+}
+
+/**
  * 阿里云 OSS REST PUT 直传 (原生 HMAC-SHA1 签名，零外部第三方依赖)
  */
 async function uploadToAliyunOss(
@@ -16,13 +29,21 @@ async function uploadToAliyunOss(
   contentType: string
 ): Promise<string> {
   const bucket = process.env.OSS_BUCKET!;
-  const endpoint = process.env.OSS_ENDPOINT!.replace(/^https?:\/\//, "");
+  const endpoint = process.env.OSS_ENDPOINT!.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const accessKeyId = process.env.OSS_ACCESS_KEY_ID!;
   const accessKeySecret = process.env.OSS_ACCESS_KEY_SECRET!;
-  const publicDomain = process.env.OSS_PUBLIC_DOMAIN;
+  let publicDomain = process.env.OSS_PUBLIC_DOMAIN?.trim();
+
+  // 阿里云 OSS 域名纠错：
+  // 若用户填写的 publicDomain 属于 *.aliyuncs.com 且未带 bucket 前缀，自动补齐以防被 OSS 当作 Path-Style 解析报 0003-00001403
+  if (publicDomain && publicDomain.includes("aliyuncs.com") && !publicDomain.includes(bucket)) {
+    const clean = publicDomain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    publicDomain = `https://${bucket}.${clean}`;
+  }
 
   const date = new Date().toUTCString();
-  const objectKey = `reports/${Date.now()}_${filename}`;
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const objectKey = `reports/${Date.now()}_${safeFilename}`;
   const canonicalizedResource = `/${bucket}/${objectKey}`;
 
   // 阿里云 OSS 标准签名公式: HMAC-SHA1(AccessKeySecret, "PUT\n\n${contentType}\n${date}\n${resource}")
@@ -50,8 +71,13 @@ async function uploadToAliyunOss(
     throw new Error(`OSS 上传失败 [${res.status}]: ${errorText}`);
   }
 
-  // 返回访问地址 (若配置了 CDN 域名则优先使用 CDN)
-  return publicDomain ? `${publicDomain.replace(/\/$/, "")}/${objectKey}` : uploadUrl;
+  // 返回访问地址 (若配置了有效 CDN 域名则优先使用，否则使用 Virtual-Hosted 标准 OSS 地址)
+  if (publicDomain) {
+    const cleanPublic = publicDomain.startsWith("http") ? publicDomain : `https://${publicDomain}`;
+    return `${cleanPublic.replace(/\/$/, "")}/${objectKey}`;
+  }
+
+  return uploadUrl;
 }
 
 /**

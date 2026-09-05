@@ -306,5 +306,35 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   console.log("  ✔ 分拣批次保鲜入库余量与超额拦截测试通过\n");
 }
 
-console.log("🎉 全部 10 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
+// 11. 捆扎损耗计算与 5% 红线告警
+{
+  console.log("▶ [Test 11] 捆扎损耗计算与 5% 告警红线");
+  const normalBundle = Invariants.calculateBundleLoss({
+    inputCount: 1000,
+    qualifiedCount: 980,
+  });
+  assert.equal(normalBundle.valid, true);
+  assert.equal(normalBundle.lossCount, 20);
+  assert.equal(normalBundle.lossRate, 2.0);
+  assert.equal(normalBundle.isException, false);
+
+  const overLossBundle = Invariants.calculateBundleLoss({
+    inputCount: 1000,
+    qualifiedCount: 940,
+  });
+  assert.equal(overLossBundle.valid, true);
+  assert.equal(overLossBundle.lossCount, 60);
+  assert.equal(overLossBundle.lossRate, 6.0);
+  assert.equal(overLossBundle.isException, true, "损耗率 6% 超出 5% 阈值应判定为异常");
+
+  const invalidBundle = Invariants.calculateBundleLoss({
+    inputCount: 1000,
+    qualifiedCount: 1050,
+  });
+  assert.equal(invalidBundle.valid, false, "合格只数大于投入只数必须拦截");
+
+  console.log("  ✔ 捆扎损耗计算与 5% 告警红线测试通过\n");
+}
+
+console.log("🎉 全部 11 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
 

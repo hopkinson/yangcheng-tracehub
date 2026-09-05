@@ -9,6 +9,7 @@ import { CardOutboundDialog } from "@/components/outbound/CardOutboundDialog";
 import { LogisticsBatchImportDialog } from "@/components/outbound/LogisticsBatchImportDialog";
 import { OutboundDetailDialog } from "@/components/outbound/OutboundDetailDialog";
 import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
+import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -24,13 +25,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// 规范与演示数据核心规格卡
-const RECOG_SPECS = [
-  { gender: "MALE", weightTier: "4.0两", label: "4.0两 公蟹" },
-  { gender: "FEMALE", weightTier: "3.5两", label: "3.5两 母蟹" },
-  { gender: "FEMALE", weightTier: "3.2两", label: "3.2两 母蟹" },
-  { gender: "MALE", weightTier: "3.5两", label: "3.5两 公蟹" },
-];
 
 export default async function OutboundPage({
   searchParams,
@@ -140,8 +134,28 @@ export default async function OutboundPage({
     };
   });
 
-  // 计算冷库各规格可出库存：可出数量 = 已完成分拣的合格数累计 − 出库单已占用（待审核 + 已出库）
-  const specStocks = RECOG_SPECS.map((spec) => {
+  // 动态聚合规格：提取分拣任务中的规格，不足4项用基准规格补足四列栅格
+  const DEFAULT_SPECS = [
+    { gender: "MALE", weightTier: "4.0两", label: "4.0两 公蟹" },
+    { gender: "MALE", weightTier: "3.5两", label: "3.5两 公蟹" },
+    { gender: "FEMALE", weightTier: "3.5两", label: "3.5两 母蟹" },
+    { gender: "FEMALE", weightTier: "3.0两", label: "3.0两 母蟹" },
+  ];
+
+  const foundKeys = new Set(sortTasks.map((t: any) => `${t.gender}_${t.weightTier}`));
+  const foundSpecs = Array.from(foundKeys).map((k) => {
+    const [gender, weightTier] = k.split("_");
+    return { gender, weightTier, label: `${weightTier} ${gender === "FEMALE" ? "母蟹" : "公蟹"}` };
+  });
+
+  const activeSpecs = [
+    ...foundSpecs,
+    ...DEFAULT_SPECS.filter((d) => !foundKeys.has(`${d.gender}_${d.weightTier}`)),
+  ].slice(0, Math.max(4, foundSpecs.length))
+   .sort((a, b) => (a.gender !== b.gender ? (a.gender === "MALE" ? -1 : 1) : parseFloat(b.weightTier) - parseFloat(a.weightTier)));
+
+  // 计算冷库各规格可出库存：可出数量 = 分拣合格数累计 − 出库单已占用
+  const specStocks = activeSpecs.map((spec) => {
     const qualified = sortTasks
       .filter((t: any) => t.gender === spec.gender && t.weightTier === spec.weightTier)
       .reduce((a: number, t: any) => a + t.qualifiedCount, 0);
@@ -153,17 +167,13 @@ export default async function OutboundPage({
     const available = Math.max(0, qualified - used);
     const usagePct = qualified > 0 ? Math.min(100, Math.round((used / qualified) * 100)) : 0;
 
-    return {
-      ...spec,
-      qualified,
-      used,
-      available,
-      usagePct,
-    };
+    return { ...spec, qualified, used, available, usagePct };
   });
 
   const pendingStoreOrders = pendingOrders.filter((o: any) => o.type !== "CRAB_CARD");
   const pendingCardOrders = pendingOrders.filter((o: any) => o.type === "CRAB_CARD");
+
+  const totalColdAvailable = specStocks.reduce((a, b) => a + b.available, 0);
 
   return (
     <StaggerContainer className="flex flex-col gap-4">
@@ -173,8 +183,11 @@ export default async function OutboundPage({
             <Truck className="size-5 text-primary" />
             出库管理
           </h1>
-          <p className="text-xs text-muted-foreground">
-            冷库规格化合格品出库闭环 · 支持门店多单合单出库与蟹卡提蟹统一出库
+          <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+            <span>冷库规格化合格品出库闭环 · 支持门店多单合单出库与蟹卡提蟹统一出库</span>
+            <span className="inline-flex items-center gap-1 font-mono text-primary font-semibold bg-primary/10 px-2 py-0.5 rounded text-[11px] border border-primary/20">
+              冷库可出总存量: {totalColdAvailable.toLocaleString()} 只
+            </span>
           </p>
         </div>
         {isWarehouseOrAdmin && (
@@ -465,14 +478,46 @@ export default async function OutboundPage({
       {/* 14.6 出库环节品控记录 */}
       <FadeIn>
         <Card className="border-border/80">
-          <CardHeader className="py-3 px-4 border-b flex flex-row items-center justify-between bg-muted/20">
+          <CardHeader className="py-2.5 px-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-muted/20">
             <div className="flex items-center gap-2">
               <ClipboardCheck className="size-4 text-primary" />
               <CardTitle className="text-sm font-semibold">出库环节品控记录 (包装巡检 / 发货车辆检查)</CardTitle>
             </div>
-            <Badge variant="outline" className="text-[10px] font-mono">
-              共 {qcRecords.length} 份质检记录
-            </Badge>
+            <div className="flex items-center flex-wrap gap-2">
+              <Badge variant="outline" className="text-[10px] font-mono">
+                共 {qcRecords.length} 份质检记录
+              </Badge>
+              {[
+                {
+                  cat: "PACK_INSPECT",
+                  label: "包装巡检",
+                  title: "大闸蟹礼盒包装与封签巡检记录表",
+                  form: "YCGF-PZZX-202610",
+                  conclusions: ["内衬冰袋完好，封签完整，扣带防伪齿无松脱", "包装破损/冰袋漏液，已安排重新装箱整改"],
+                },
+                {
+                  cat: "VEHICLE_INSPECT",
+                  label: "车辆检查",
+                  title: "冷链运输车辆出车前车况与温度检查表",
+                  form: "YCGF-PZZX-202611",
+                  conclusions: ["车厢预冷至 4.0℃，制冷机组运转正常，消杀记录完备", "车厢温度偏高 (>8℃)，制冷异常，禁止发车"],
+                },
+              ].map((c) => (
+                <QCRecordDialog
+                  key={c.cat}
+                  config={{
+                    cat: c.cat,
+                    categoryLabel: c.label,
+                    defaultTitle: c.title,
+                    formNoPreset: c.form,
+                    refType: "OUTBOUND",
+                    refId: orders[0]?.code || "CK-GENERAL",
+                    conclusions: c.conclusions,
+                  }}
+                  triggerLabel={`登记${c.label}`}
+                />
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="rounded-md overflow-x-auto">

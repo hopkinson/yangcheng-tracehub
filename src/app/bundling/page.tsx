@@ -241,8 +241,31 @@ export default async function BundlingPage({
                           ))}
                         </div>
                       </td>
-                      <td className="px-3 py-2 font-mono font-bold text-foreground">
-                        {totalCount} 只
+                      <td className="px-3 py-2 font-mono">
+                        {batch.status === "COMPLETED" ? (
+                          <>
+                            <div className="font-bold text-foreground">
+                              {batch.qualifiedCount || totalCount} 只
+                            </div>
+                            {batch.lossCount > 0 ? (
+                              <div
+                                className={`text-[10px] ${
+                                  batch.lossRate > 5
+                                    ? "text-destructive font-bold"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                损耗 {batch.lossCount} 只 ({batch.lossRate}%)
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-muted-foreground">0 损耗</div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="font-bold text-foreground">
+                            {totalCount} 只 <span className="text-[10px] text-muted-foreground font-normal">(投入)</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {batch.status === "COMPLETED" ? (
@@ -260,7 +283,11 @@ export default async function BundlingPage({
                       </td>
                       <td className="px-3 py-2 text-right">
                         {batch.status === "BUNDLING" && (
-                          <CompleteBundleButton bundleId={batch.id} code={batch.code} />
+                          <CompleteBundleButton
+                            bundleId={batch.id}
+                            code={batch.code}
+                            lines={batch.lines}
+                          />
                         )}
                       </td>
                     </tr>

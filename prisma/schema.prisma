@@ -246,6 +246,11 @@ model BundleBatch {
   ropeBatch       String          // 手填蟹绳批次, 如 XS2026090101
   
   status          String          @default("BUNDLING") // BUNDLING (捆扎中), COMPLETED (已完成)
+  inputCount      Int             @default(0) // 起池投入总只数
+  qualifiedCount  Int             @default(0) // 最终捆扎合格总只数
+  lossCount       Int             @default(0) // 捆扎损耗只数
+  lossRate        Float           @default(0) // 损耗率 (%)
+  lossReason      String?         // 损耗原因 (损耗率 > 5% 必填)
   doneAt          DateTime?       // 完成捆扎时间
   createdById     String?
   
@@ -265,7 +270,9 @@ model BundleLine {
   
   gender          String          // MALE, FEMALE
   weightTier      String          // 如 4.0两, 3.2两
-  count           Int             // 只数
+  count           Int             // 起池投入只数
+  qualifiedCount  Int?            // 最终合格只数
+  lossCount       Int?            // 损耗只数
   
   createdAt       DateTime        @default(now())
 }

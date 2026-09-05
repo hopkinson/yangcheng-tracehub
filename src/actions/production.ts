@@ -7,6 +7,12 @@ import { getTenant } from "@/config/tenant";
 
 import { getBeijingDateStr } from "@/lib/utils";
 
+function revalidate(path: string) {
+  try {
+    revalidatePath(path);
+  } catch {}
+}
+
 // ============================================================================
 // 1. 订单管理 Server Actions
 // ============================================================================
@@ -66,8 +72,8 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
       data: ordersToCreate,
     });
 
-    revalidatePath("/orders");
-    revalidatePath("/");
+    revalidate("/orders");
+    revalidate("/");
     return {
       success: true,
       importId,
@@ -100,12 +106,39 @@ export async function deleteOrderBatchAction(importId: string, orderNo?: string)
       where: whereClause,
     });
 
-    revalidatePath("/orders");
-    revalidatePath("/");
+    try {
+      revalidate("/orders");
+      revalidate("/");
+    } catch {}
     return { success: true, message: `已成功删除 ${res.count} 条待发货订单记录` };
   } catch (error: any) {
     console.error("deleteOrderBatchAction error:", error);
     return { success: false, message: error.message || "删除订单失败" };
+  }
+}
+
+export async function batchDeleteOrdersAction(orderIds: string[]) {
+  try {
+    if (!orderIds?.length) {
+      return { success: false, message: "请勾选要删除的待发货订单" };
+    }
+
+    // 严密守恒：仅允许删除处于 PENDING 状态的待发货记录，杜绝破坏已发货出库台账
+    const res = await prisma.order.deleteMany({
+      where: {
+        id: { in: orderIds },
+        status: "PENDING",
+      },
+    });
+
+    try {
+      revalidate("/orders");
+      revalidate("/");
+    } catch {}
+    return { success: true, message: `已成功删除 ${res.count} 条待发货订单记录` };
+  } catch (error: any) {
+    console.error("batchDeleteOrdersAction error:", error);
+    return { success: false, message: error.message || "批量删除订单失败" };
   }
 }
 
@@ -201,6 +234,7 @@ export async function createBundleBatchAction(data: {
         groupId: data.groupId,
         tagClaimId: data.tagClaimId,
         ropeBatch: data.ropeBatch.trim(),
+        inputCount: totalCrabs,
         status: "BUNDLING",
         lines: {
           create: data.lines.map((l) => ({
@@ -220,8 +254,8 @@ export async function createBundleBatchAction(data: {
       data: { status: "BUNDLING" },
     });
 
-    revalidatePath("/bundling");
-    revalidatePath("/");
+    revalidate("/bundling");
+    revalidate("/");
     return { success: true, code, message: `捆扎批次 ${code} 创建成功，进入【捆扎中】状态` };
   } catch (error: any) {
     console.error("createBundleBatchAction error:", error);
@@ -229,31 +263,82 @@ export async function createBundleBatchAction(data: {
   }
 }
 
-export async function completeBundleBatchAction(bundleId: string) {
+export async function completeBundleBatchAction(
+  bundleId: string,
+  lineResults: Array<{ lineId: string; qualifiedCount: number }>,
+  lossReason?: string
+) {
   try {
     const batch = await prisma.bundleBatch.findUnique({
       where: { id: bundleId },
+      include: { lines: true },
     });
     if (!batch) return { success: false, message: "未找到指定的捆扎批次" };
 
-    await prisma.bundleBatch.update({
-      where: { id: bundleId },
-      data: {
-        status: "COMPLETED",
-        doneAt: new Date(),
-      },
+    const totalInput = batch.lines.reduce((acc, l) => acc + l.count, 0);
+    const totalQualified = lineResults.reduce((acc, l) => acc + l.qualifiedCount, 0);
+
+    for (const res of lineResults) {
+      const line = batch.lines.find((l) => l.id === res.lineId);
+      if (!line) continue;
+      if (res.qualifiedCount < 0 || res.qualifiedCount > line.count) {
+        return { success: false, message: "合格只数必须在 0 到投入数量之间" };
+      }
+    }
+
+    const lossRes = Invariants.calculateBundleLoss({
+      inputCount: totalInput,
+      qualifiedCount: totalQualified,
+    });
+    if (!lossRes.valid) {
+      return { success: false, message: lossRes.reason };
+    }
+
+    if (lossRes.isException && !lossReason?.trim()) {
+      return { success: false, message: "损耗率超过 5% 警戒阈值，必须填写损耗原因说明" };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const res of lineResults) {
+        const line = batch.lines.find((l) => l.id === res.lineId);
+        if (line) {
+          await tx.bundleLine.update({
+            where: { id: line.id },
+            data: {
+              qualifiedCount: res.qualifiedCount,
+              lossCount: line.count - res.qualifiedCount,
+            },
+          });
+        }
+      }
+
+      await tx.bundleBatch.update({
+        where: { id: bundleId },
+        data: {
+          inputCount: totalInput,
+          qualifiedCount: totalQualified,
+          lossCount: lossRes.lossCount,
+          lossRate: lossRes.lossRate,
+          lossReason: lossReason?.trim() || null,
+          status: "COMPLETED",
+          doneAt: new Date(),
+        },
+      });
+
+      // 捆扎组置为 COMPLETED
+      await tx.bundleGroup.update({
+        where: { id: batch.groupId },
+        data: { status: "COMPLETED" },
+      });
     });
 
-    // 捆扎组置为 COMPLETED
-    await prisma.bundleGroup.update({
-      where: { id: batch.groupId },
-      data: { status: "COMPLETED" },
-    });
-
-    revalidatePath("/bundling");
-    revalidatePath("/sorting");
-    revalidatePath("/");
-    return { success: true, message: `捆扎批次 ${batch.code} 已确认完成，可进入分拣环节` };
+    revalidate("/bundling");
+    revalidate("/sorting");
+    revalidate("/");
+    return {
+      success: true,
+      message: `捆扎批次 ${batch.code} 已完成！合格 ${totalQualified} 只，损耗 ${lossRes.lossCount} 只（${lossRes.lossRate}%）`,
+    };
   } catch (error: any) {
     console.error("completeBundleBatchAction error:", error);
     return { success: false, message: error.message || "确认完成捆扎失败" };
@@ -267,7 +352,7 @@ export async function createBundleGroupAction(name: string) {
     await prisma.bundleGroup.create({
       data: { code, name: name.trim() || `捆扎${count + 1}组` },
     });
-    revalidatePath("/bundling");
+    revalidate("/bundling");
     return { success: true, message: `捆扎班组 ${name} (${code}) 创建成功` };
   } catch (error: any) {
     return { success: false, message: error.message || "创建班组失败" };
@@ -281,7 +366,7 @@ export async function deleteBundleGroupAction(groupId: string) {
       return { success: false, message: "该班组名下存在历史捆扎批次，禁止删除" };
     }
     await prisma.bundleGroup.delete({ where: { id: groupId } });
-    revalidatePath("/bundling");
+    revalidate("/bundling");
     return { success: true, message: "捆扎班组已删除" };
   } catch (error: any) {
     return { success: false, message: error.message || "删除班组失败" };
@@ -292,14 +377,21 @@ export async function deleteBundleGroupAction(groupId: string) {
 // 3. 分拣称重 Server Actions
 // ============================================================================
 
-export async function createSortTaskAction(data: {
+export async function createSortTasksAction(data: {
   machineId: string;
   bundleBatchId: string;
-  gender: string;
-  weightTier: string;
-  inputCount: number;
+  items: Array<{
+    lineId?: string;
+    gender: string;
+    weightTier: string;
+    inputCount: number;
+  }>;
 }) {
   try {
+    if (!data.items || data.items.length === 0) {
+      return { success: false, message: "请至少选择一个分规规格明细" };
+    }
+
     const machine = await prisma.sortMachine.findUnique({ where: { id: data.machineId } });
     if (!machine || machine.status !== "ACTIVE") {
       return { success: false, message: "分拣设备未启用或不存在" };
@@ -316,38 +408,64 @@ export async function createSortTaskAction(data: {
       return { success: false, message: "只有【已完成】的捆扎批次才允许进入分拣任务" };
     }
 
-    const matchedLine = bundle.lines.find(
-      (l: { gender: string; weightTier: string; count: number }) =>
-        l.gender === data.gender && l.weightTier === data.weightTier
-    );
-    const maxAllowed = matchedLine ? matchedLine.count : 0;
-    if (data.inputCount <= 0 || data.inputCount > maxAllowed) {
-      return { success: false, message: `投入只数超出捆扎该规格总数（上限 ${maxAllowed} 只）` };
+    for (const item of data.items) {
+      const matchedLine = item.lineId
+        ? bundle.lines.find((l) => l.id === item.lineId)
+        : bundle.lines.find((l) => l.gender === item.gender && l.weightTier === item.weightTier);
+      const maxAllowed = matchedLine ? (matchedLine.qualifiedCount ?? matchedLine.count) : 0;
+      if (item.inputCount <= 0 || item.inputCount > maxAllowed) {
+        const genderText = item.gender === "FEMALE" ? "母蟹" : "公蟹";
+        return {
+          success: false,
+          message: `【${genderText} ${item.weightTier}】投入只数 (${item.inputCount}) 必须大于0且不超过规格上限 (${maxAllowed} 只)`,
+        };
+      }
     }
 
     const dateStr = getBeijingDateStr();
-    const count = await prisma.sortTask.count();
-    const code = `FJR${dateStr}${String(count + 1).padStart(2, "0")}`;
+    const createdCodes: string[] = [];
 
-    await prisma.sortTask.create({
-      data: {
-        code,
-        machineId: data.machineId,
-        bundleBatchId: data.bundleBatchId,
-        gender: data.gender,
-        weightTier: data.weightTier,
-        inputCount: data.inputCount,
-        status: "PENDING",
-      },
+    await prisma.$transaction(async (tx) => {
+      const count = await tx.sortTask.count();
+      for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i];
+        const code = `FJR${dateStr}${String(count + 1 + i).padStart(2, "0")}`;
+        await tx.sortTask.create({
+          data: {
+            code,
+            machineId: data.machineId,
+            bundleBatchId: data.bundleBatchId,
+            gender: item.gender,
+            weightTier: item.weightTier,
+            inputCount: item.inputCount,
+            status: "PENDING",
+          },
+        });
+        createdCodes.push(code);
+      }
     });
 
-    revalidatePath("/sorting");
-    revalidatePath("/");
-    return { success: true, code, message: `分拣任务 ${code} 创建成功，等待上机称重` };
+    revalidate("/sorting");
+    revalidate("/");
+    return {
+      success: true,
+      codes: createdCodes,
+      message: `成功创建 ${createdCodes.length} 笔分拣任务 (${createdCodes.join("、")})，等待上机称重`,
+    };
   } catch (error: any) {
-    console.error("createSortTaskAction error:", error);
-    return { success: false, message: error.message || "创建分拣任务失败" };
+    console.error("createSortTasksAction error:", error);
+    return { success: false, message: error.message || "批量创建分拣任务失败" };
   }
+}
+
+export async function createSortTaskAction(data: {
+  machineId: string;
+  bundleBatchId: string;
+  gender: string;
+  weightTier: string;
+  inputCount: number;
+}) {
+  return createSortTasksAction({ ...data, items: [data] });
 }
 
 export async function completeSortTaskAction(taskId: string, qualifiedCount: number) {
@@ -375,10 +493,10 @@ export async function completeSortTaskAction(taskId: string, qualifiedCount: num
       },
     });
 
-    revalidatePath("/sorting");
-    revalidatePath("/cold-storage");
-    revalidatePath("/outbound");
-    revalidatePath("/");
+    revalidate("/sorting");
+    revalidate("/cold-storage");
+    revalidate("/outbound");
+    revalidate("/");
     return {
       success: true,
       isException: lossRes.isException,
@@ -399,8 +517,8 @@ export async function calibrateMachineAction(machineId: string, status: "QUALIFI
         lastCalibrationStatus: status,
       },
     });
-    revalidatePath("/sorting");
-    revalidatePath("/");
+    revalidate("/sorting");
+    revalidate("/");
     const label = status === "QUALIFIED" ? "合格" : status === "EXCEPTION" ? "异常" : "待校验";
     return { success: true, message: `设备校准状态已更新为【${label}】` };
   } catch (error: any) {
@@ -421,7 +539,7 @@ export async function createSortMachineAction(name: string) {
         lastCalibratedAt: new Date(),
       },
     });
-    revalidatePath("/sorting");
+    revalidate("/sorting");
     return { success: true, message: `分拣机 ${name} (${code}) 创建成功` };
   } catch (error: any) {
     return { success: false, message: error.message || "创建分拣机失败" };
@@ -435,7 +553,7 @@ export async function updateSortMachineNameAction(machineId: string, name: strin
       where: { id: machineId },
       data: { name: name.trim() },
     });
-    revalidatePath("/sorting");
+    revalidate("/sorting");
     return { success: true, message: "分拣机名称已更新" };
   } catch (error: any) {
     return { success: false, message: error.message || "更新失败" };
@@ -451,7 +569,7 @@ export async function toggleSortMachineStatusAction(machineId: string) {
       where: { id: machineId },
       data: { status: nextStatus },
     });
-    revalidatePath("/sorting");
+    revalidate("/sorting");
     return { success: true, message: `设备已${nextStatus === "ACTIVE" ? "启用" : "停用"}` };
   } catch (error: any) {
     return { success: false, message: error.message || "切换状态失败" };
@@ -465,7 +583,7 @@ export async function deleteSortMachineAction(machineId: string) {
       return { success: false, message: "该分拣设备名下存在历史分拣任务，禁止删除！" };
     }
     await prisma.sortMachine.delete({ where: { id: machineId } });
-    revalidatePath("/sorting");
+    revalidate("/sorting");
     return { success: true, message: "分拣机已删除" };
   } catch (error: any) {
     return { success: false, message: error.message || "删除失败" };
@@ -545,10 +663,10 @@ export async function createColdIntakeAction(data: {
       },
     });
 
-    revalidatePath("/cold-storage");
-    revalidatePath("/sorting");
-    revalidatePath("/outbound");
-    revalidatePath("/");
+    revalidate("/cold-storage");
+    revalidate("/sorting");
+    revalidate("/outbound");
+    revalidate("/");
     return {
       success: true,
       code,
@@ -571,7 +689,7 @@ export async function createColdStoreAction(data: { name: string; targetTemp: nu
         targetTemp: Number(data.targetTemp) || 4.5,
       },
     });
-    revalidatePath("/cold-storage");
+    revalidate("/cold-storage");
     return { success: true, message: `保鲜库位 ${data.name} (${code}) 创建成功` };
   } catch (error: any) {
     return { success: false, message: error.message || "创建保鲜库位失败" };
@@ -588,7 +706,7 @@ export async function updateColdStoreAction(storeId: string, data: { name: strin
         targetTemp: Number(data.targetTemp) || 4.5,
       },
     });
-    revalidatePath("/cold-storage");
+    revalidate("/cold-storage");
     return { success: true, message: "保鲜库位信息已更新" };
   } catch (error: any) {
     return { success: false, message: error.message || "更新保鲜库位失败" };
@@ -602,7 +720,7 @@ export async function deleteColdStoreAction(storeId: string) {
       return { success: false, message: "该保鲜库名下存在入库台账存量，禁止删除" };
     }
     await prisma.coldStore.delete({ where: { id: storeId } });
-    revalidatePath("/cold-storage");
+    revalidate("/cold-storage");
     return { success: true, message: "保鲜库位已删除" };
   } catch (error: any) {
     return { success: false, message: error.message || "删除保鲜库位失败" };

@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileSearch, Clock, AlertTriangle, CheckCircle2, ExternalLink, Download, FileWarning } from "lucide-react";
+import { FileSearch, Clock, AlertTriangle, CheckCircle2, ExternalLink, Download, FileWarning, FileText } from "lucide-react";
+import { getPreviewFileUrl } from "@/lib/storage";
 
 export function QCViewDialog({
   record,
@@ -36,56 +37,50 @@ export function QCViewDialog({
   const [open, setOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
 
+  const safePreviewUrl = record.fileUrl ? getPreviewFileUrl(record.fileUrl, record.fileName || undefined) : "";
+  const isPdf = /\.pdf$/i.test(record.fileName || "") || /\.pdf$/i.test(record.fileUrl || "") || record.fileUrl?.startsWith("data:application/pdf");
+
   const checkDateStr = typeof record.checkTime === "string" ? record.checkTime : record.checkTime.toISOString().slice(5, 16).replace("T", " ");
   const uploadDateStr = typeof record.uploadTime === "string" ? record.uploadTime : record.uploadTime.toISOString().slice(5, 16).replace("T", " ");
-  const isException = record.result === "EXCEPTION";
+  const isException = record.result === "EXCEPTION" || record.result === "UNQUALIFIED";
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) setImageError(false); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (o) setImageError(false); setOpen(o); }}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-primary gap-1">
+        <Button variant="ghost" size="sm" className="h-6 text-xs text-primary gap-1 px-1.5 font-normal">
           <FileSearch className="size-3" />
           {triggerText}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between text-base font-semibold pr-6">
-            <div className="flex items-center gap-2 truncate">
-              <span className="font-mono text-primary">{record.code}</span>
-              <span className="truncate">{record.title}</span>
-            </div>
-            {isException ? (
-              <Badge variant="destructive" className="text-[10px]">
-                <AlertTriangle className="size-3 mr-1" /> 异常/需整改
+          <div className="flex items-center justify-between pr-6">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <span>{record.title}</span>
+              <Badge variant="outline" className="font-mono text-[11px]">
+                {record.code}
               </Badge>
-            ) : (
-              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]">
-                <CheckCircle2 className="size-3 mr-1" /> 合格
-              </Badge>
-            )}
-          </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 pt-1">
-            <span>关联编号：<strong className="text-foreground font-mono">{record.refId}</strong></span>
-            {record.formNo && <span>纸质表号：<strong className="text-foreground font-mono">{record.formNo}</strong></span>}
-            <span>上传人：<strong className="text-foreground">{record.uploader}</strong></span>
+            </DialogTitle>
+          </div>
+          <DialogDescription className="text-xs text-muted-foreground flex items-center gap-3 pt-1">
+            <span className="flex items-center gap-1">
+              <Clock className="size-3" /> 检查时间：{checkDateStr}
+            </span>
+            <span>·</span>
+            <span>质检人：{record.uploader}</span>
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 flex-1 overflow-y-auto px-1 py-2">
-          {/* 双时间戳对比卡片 */}
-          <div className="grid grid-cols-2 gap-2 p-2.5 rounded bg-muted/40 border text-xs font-mono">
+        <div className="space-y-3 flex-1 overflow-y-auto py-1">
+          {/* 单号关联信息 */}
+          <div className="grid grid-cols-2 gap-2 text-xs bg-muted/30 p-2.5 rounded border">
             <div>
-              <span className="text-[11px] text-muted-foreground block flex items-center gap-1">
-                <Clock className="size-3 text-primary" /> 现场巡检/校准时间
-              </span>
-              <span className="font-bold text-foreground text-sm">{checkDateStr}</span>
+              <span className="text-muted-foreground">关联单号：</span>
+              <span className="font-mono font-medium">{record.formNo || "未填写"}</span>
             </div>
             <div>
-              <span className="text-[11px] text-muted-foreground block flex items-center gap-1">
-                <Clock className="size-3 text-muted-foreground" /> 系统上传登记时间
-              </span>
-              <span className="font-medium text-muted-foreground text-sm">{uploadDateStr}</span>
+              <span className="text-muted-foreground">上传时间：</span>
+              <span className="font-mono">{uploadDateStr}</span>
             </div>
           </div>
 
@@ -101,15 +96,21 @@ export function QCViewDialog({
             )}
           </div>
 
-          {/* 原件照片 */}
+          {/* 原件照片 / PDF */}
           <div className="border rounded-lg overflow-hidden bg-muted/20 p-2 flex items-center justify-center min-h-48">
-            {record.fileUrl ? (
-              imageError ? (
+            {safePreviewUrl ? (
+              isPdf ? (
+                <iframe
+                  src={safePreviewUrl}
+                  className="w-full h-80 rounded border-0 bg-background"
+                  title="品控凭证 PDF 预览"
+                />
+              ) : imageError ? (
                 <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
                   <FileWarning className="size-8 text-amber-500" />
                   <span className="text-xs text-muted-foreground">原件暂无法直接内嵌预览</span>
                   <Button variant="outline" size="sm" className="h-7 text-xs gap-1 mt-1" asChild>
-                    <a href={record.fileUrl} target="_blank" rel="noopener noreferrer">
+                    <a href={safePreviewUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="size-3" />
                       在新窗口尝试打开
                     </a>
@@ -117,14 +118,14 @@ export function QCViewDialog({
                 </div>
               ) : (
                 <a
-                  href={record.fileUrl}
+                  href={safePreviewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   title="点击在新窗口查看大图原件"
                   className="group relative block"
                 >
                   <img
-                    src={record.fileUrl}
+                    src={safePreviewUrl}
                     alt="品控原件"
                     onError={() => setImageError(true)}
                     className="max-h-72 object-contain rounded border shadow-xs transition-opacity group-hover:opacity-90 cursor-zoom-in"
@@ -138,15 +139,15 @@ export function QCViewDialog({
         </div>
 
         {/* 底部操作按钮栏 */}
-        {record.fileUrl && (
+        {safePreviewUrl && (
           <div className="flex items-center justify-between pt-2 border-t text-xs">
             <span className="text-muted-foreground truncate max-w-[240px]">
-              {record.fileName || "品控凭证原件"}
+              {record.fileName || (isPdf ? "品控报告.pdf" : "品控凭证原件")}
             </span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
                 <a
-                  href={record.fileUrl}
+                  href={safePreviewUrl}
                   download={record.fileName || `${record.code}-proof`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -155,8 +156,8 @@ export function QCViewDialog({
                   下载原件
                 </a>
               </Button>
-              <Button variant="default" size="sm" className="h-7 text-xs gap-1" asChild>
-                <a href={record.fileUrl} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
+                <a href={safePreviewUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="size-3.5" />
                   新窗口打开
                 </a>

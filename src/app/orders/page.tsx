@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderImportDialog } from "@/components/orders/OrderImportDialog";
-import { OrderDeleteButton } from "@/components/orders/OrderDeleteButton";
+import { OrderTable } from "@/components/orders/OrderTable";
 import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
 import { formatISODate } from "@/lib/utils";
@@ -182,81 +182,7 @@ export default async function OrdersPage({
             </Badge>
           )}
         </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-muted/50 text-muted-foreground border-b uppercase font-mono">
-              <tr>
-                <th className="px-3 py-2.5 font-medium">系统单号 / 批次</th>
-                <th className="px-3 py-2.5 font-medium">原始单号 / 客户</th>
-                <th className="px-3 py-2.5 font-medium">类型</th>
-                <th className="px-3 py-2.5 font-medium">规格型号明细</th>
-                <th className="px-3 py-2.5 font-medium">需求只数</th>
-                <th className="px-3 py-2.5 font-medium">计划发货日</th>
-                <th className="px-3 py-2.5 font-medium">状态</th>
-                <th className="px-3 py-2.5 font-medium text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {displayedOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-8 text-muted-foreground">
-                    {targetDateStr === "all"
-                      ? "暂无订单数据，请点击右上角「Excel 批量导入订单」"
-                      : `所选发货日期（${targetDateStr}）暂无订单明细，可点击「全部」切换查看`}
-                  </td>
-                </tr>
-              ) : (
-                displayedOrders.map((order: any) => (
-                  <tr key={order.id} className="hover:bg-muted/40 transition-colors">
-                    <td className="px-3 py-2.5 font-mono">
-                      <div className="font-bold text-foreground">{order.code}</div>
-                      <div className="text-[10px] text-muted-foreground">{order.importId}</div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="font-mono font-medium text-foreground">{order.orderNo}</div>
-                      <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">{order.storeName}</div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant="outline" className="text-[10px]">
-                        {order.type === "CRAB_CARD" ? "蟹卡提货" : "门店订单"}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="font-medium text-primary">
-                        {order.gender === "FEMALE" ? "母蟹" : "公蟹"} {order.weightTier}
-                      </span>
-                      {order.specModel && (
-                        <div className="text-[10px] text-muted-foreground truncate max-w-[160px]" title={order.specModel}>
-                          原始: {order.specModel}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono font-bold text-foreground">{order.count} 只</td>
-                    <td className="px-3 py-2.5 font-mono text-muted-foreground">
-                      {formatISODate(order.deliveryDate)}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {order.status === "SHIPPED" ? (
-                        <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]">
-                          已发货
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30">
-                          待发货
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {order.status === "PENDING" && (
-                        <OrderDeleteButton importId={order.importId} orderNo={order.orderNo} />
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <OrderTable orders={displayedOrders} targetDateStr={targetDateStr} />
       </Card>
     </div>
   );

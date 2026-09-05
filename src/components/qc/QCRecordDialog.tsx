@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -16,9 +16,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Camera, FileCheck, Loader2, AlertTriangle, Upload, X } from "lucide-react";
-import { createQCRecordAction } from "@/actions/qc";
+import { createQCRecordAction, getQCInspectorsAction } from "@/actions/qc";
 import { uploadFileAction } from "@/actions/upload";
 import { cn } from "@/lib/utils";
+
+const ROLE_NAME_MAP: Record<string, string> = {
+  ADMIN: "超级管理员",
+  QA_DIRECTOR: "质检员",
+  WAREHOUSE_ADMIN: "库管员",
+  FARMER_ADMIN: "内部核验员",
+  CHANNEL_VIEWER: "渠道审计员",
+};
+
+const formatInspectorName = (u: { fullName: string; role: string }) =>
+  u.fullName.includes("(") ? u.fullName : `${u.fullName} (${ROLE_NAME_MAP[u.role] || u.role})`;
 
 export interface QCConfig {
   cat: string;
@@ -35,14 +46,31 @@ export function QCRecordDialog({
   triggerLabel = "上传品控记录",
   triggerClassName,
   trigger,
+  users,
 }: {
   config: QCConfig;
   triggerLabel?: string;
   triggerClassName?: string;
   trigger?: React.ReactNode;
+  users?: Array<{ id: string; fullName: string; role: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  const [userList, setUserList] = useState<Array<{ id: string; fullName: string; role: string }>>(users || []);
+  const [uploader, setUploader] = useState<string>("赵质检 (质检员)");
+
+  useEffect(() => {
+    if (open && userList.length === 0) {
+      getQCInspectorsAction().then((res) => {
+        if (res?.length) {
+          setUserList(res);
+          const defaultUser = res.find((u) => u.role === "QA_DIRECTOR") || res[0];
+          if (defaultUser) setUploader(formatInspectorName(defaultUser));
+        }
+      });
+    }
+  }, [open, userList.length]);
 
   const [title, setTitle] = useState(config.defaultTitle);
   const [formNo, setFormNo] = useState(config.formNoPreset || "");
@@ -97,7 +125,7 @@ export function QCRecordDialog({
         checkTime,
         conclusion,
         reason,
-        uploader: "赵质检 (质检员)",
+        uploader: uploader || "赵质检 (质检员)",
         fileName: fileName || undefined,
         fileUrl: fileUrl || undefined,
       });
@@ -161,20 +189,45 @@ export function QCRecordDialog({
             </div>
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs">检查结论判定</Label>
-            <Select value={conclusion} onValueChange={setConclusion}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {config.conclusions.map((c, idx) => (
-                  <SelectItem key={idx} value={c} className="text-xs">
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-primary">质检人员 (必填)</Label>
+              <Select value={uploader} onValueChange={setUploader}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="请选择质检人员" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userList.map((u) => {
+                    const label = formatInspectorName(u);
+                    return (
+                      <SelectItem key={u.id} value={label} className="text-xs">
+                        {label}
+                      </SelectItem>
+                    );
+                  })}
+                  {userList.length === 0 && (
+                    <SelectItem value={uploader} className="text-xs">
+                      {uploader}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">检查结论判定</Label>
+              <Select value={conclusion} onValueChange={setConclusion}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {config.conclusions.map((c, idx) => (
+                    <SelectItem key={idx} value={c} className="text-xs">
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {isExceptionConclusion && (

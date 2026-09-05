@@ -98,7 +98,7 @@ export default async function SortingPage() {
                 id: l.id,
                 gender: l.gender,
                 weightTier: l.weightTier,
-                count: l.count,
+                count: l.qualifiedCount ?? l.count,
                 poolCode: l.pool.code,
               })),
             }))}

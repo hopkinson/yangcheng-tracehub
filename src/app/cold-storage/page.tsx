@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ColdIntakeDialog } from "@/components/coldStore/ColdIntakeDialog";
 import { ColdStoreDialog } from "@/components/coldStore/ColdStoreDialog";
+import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { ThermometerSnowflake, CheckSquare, Info, Plus, Activity, ShieldCheck, AlertTriangle } from "lucide-react";
 import { formatISODate } from "@/lib/utils";
 
@@ -16,6 +17,11 @@ export default async function ColdStoragePage() {
     include: {
       _count: { select: { logs: true } },
       logs: {
+        include: {
+          outboundOrders: {
+            where: { status: { not: "REJECTED" } },
+          },
+        },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -24,7 +30,12 @@ export default async function ColdStoragePage() {
   // 2. 查询全部入库流水
   const logs = await prisma.coldLog.findMany({
     orderBy: { createdAt: "desc" },
-    include: { store: true },
+    include: {
+      store: true,
+      outboundOrders: {
+        where: { status: { not: "REJECTED" } },
+      },
+    },
   });
 
   // 3. 查询保鲜库温湿度质检监控记录 (13.4)
@@ -97,11 +108,16 @@ export default async function ColdStoragePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         {stores.map((s) => {
           const totalStored = s.logs.reduce((a, b) => a + b.count, 0);
+          const totalOutbound = s.logs.reduce(
+            (acc, l) => acc + (l.outboundOrders?.reduce((oa: number, o: any) => oa + o.outboundCount, 0) || 0),
+            0
+          );
+          const currentStock = Math.max(0, totalStored - totalOutbound);
           // 今日入库计算 (当天的入库量，若无则取最近一天数据呈现)
           const todayStored = s.logs
             .filter((l) => formatISODate(l.createdAt) === todayStr || formatISODate(l.createdAt) === "2026-09-21")
             .reduce((a, b) => a + b.count, 0);
-          const hasStock = totalStored > 0;
+          const hasStock = currentStock > 0;
 
           return (
             <Card key={s.id} className="border-border/80 shadow-xs flex flex-col justify-between">
@@ -130,15 +146,27 @@ export default async function ColdStoragePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-3.5 space-y-3">
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className={`grid ${totalOutbound > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2"} gap-2 text-xs font-mono`}>
                     <div className="bg-muted/30 p-2 rounded-md border border-border/40">
                       <span className="text-[11px] text-muted-foreground block">累计预冷入库</span>
                       <span className="text-base font-bold text-foreground">{totalStored.toLocaleString()} 只</span>
                     </div>
+                    {totalOutbound > 0 && (
+                      <div className="bg-muted/30 p-2 rounded-md border border-border/40">
+                        <span className="text-[11px] text-muted-foreground block">当前在库余量</span>
+                        <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">{currentStock.toLocaleString()} 只</span>
+                      </div>
+                    )}
                     <div className="bg-muted/30 p-2 rounded-md border border-border/40">
                       <span className="text-[11px] text-muted-foreground block">今日入库</span>
                       <span className="text-base font-bold text-primary">+{todayStored.toLocaleString()} 只</span>
                     </div>
+                    {totalOutbound > 0 && (
+                      <div className="bg-muted/30 p-2 rounded-md border border-border/40">
+                        <span className="text-[11px] text-muted-foreground block">已出库核销</span>
+                        <span className="text-base font-bold text-muted-foreground">{totalOutbound.toLocaleString()} 只</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* 卡片入库登记按钮 */}
@@ -196,22 +224,29 @@ export default async function ColdStoragePage() {
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-muted/40 transition-colors">
-                    <td className="px-3 py-2.5 font-mono font-bold text-foreground">
-                      {log.code}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono text-muted-foreground">
-                      {log.createdAt.toISOString().slice(5, 16).replace("T", " ")}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant="outline" className="text-[10px]">
-                        {log.store.name} ({log.store.code})
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5 font-mono font-bold text-primary">
-                      +{log.count} 只
-                    </td>
+                logs.map((log) => {
+                  const logUsed = log.outboundOrders?.reduce((acc: number, o: any) => acc + o.outboundCount, 0) || 0;
+                  return (
+                    <tr key={log.id} className="hover:bg-muted/40 transition-colors">
+                      <td className="px-3 py-2.5 font-mono font-bold text-foreground">
+                        {log.code}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-muted-foreground">
+                        {log.createdAt.toISOString().slice(5, 16).replace("T", " ")}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant="outline" className="text-[10px]">
+                          {log.store.name} ({log.store.code})
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono font-bold text-primary">
+                        +{log.count} 只
+                        {logUsed > 0 && (
+                          <span className="block text-[10px] font-normal text-muted-foreground">
+                            在库 {Math.max(0, log.count - logUsed)} 只 · 出库 {logUsed} 只
+                          </span>
+                        )}
+                      </td>
                     <td className="px-3 py-2.5">
                       {log.refId ? (
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -231,8 +266,9 @@ export default async function ColdStoragePage() {
                     <td className="px-3 py-2.5">
                       {log.operator}
                     </td>
-                  </tr>
-                ))
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -246,7 +282,23 @@ export default async function ColdStoragePage() {
             <Activity className="size-4 text-primary" />
             <CardTitle className="text-sm font-semibold">保鲜库温湿度监控巡检记录（共 {qcRecords.length} 笔）</CardTitle>
           </div>
-          <span className="text-[11px] text-muted-foreground">由质检员现场巡检测定并上传留痕</span>
+          <QCRecordDialog
+            config={{
+              cat: "COLD_TEMP",
+              categoryLabel: "保鲜温湿度巡检",
+              defaultTitle: "保鲜库温湿度监控记录表",
+              formNoPreset: "YCGF-PZZX-202609",
+              refType: "STORE",
+              refId: stores[0]?.code || "BX-01",
+              conclusions: [
+                "温度 4.2℃，湿度 65%，冷风循环正常",
+                "温度 4.5℃，湿度 68%，控温稳定",
+                "温度 4.0℃，湿度 62%，运行良好",
+                "温度超标 (>6℃)，制冷循环异常，已报修",
+              ],
+            }}
+            triggerLabel="登记保鲜巡检 (202609)"
+          />
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">

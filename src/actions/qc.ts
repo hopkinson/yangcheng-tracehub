@@ -74,7 +74,9 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       },
     });
 
-    revalidatePath("/", "layout");
+    try {
+      revalidatePath("/", "layout");
+    } catch {}
     return { success: true, code, message: `品控记录 ${code} 上传成功` };
   } catch (error: any) {
     console.error("createQCRecordAction error:", error);
@@ -85,9 +87,24 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
 export async function deleteQCRecordAction(recordId: string) {
   try {
     await prisma.qCRecord.delete({ where: { id: recordId } });
-    revalidatePath("/", "layout");
+    try {
+      revalidatePath("/", "layout");
+    } catch {}
     return { success: true, message: "品控记录已删除" };
   } catch (error: any) {
     return { success: false, message: error.message || "删除记录失败" };
+  }
+}
+
+export async function getQCInspectorsAction() {
+  try {
+    const users = await prisma.user.findMany({
+      select: { id: true, fullName: true, role: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return users;
+  } catch (error) {
+    console.error("getQCInspectorsAction error:", error);
+    return [];
   }
 }

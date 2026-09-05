@@ -50,10 +50,12 @@ export interface ColdIntakeCheck {
   taskCode?: string;
 }
 
-export interface SortingLossCheck {
+export interface ProcessLossCheck {
   inputCount: number;
   qualifiedCount: number;
 }
+export type SortingLossCheck = ProcessLossCheck;
+export type BundleLossCheck = ProcessLossCheck;
 
 export interface ParsedSpecItem {
   gender: "MALE" | "FEMALE";
@@ -241,8 +243,8 @@ export const Invariants = {
     };
   },
 
-  // 8. 分拣称重损耗计算与 5% 红线告警 (PRD V2.1)
-  calculateSortingLoss: ({ inputCount, qualifiedCount }: SortingLossCheck) => {
+  // 8. 加工环节通用损耗计算与 5% 红线告警 (分拣/捆扎)
+  calculateProcessLoss: ({ inputCount, qualifiedCount }: ProcessLossCheck, stage = "加工") => {
     if (inputCount <= 0) {
       return { valid: false, lossCount: 0, lossRate: 0, isException: true, reason: "投入数量必须大于 0" };
     }
@@ -258,10 +260,12 @@ export const Invariants = {
       lossRate,
       isException,
       reason: isException
-        ? `分拣损耗率达 ${lossRate}%（超 5% 阈值告警），需记录异常说明`
-        : `分拣正常，损耗 ${lossCount} 只（损耗率 ${lossRate}%）`,
+        ? `${stage}损耗率达 ${lossRate}%（超 5% 阈值告警），需记录异常说明`
+        : `${stage}正常，损耗 ${lossCount} 只（损耗率 ${lossRate}%）`,
     };
   },
+  calculateSortingLoss: (check: ProcessLossCheck) => Invariants.calculateProcessLoss(check, "分拣"),
+  calculateBundleLoss: (check: ProcessLossCheck) => Invariants.calculateProcessLoss(check, "捆扎"),
 
   // 9. 蟹卡规格型号正则智能拆分 (PRD V2.1)
   parseCrabCardSpec: (specModel: string): ParsedSpecItem[] => {
