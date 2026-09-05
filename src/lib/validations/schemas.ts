@@ -153,18 +153,6 @@ export const settleTagClaimFormSchema = z.object({
 export type SettleTagClaimFormValues = z.infer<typeof settleTagClaimFormSchema>;
 
 /**
- * 损耗盘点校验
- */
-export const lossRegisterFormSchema = z.object({
-  physicalCount: z.coerce
-    .number({ invalid_type_error: "请输入有效的实盘点数" })
-    .int("实盘数量必须为整数")
-    .min(0, "实盘数量不能为负数"),
-  reason: z.string().optional(),
-});
-export type LossRegisterFormValues = z.infer<typeof lossRegisterFormSchema>;
-
-/**
  * 物流单号回填校验
  */
 export const logisticsFormSchema = z.object({

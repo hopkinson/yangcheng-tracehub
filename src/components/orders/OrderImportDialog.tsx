@@ -73,10 +73,10 @@ export function OrderImportDialog() {
     } else {
       downloadExcelTemplate(
         `${getTenant().storeLabel}订单导入模板.xlsx`,
-        ["订单号", "门店名称", "公母", "规格", "只数", "要求发货日期"],
+        ["发货时间", "门店", "门店编号", "规格", "只数"],
         [
-          ["SO20260921008", `${getTenant().storeLabel}(深圳店)`, "公", "4.0两", 1500, "2026-09-22"],
-          ["SO20260921009", `${getTenant().storeLabel}(广州店)`, "母", "3.0两", 800, "2026-09-22"],
+          ["20260904", "浦东山姆店", "1", "4.0公蟹", 300],
+          ["20260904", "浦东山姆店", "1", "5.0公蟹", 300],
         ]
       );
     }
@@ -213,7 +213,7 @@ export function OrderImportDialog() {
               placeholder={
                 activeTab === "CARD"
                   ? "支持直接粘贴 Excel 行（例如：订单号 日期 礼盒型号 规格详情 条码）"
-                  : `格式：订单号 门店名称 公母 规格 只数 发货日期`
+                  : `格式：发货时间 门店 [门店编号] 规格(如4.0公蟹) 只数（系统自动生成订单号）`
               }
               className="font-mono text-xs h-20 resize-none mt-2"
             />

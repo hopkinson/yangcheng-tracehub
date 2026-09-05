@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, History } from "lucide-react";
+import { AlertTriangle, History, Info } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 
 export interface BatchLossHistoryDialogProps {
@@ -111,6 +111,14 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
                 {batch.lossCount.toLocaleString()} 只 ({lossRate.toFixed(1)}%)
               </p>
             </div>
+          </div>
+
+          {/* 暂养池操作指引提示 */}
+          <div className="flex items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground">
+            <Info className="size-3.5 text-primary shrink-0" />
+            <span>
+              提示：暂养期日常死蟹与损耗盘点，请前往<strong>【暂养监控】</strong>对应池位直接操作登记。
+            </span>
           </div>
 
           {/* 5% 超标红线提示 */}

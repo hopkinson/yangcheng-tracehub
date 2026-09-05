@@ -341,43 +341,210 @@ export const Invariants = {
     });
   },
 
-  // 12. 门店订单单行智能识别
-  parseStoreOrderImportLine: (line: string, defaultStoreName = "山姆会员店"): RawImportOrder | null => {
+  // 12. 门店订单单行智能识别 (支持图二：发货时间+门店+[门店编号]+4.0公蟹+只数，系统自动编排订单号)
+  parseStoreOrderImportLine: (
+    line: string,
+    defaultStoreName = "山姆会员店",
+    storeCounter: Record<string, number> = {}
+  ): RawImportOrder | null => {
     const trimmed = line.trim();
-    if (!trimmed || (/^(订单号|序号|单号|NO|No|ID)/i.test(trimmed) && /(门店|规格|只数|日期)/.test(trimmed))) return null;
+    if (!trimmed || (/(?:发货|日期|单号|序号|门店)/.test(trimmed) && /(?:规格|只数|公母|时间)/.test(trimmed))) return null;
 
     const cells = trimmed.split(trimmed.includes("\t") ? "\t" : /\s+/).map((c) => c.trim()).filter(Boolean);
+    if (cells.length < 2) return null;
+
+    // 1. 日期识别 (支持 20260904, 2026-09-04, 2026/9/4)
     const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b)/.test(c);
     const dateCell = cells.find(isDate);
     const deliveryDate = Invariants.normalizeDateStr(dateCell || trimmed);
+    const dateCompact = deliveryDate.replace(/-/g, "");
 
-    const genderCell = cells.find((c) => !isDate(c) && (/^(母|母蟹|female)$/i.test(c) || /^(公|公蟹|male)$/i.test(c)));
-    const gender: "MALE" | "FEMALE" = genderCell && /母|female/i.test(genderCell) ? "FEMALE" : "MALE";
+    // 2. 规格与公母识别 (支持单列合并规格如 "4.0公蟹" / "5.0公" / "3.5母蟹"，或传统分列 "公" + "4.0两")
+    let gender: "MALE" | "FEMALE" = "MALE";
+    let weightTier = "4.0两";
+    let specCell: string | undefined;
+    let genderCell: string | undefined;
+    let weightCell: string | undefined;
 
-    const weightCell = cells.find((c) => !isDate(c) && c !== genderCell && /^([1-9](?:\.[0-9])?)(?:两)?$/.test(c));
-    const weightTier = weightCell ? (weightCell.endsWith("两") ? weightCell : `${Number(weightCell).toFixed(1)}两`) : "4.0两";
+    const combinedMatch = cells.find(
+      (c) => !isDate(c) && /(?:([1-9](?:\.[0-9])?)(?:两)?(公|母)(?:蟹)?|(公|母)(?:蟹)?([1-9](?:\.[0-9])?)(?:两)?)/.test(c)
+    );
 
-    const countCell = cells.find((c) => !isDate(c) && c !== genderCell && c !== weightCell && /^\d+(?:只)?$/.test(c));
-    const count = countCell ? parseInt(countCell, 10) : 100;
+    if (combinedMatch) {
+      specCell = combinedMatch;
+      const m = combinedMatch.match(/([1-9](?:\.[0-9])?)(?:两)?(公|母)/) || combinedMatch.match(/(公|母)([1-9](?:\.[0-9])?)/);
+      if (m) {
+        const rawWeight = m[1] && !/公|母/.test(m[1]) ? m[1] : m[2];
+        const rawSex = /公|母/.test(m[1]) ? m[1] : m[2];
+        gender = rawSex === "母" ? "FEMALE" : "MALE";
+        weightTier = rawWeight.includes(".") ? `${rawWeight}两` : `${rawWeight}.0两`;
+      }
+    } else {
+      genderCell = cells.find((c) => !isDate(c) && (/^(母|母蟹|female)$/i.test(c) || /^(公|公蟹|male)$/i.test(c)));
+      gender = genderCell && /母|female/i.test(genderCell) ? "FEMALE" : "MALE";
+      weightCell = cells.find((c) => !isDate(c) && c !== genderCell && /^([1-9](?:\.[0-9])?)(?:两)?$/.test(c));
+      weightTier = weightCell ? (weightCell.endsWith("两") ? weightCell : `${Number(weightCell).toFixed(1)}两`) : "4.0两";
+    }
 
-    const orderNo = cells.find((c) => !isDate(c) && c !== genderCell && c !== weightCell && c !== countCell && /^[A-Za-z0-9_-]{6,}$/.test(c)) || cells[0] || `SO${Date.now()}`;
+    // 3. 提取数量 (最后一个数字单元格) 与门店/订单信息
+    const remaining = cells.filter((c) => c !== dateCell && c !== specCell && c !== genderCell && c !== weightCell);
+    const numIdx = remaining.reduce((acc, c, idx) => (/^\d+只?$/.test(c) ? idx : acc), -1);
+    const count = numIdx !== -1 ? parseInt(remaining[numIdx], 10) : 100;
 
-    const storeCell = cells.find((c) => !isDate(c) && c !== genderCell && c !== weightCell && c !== countCell && c !== orderNo);
-    const storeName = storeCell || defaultStoreName;
+    let explicitOrderNo: string | undefined;
+    let storeCodeCell: string | undefined;
+    let storeName: string | undefined;
 
-    return { orderNo, type: "STORE_ORDER", storeName, gender, weightTier, count, deliveryDate, isPreSplit: true };
+    remaining.forEach((c, idx) => {
+      if (idx === numIdx) return;
+      if (/^(?:SO|ORDER|DD|SM)[A-Za-z0-9_-]{4,}|^[A-Za-z0-9_-]{8,}$/i.test(c)) explicitOrderNo = c;
+      else if (/^\d{1,6}$/.test(c) || /^(?:ST|MD)[-_]?[A-Za-z0-9]+$/i.test(c)) storeCodeCell = c;
+      else if (/[\u4e00-\u9fa5]/.test(c) || !storeName) storeName = c;
+    });
+    storeName = storeName || defaultStoreName;
+
+    // 4. 订单号生成 (无外部订单号时：发货时间 + 门店编号/门店简称 + 规格，当天同店同规格全局唯一)
+    let orderNo = explicitOrderNo;
+    if (!orderNo) {
+      const cleanStore = (storeName || "")
+        .replace(/[()（）]|山姆会员店|盒马鲜生|会员店|直供店|山姆|盒马|门店|店/g, "")
+        .trim();
+      const storeTag = storeCodeCell || cleanStore || "MD";
+      const specTag = `${weightTier.replace("两", "")}${gender === "FEMALE" ? "母" : "公"}`;
+      orderNo = `SO${dateCompact}-${storeTag}-${specTag}`;
+    }
+
+    return {
+      orderNo,
+      type: "STORE_ORDER",
+      storeName,
+      gender,
+      weightTier,
+      count,
+      deliveryDate,
+      isPreSplit: true,
+    };
   },
 
-  // 13. 多行批量文本智能拆单解析
+  // 13. 发货计划矩阵二维表智能识别与行转列展开 (PRD V2.2)
+  parseStoreMatrixPlanText: (text: string, defaultYear = new Date().getFullYear()): RawImportOrder[] => {
+    const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return [];
+
+    // 1. 识别日期 (从标题或全文提取，如 "10月26日发货计划" 或 "20261026")
+    let deliveryDate: string | null = null;
+    const dateMatch = text.match(/(?:(20\d{2})[-/.年])?(\d{1,2})月(\d{1,2})日/) || text.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
+    if (dateMatch) {
+      if (dateMatch[0].includes("月")) {
+        const y = dateMatch[1] || String(defaultYear);
+        const m = dateMatch[2].padStart(2, "0");
+        const d = dateMatch[3].padStart(2, "0");
+        deliveryDate = `${y}-${m}-${d}`;
+      } else {
+        deliveryDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+      }
+    }
+    const safeDate = Invariants.normalizeDateStr(deliveryDate);
+    const dateCompact = safeDate.replace(/-/g, "");
+
+    // 2. 查找规格列所在表头行 (含 2.5母, 3.5公, 3.0母, 4.0公 等)
+    let specHeaderIndex = -1;
+    let specColumns: Array<{ colIdx: number; weightTier: string; gender: "MALE" | "FEMALE"; specTag: string }> = [];
+    let storeNameCol = 0;
+    let storeCodeCol = 1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const cells = lines[i].split(lines[i].includes("\t") ? "\t" : /\s+/).map((c) => c.trim());
+      const foundSpecs: typeof specColumns = [];
+
+      cells.forEach((cell, idx) => {
+        const m = cell.match(/^([1-9](?:\.[0-9])?)(?:两)?(公|母)(?:蟹)?$/);
+        if (m) {
+          const rawWeight = m[1];
+          const sex = m[2];
+          const weightTier = rawWeight.includes(".") ? `${rawWeight}两` : `${rawWeight}.0两`;
+          const gender = sex === "母" ? "FEMALE" : "MALE";
+          const specTag = `${rawWeight.includes(".") ? rawWeight : `${rawWeight}.0`}${sex}`;
+          foundSpecs.push({ colIdx: idx, weightTier, gender, specTag });
+        }
+      });
+
+      if (foundSpecs.length >= 2) {
+        specHeaderIndex = i;
+        specColumns = foundSpecs;
+
+        // 识别门店名称与门店编号所在列
+        cells.forEach((cell, idx) => {
+          if (/发货地点|门店名称|门店名/.test(cell)) storeNameCol = idx;
+          if (/门店编号|门店代码|门店号/.test(cell) || (cell === "门店" && idx !== storeNameCol)) storeCodeCol = idx;
+        });
+        break;
+      }
+    }
+
+    if (specHeaderIndex === -1 || specColumns.length === 0) return [];
+
+    // 3. 逐行解析门店发货数据并转换为标准订单
+    const orders: RawImportOrder[] = [];
+    for (let i = specHeaderIndex + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^(合计|总计|汇总)/.test(line)) continue;
+      const cells = line.split(line.includes("\t") ? "\t" : /\s+/).map((c) => c.trim());
+      if (cells.length < 2) continue;
+
+      const storeName = cells[storeNameCol] || cells[0];
+      const storeCode = cells[storeCodeCol] || cells.find((c, idx) => idx !== storeNameCol && /^\d{3,6}$/.test(c)) || "";
+      if (!storeName || /^(发货|业务|渠道|苏州|合计)/.test(storeName)) continue;
+
+      const storeTag = storeCode || storeName.replace(/[()（）]/g, "").replace(/山姆会员店|山姆店|店/g, "").trim() || "MD";
+
+      for (const col of specColumns) {
+        const val = cells[col.colIdx];
+        if (!val) continue;
+        const count = parseInt(val, 10);
+        if (!isNaN(count) && count > 0) {
+          const orderNo = `SO${dateCompact}-${storeTag}-${col.specTag}`;
+          orders.push({
+            orderNo,
+            type: "STORE_ORDER",
+            storeName,
+            gender: col.gender,
+            weightTier: col.weightTier,
+            count,
+            deliveryDate: safeDate,
+            isPreSplit: true,
+          });
+        }
+      }
+    }
+
+    return orders;
+  },
+
+  // 14. 多行批量文本智能拆单解析 (自适应矩阵式计划表与单行平铺格式)
   parseOrderImportText: (
     text: string,
     type: "STORE" | "CARD",
     defaultStoreName = "山姆会员店"
   ): RawImportOrder[] => {
-    return text.trim().split("\n").flatMap((line) => {
-      if (!line.trim()) return [];
-      if (type === "CARD") return Invariants.parseCrabCardImportLine(line);
-      const item = Invariants.parseStoreOrderImportLine(line, defaultStoreName);
+    if (type === "CARD") {
+      return text.trim().split("\n").flatMap((line) => Invariants.parseCrabCardImportLine(line));
+    }
+
+    // 检查是否为发货计划矩阵二维表 (单行包含 2 个以上规格列如 2.5母、3.5公、3.0母)
+    const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+    const hasMatrixHeader = lines.some(
+      (l) => (l.match(/([1-9](?:\.[0-9])?)(?:两)?(公|母)/g) || []).length >= 2
+    );
+    if (hasMatrixHeader) {
+      const matrixOrders = Invariants.parseStoreMatrixPlanText(text);
+      if (matrixOrders.length > 0) return matrixOrders;
+    }
+
+    // 默认平铺逐行解析
+    const storeCounter: Record<string, number> = {};
+    return lines.flatMap((line) => {
+      const item = Invariants.parseStoreOrderImportLine(line, defaultStoreName, storeCounter);
       return item ? [item] : [];
     });
   },

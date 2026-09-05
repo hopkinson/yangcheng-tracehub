@@ -255,33 +255,20 @@ export default async function PoolsPage({
                           {totalOut.toLocaleString()}
                         </span>
                       </div>
-                      <PoolLossDialog
-                        pool={pool}
-                        totalLive={totalLive}
-                        userId={currentUserId}
-                        disabled={!isWarehouseOrAdmin || !isOccupied}
-                        trigger={
-                          <button
-                            type="button"
-                            disabled={!isWarehouseOrAdmin || !isOccupied}
-                            className="rounded border bg-background/60 p-1 text-center transition-colors cursor-pointer hover:bg-muted/50 disabled:cursor-default disabled:hover:bg-background/60"
-                            title={isOccupied ? "点击登记该池死蟹/盘点损耗" : "空池无在养存活"}
-                          >
-                            <span className="text-muted-foreground block text-[10px]">损耗</span>
-                            <span
-                              className={`font-mono font-semibold block ${
-                                Number(lossRate) > 5 ? "text-rose-600" : "text-foreground"
-                              }`}
-                            >
-                              {totalLoss.toLocaleString()} ({lossRate}%)
-                            </span>
-                          </button>
-                        }
-                      />
+                      <div className="rounded border bg-background/60 p-1">
+                        <span className="text-muted-foreground block">损耗</span>
+                        <span
+                          className={`font-mono font-semibold block ${
+                            Number(lossRate) > 5 ? "text-rose-600" : "text-foreground"
+                          }`}
+                        >
+                          {totalLoss.toLocaleString()} ({lossRate}%)
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* 4. 当日品控状态与单池损耗登记 */}
+                  {/* 4. 当日水质/巡检品控状态 */}
                   <div className="flex items-center justify-between rounded border bg-card/60 px-2.5 py-1.5 text-[11px]">
                     <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">今日品控:</span>
@@ -294,6 +281,43 @@ export default async function PoolsPage({
                         <span className="text-muted-foreground italic text-[10px]">今日暂无巡检</span>
                       )}
                     </div>
+                  </div>
+
+                  {/* 5. 暂养作业操作区：水质监测 / 暂养巡检 / 盘点损耗 */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                    <QCRecordDialog
+                      config={{
+                        cat: "WATER_QUALITY",
+                        categoryLabel: "水质监测记录表",
+                        defaultTitle: `${pool.code} 水质监测`,
+                        formNoPreset: "YCGF-PZZX-202605",
+                        refType: "POOL",
+                        refId: pool.code,
+                        conclusions: [
+                          "符合暂养水质卫生要求 (水温21.2℃, 溶氧7.5mg/L, 氨氮0.12mg/L)",
+                          "水温偏高 (>24℃)，已开启水循环制冷",
+                          "氨氮 0.28mg/L 超标，已启动换水并安排复检",
+                        ],
+                      }}
+                      triggerLabel="水质监测"
+                    />
+
+                    <QCRecordDialog
+                      config={{
+                        cat: "POOL_INSPECT",
+                        categoryLabel: "暂养巡检记录表",
+                        defaultTitle: `${pool.code} 暂养巡检`,
+                        formNoPreset: "YCGF-PZZX-202604",
+                        refType: "POOL",
+                        refId: pool.code,
+                        conclusions: [
+                          "全部项目合格，暂养环境正常",
+                          "存在轻微异常，已整改，可正常暂养",
+                          "问题未解决，暂停该池暂养，限期整改",
+                        ],
+                      }}
+                      triggerLabel="暂养巡检"
+                    />
 
                     <PoolLossDialog
                       pool={pool}

@@ -66,10 +66,6 @@ export function BundleBatchDialog({
   const totalCrabs = selectedPools.reduce((acc, cur) => acc + (cur.count || 0), 0);
   const isTagExceeded = totalCrabs > availableTags;
 
-  const activeSpec = selectedPools[0]
-    ? `${selectedPools[0].gender}-${selectedPools[0].weightTier}`
-    : null;
-
   const handleTogglePool = (p: PoolOption) => {
     if (p.liveCount <= 0) return;
     const isSelected = selectedPools.some((x) => x.poolId === p.id);
@@ -77,18 +73,12 @@ export function BundleBatchDialog({
       setSelectedPools(selectedPools.filter((x) => x.poolId !== p.id));
       return;
     }
-    const poolGender = p.currentGender || "MALE";
-    const poolWeightTier = p.currentWeightTier || "4.0两";
-    if (selectedPools[0] && (selectedPools[0].gender !== poolGender || selectedPools[0].weightTier !== poolWeightTier)) {
-      toast.error("严禁混规格捆扎：仅允许勾选同公母、同规格的暂养池");
-      return;
-    }
     setSelectedPools([
       ...selectedPools,
       {
         poolId: p.id,
-        gender: poolGender,
-        weightTier: poolWeightTier,
+        gender: p.currentGender || "MALE",
+        weightTier: p.currentWeightTier || "4.0两",
         count: p.liveCount,
       },
     ]);
@@ -157,7 +147,7 @@ export function BundleBatchDialog({
             新建大闸蟹捆扎批次
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            一个捆扎批次绑定一种已审核蟹扣、手填蟹绳批次，并可合并多个同规格暂养池来源。
+            一个捆扎批次绑定一种已审核蟹扣、手填蟹绳批次，可合并多个暂养池来源（后续由机器分拣定规）。
           </DialogDescription>
         </DialogHeader>
 
@@ -220,22 +210,16 @@ export function BundleBatchDialog({
             />
           </div>
 
-          {/* 来源暂养池多选 (方案 A: 复选网格/列表，按同规格锁定多选) */}
+          {/* 来源暂养池多选 */}
           <div className="space-y-2 border rounded-lg p-3 bg-muted/20">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-semibold flex items-center gap-1.5">
                 <Waves className="size-4 text-primary" />
                 来源暂养池与出池数量（勾选支持多选合并）
               </Label>
-              <div className="text-[11px] font-mono">
-                {selectedPools[0] ? (
-                  <span className="text-primary font-medium">
-                    已锁定规格: {selectedPools[0].gender === "FEMALE" ? "母蟹" : "公蟹"} {selectedPools[0].weightTier} (已选 {selectedPools.length} 池)
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">勾选任意池后自动锁定同规格</span>
-                )}
-              </div>
+              <span className={`text-[11px] font-mono ${selectedPools.length > 0 ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                {selectedPools.length > 0 ? `已选 ${selectedPools.length} 个暂养池来源` : "支持多池合并捆扎"}
+              </span>
             </div>
 
             <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
@@ -248,8 +232,6 @@ export function BundleBatchDialog({
                   const isEmpty = p.liveCount <= 0;
                   const poolGender = p.currentGender || "MALE";
                   const poolWeightTier = p.currentWeightTier || "4.0两";
-                  const poolSpec = `${poolGender}-${poolWeightTier}`;
-                  const isIncompatible = activeSpec !== null && activeSpec !== poolSpec && !isEmpty;
                   const selectedItem = selectedPools.find((x) => x.poolId === p.id);
                   const isChecked = !!selectedItem;
 
@@ -257,7 +239,7 @@ export function BundleBatchDialog({
                     <div
                       key={p.id}
                       className={`flex items-center justify-between gap-3 p-2 rounded border text-xs transition-colors ${
-                        isEmpty || isIncompatible
+                        isEmpty
                           ? "opacity-50 bg-muted/30"
                           : isChecked
                           ? "bg-primary/10 border-primary/40 font-medium"
@@ -266,13 +248,13 @@ export function BundleBatchDialog({
                     >
                       <label
                         className={`flex items-center gap-2 flex-1 select-none ${
-                          isEmpty || isIncompatible ? "cursor-not-allowed" : "cursor-pointer"
+                          isEmpty ? "cursor-not-allowed" : "cursor-pointer"
                         }`}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          disabled={isEmpty || isIncompatible}
+                          disabled={isEmpty}
                           onChange={() => handleTogglePool(p)}
                           className="size-3.5 accent-primary cursor-pointer disabled:cursor-not-allowed"
                         />
@@ -287,11 +269,6 @@ export function BundleBatchDialog({
                         <span className="text-[10px] text-muted-foreground font-mono">
                           (在池存活: {p.liveCount} 只)
                         </span>
-                        {isIncompatible && (
-                          <span className="text-[10px] text-muted-foreground/80 bg-muted px-1 py-0.2 rounded border text-center">
-                            规格不符
-                          </span>
-                        )}
                       </label>
 
                       {isChecked && selectedItem && (

@@ -29,16 +29,30 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
     });
     let idx = (Number(lastOrder?.code.slice(10)) || 0) + 1;
 
+    const allStores = await prisma.store.findMany({
+      select: { id: true, code: true, name: true },
+    });
+    const storeMap = new Map<string, { id: string; name: string }>();
+    for (const s of allStores) {
+      storeMap.set(s.code.toLowerCase(), s);
+      storeMap.set(s.code.toLowerCase().replace(/^st-/, ""), s);
+      storeMap.set(s.name, s);
+    }
+
     const ordersToCreate: any[] = [];
 
     for (const raw of rawOrders) {
       const defaultStore = raw.type === "CRAB_CARD" ? "蟹卡提货 (顺丰速运直发)" : getTenant().storeLabel;
+      const tag = raw.type !== "CRAB_CARD" ? raw.orderNo.match(/SO\d{8}-([A-Za-z0-9_-]+)-/)?.[1]?.toLowerCase() : null;
+      const matchedStore = (tag ? storeMap.get(tag) : undefined) || (raw.storeName ? storeMap.get(raw.storeName) : undefined);
+
       ordersToCreate.push({
         importId,
         code: `SO${dateStr}${String(idx++).padStart(3, "0")}`,
         orderNo: raw.orderNo,
         type: raw.type,
-        storeName: raw.storeName || defaultStore,
+        storeId: matchedStore?.id || null,
+        storeName: raw.storeName || matchedStore?.name || defaultStore,
         specModel: raw.specModel || null,
         deliveryDate: Invariants.normalizeDate(raw.deliveryDate),
         gender: raw.gender === "母" || raw.gender === "FEMALE" ? "FEMALE" : "MALE",

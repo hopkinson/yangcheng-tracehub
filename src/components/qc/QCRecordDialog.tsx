@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Camera, FileCheck, Loader2, AlertTriangle, Upload, X } from "lucide-react";
 import { createQCRecordAction } from "@/actions/qc";
 import { uploadFileAction } from "@/actions/upload";
+import { cn } from "@/lib/utils";
 
 export interface QCConfig {
   cat: string;
@@ -32,9 +33,13 @@ export interface QCConfig {
 export function QCRecordDialog({
   config,
   triggerLabel = "上传品控记录",
+  triggerClassName,
+  trigger,
 }: {
   config: QCConfig;
   triggerLabel?: string;
+  triggerClassName?: string;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -109,10 +114,14 @@ export function QCRecordDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-          <Camera className="size-3.5 text-primary" />
-          {triggerLabel}
-        </Button>
+        {trigger ? (
+          trigger
+        ) : (
+          <Button variant="outline" size="sm" className={cn("h-7 px-1.5 text-[11px] gap-1", triggerClassName)}>
+            <Camera className="size-3 text-primary shrink-0" />
+            <span className="truncate">{triggerLabel}</span>
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>

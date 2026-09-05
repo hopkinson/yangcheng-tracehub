@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { registerPoolLossAction } from "@/actions/pools";
 import { toast } from "sonner";
 import { AlertTriangle, ClipboardList, Waves, Lock, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface PoolLossDialogProps {
   pool: {
@@ -23,16 +24,10 @@ export interface PoolLossDialogProps {
   userId: string;
   disabled?: boolean;
   trigger?: React.ReactNode;
+  className?: string;
 }
 
-const PRESET_REASONS = [
-  "常规暂养自然损耗",
-  "运输脱水死亡",
-  "翻力脱壳残损",
-  "水温波动应急损耗",
-  "肢体残破残损",
-  "巡池死蟹捞除",
-];
+const PRESET_REASONS = ["常规暂养自然损耗", "运输应激脱水", "蜕壳残损"];
 
 export function PoolLossDialog({
   pool,
@@ -40,6 +35,7 @@ export function PoolLossDialog({
   userId,
   disabled = false,
   trigger,
+  className,
 }: PoolLossDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -157,11 +153,14 @@ export function PoolLossDialog({
             variant="outline"
             size="sm"
             disabled={disabled || isPoolEmpty}
-            className="h-7 px-1.5 text-[11px] flex items-center justify-center gap-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-500/10 border-rose-500/30 disabled:opacity-50"
+            className={cn(
+              "h-7 px-1.5 text-[11px] flex items-center justify-center gap-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-500/10 border-rose-500/30 disabled:opacity-50",
+              className
+            )}
             title={isPoolEmpty ? "当前池为空池，无在养存活大闸蟹" : "登记暂养期损耗与死亡死蟹"}
           >
             <ClipboardList className="size-3 text-rose-500 shrink-0" />
-            <span>盘点损耗</span>
+            <span className="truncate">盘点损耗</span>
           </Button>
         )}
       </DialogTrigger>

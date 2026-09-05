@@ -82,21 +82,6 @@ export default async function SortingPage() {
         </div>
         <div className="flex items-center flex-wrap gap-2">
           <SortMachineDialog />
-          <QCRecordDialog
-            config={{
-              cat: "SORT_CALIBRATE",
-              categoryLabel: "分拣校准",
-              defaultTitle: "分拣设备精度校验记录表",
-              formNoPreset: "YCGF-PZZX-202607",
-              refType: "MACHINE",
-              refId: machines[0]?.code || "FJ-01",
-              conclusions: [
-                "50g/150g/200g 标准砝码校验误差均 <= +-1.5g，准予开机",
-                "校验误差超限 (>+-3.0g)，需停机校正重新标定",
-              ],
-            }}
-            triggerLabel="登记精度校验 (202607)"
-          />
           <SortTaskDialog
             machines={machines.map((m: any) => ({
               id: m.id,
@@ -403,16 +388,49 @@ export default async function SortingPage() {
 
       {/* 12.4 品控留痕记录区 (校准与巡检台账) */}
       <Card className="border-border/80 shadow-xs">
-        <CardHeader className="py-3 px-4 border-b bg-muted/30 flex flex-row items-center justify-between">
+        <CardHeader className="py-2.5 px-4 border-b bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
-            <ClipboardCheck className="size-4 text-primary" />
-            <CardTitle className="text-sm font-semibold">
-              分拣设备精度校验与车间巡检留痕（共 {sortingQCs.length} 笔）
+            <ClipboardCheck className="size-4 text-primary shrink-0" />
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              分拣设备精度校验与车间巡检留痕
+              <span className="text-xs font-normal text-muted-foreground font-mono">
+                (共 {sortingQCs.length} 笔)
+              </span>
             </CardTitle>
           </div>
-          <span className="text-[11px] text-muted-foreground font-mono">
-            YCGF-PZZX-202607 / YCGF-PZZX-202608
-          </span>
+          <div className="flex items-center flex-wrap gap-2 shrink-0">
+            <QCRecordDialog
+              config={{
+                cat: "SORT_CALIBRATE",
+                categoryLabel: "分拣校准",
+                defaultTitle: "分拣设备精度校验记录表",
+                formNoPreset: "YCGF-PZZX-202607",
+                refType: "MACHINE",
+                refId: machines[0]?.code || "FJ-01",
+                conclusions: [
+                  "50g/150g/200g 标准砝码校验误差均 <= +-1.5g，准予开机",
+                  "校验误差超限 (>+-3.0g)，需停机校正重新标定",
+                ],
+              }}
+              triggerLabel="登记精度校验 (202607)"
+            />
+            <QCRecordDialog
+              config={{
+                cat: "SORT_INSPECT",
+                categoryLabel: "分拣巡检",
+                defaultTitle: "分拣品质与车间巡检记录表",
+                formNoPreset: "YCGF-PZZX-202608",
+                refType: "WORKSHOP",
+                refId: "FJ-WORKSHOP",
+                conclusions: [
+                  "分拣规格精准，落料无卡顿，品质抽检全部合格",
+                  "发现规格混入超标，已停机重新校验标定",
+                  "分拣破损率偏高，已通知班组检查落料斜槽",
+                ],
+              }}
+              triggerLabel="登记车间巡检 (202608)"
+            />
+          </div>
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">

@@ -143,4 +143,88 @@ SO20260921009\t山姆(上海店)\t母\t3.5两\t800\t2026-09-22`;
   console.log("  ✔ 用户报障场景回归测试通过\n");
 }
 
+// 6. 图二业务模板测试：发货时间 + 门店 + 门店编号(可选) + 规格单列(4.0公蟹) + 只数 -> 系统按 发货时间+门店编号+规格 编排
+{
+  console.log("▶ [Test 6] 图二业务模板测试 (单列规格 + 精准门店编号 + 规则确定性编单)");
+  const fig2Text = `发货时间\t门店\t门店编号\t规格\t只数
+20260904\t浦东山姆店\t1\t4.0公蟹\t300
+20260904\t浦东山姆店\t1\t5.0公蟹\t300
+20260904\t前滩山姆店\t3.5母蟹\t200`;
+
+  const parsed = Invariants.parseOrderImportText(fig2Text, "STORE");
+  assert.equal(parsed.length, 3, "表头应被过滤，正确解析 3 条门店要货明细");
+
+  // 第一条：浦东店(编号1) 4.0公蟹 300只 -> SO20260904-1-4.0公
+  assert.equal(parsed[0].orderNo, "SO20260904-1-4.0公");
+  assert.equal(parsed[0].storeName, "浦东山姆店");
+  assert.equal(parsed[0].deliveryDate, "2026-09-04");
+  assert.equal(parsed[0].gender, "MALE");
+  assert.equal(parsed[0].weightTier, "4.0两");
+  assert.equal(parsed[0].count, 300);
+
+  // 第二条：浦东店(编号1) 5.0公蟹 300只 -> SO20260904-1-5.0公
+  assert.equal(parsed[1].orderNo, "SO20260904-1-5.0公");
+  assert.equal(parsed[1].storeName, "浦东山姆店");
+  assert.equal(parsed[1].deliveryDate, "2026-09-04");
+  assert.equal(parsed[1].gender, "MALE");
+  assert.equal(parsed[1].weightTier, "5.0两");
+  assert.equal(parsed[1].count, 300);
+
+  // 第三条：前滩店无门店编号，使用门店简称 -> SO20260904-前滩-3.5母
+  assert.equal(parsed[2].orderNo, "SO20260904-前滩-3.5母");
+  assert.equal(parsed[2].storeName, "前滩山姆店");
+  assert.equal(parsed[2].deliveryDate, "2026-09-04");
+  assert.equal(parsed[2].gender, "FEMALE");
+  assert.equal(parsed[2].weightTier, "3.5两");
+  assert.equal(parsed[2].count, 200);
+
+  console.log("  ✔ 图二格式自适应与确定性订单号测试通过\n");
+}
+
+// 7. 用户最新截图《10月26日发货计划》真实矩阵交叉二维表还原测试
+{
+  console.log("▶ [Test 7] 真实业务场景：多门店×多规格矩阵式发货计划整表解析与自动编单");
+  const matrixText = `10月26日发货计划(单位:只)
+发货地点\t门店\t业务\t渠道\t2.5母\t3.5公\t3.0母\t4.0公\t3.5母\t4.5公\t整箱数量\t分货
+南宁山姆店\t6532\t陈建国\t山姆\t\t\t\t\t\t\t0\t苏州
+北京大兴店\t6519\t张东洋\t山姆\t160\t120\t140\t100\t60\t50\t630\t苏州
+上海浦东店\t4807\t马博文\t山姆\t\t\t70\t50\t\t\t120\t苏州`;
+
+  const parsed = Invariants.parseOrderImportText(matrixText, "STORE");
+
+  // 南宁店数量为 0，不生成订单；北京大兴店 6 个规格生成 6 笔；上海浦东店 2 个规格生成 2 笔
+  assert.equal(parsed.length, 8, "应准确拆解为 8 笔单规格发货订单");
+
+  // 校验日期自动从标题识别为当前年份-10-26
+  const expectedDate = `${new Date().getFullYear()}-10-26`;
+  const expectedDateNum = `${new Date().getFullYear()}1026`;
+
+  // 校验上海浦东店 (编号 4807)
+  const pudongOrders = parsed.filter(o => o.storeName === "上海浦东店");
+  assert.equal(pudongOrders.length, 2);
+
+  // 3.0母 70 只
+  const pd30F = pudongOrders.find(o => o.gender === "FEMALE" && o.weightTier === "3.0两");
+  assert.ok(pd30F, "上海浦东店应包含 3.0两母蟹订单");
+  assert.equal(pd30F.count, 70);
+  assert.equal(pd30F.orderNo, `SO${expectedDateNum}-4807-3.0母`, "订单号格式严格为 SO+发货日期+门店编号+规格");
+  assert.equal(pd30F.deliveryDate, expectedDate);
+
+  // 4.0公 50 只
+  const pd40M = pudongOrders.find(o => o.gender === "MALE" && o.weightTier === "4.0两");
+  assert.ok(pd40M, "上海浦东店应包含 4.0两公蟹订单");
+  assert.equal(pd40M.count, 50);
+  assert.equal(pd40M.orderNo, `SO${expectedDateNum}-4807-4.0公`);
+
+  // 校验北京大兴店 (编号 6519)
+  const daxingOrders = parsed.filter(o => o.storeName === "北京大兴店");
+  assert.equal(daxingOrders.length, 6);
+  assert.equal(daxingOrders.reduce((sum, o) => sum + o.count, 0), 630, "北京大兴店总只数应准确对齐表格合计 630 只");
+
+  assert.ok(daxingOrders.some(o => o.orderNo === `SO${expectedDateNum}-6519-2.5母` && o.count === 160));
+  assert.ok(daxingOrders.some(o => o.orderNo === `SO${expectedDateNum}-6519-4.5公` && o.count === 50));
+
+  console.log("  ✔ 矩阵式发货计划二维表整表自动拆单与确定性订单号测试通过\n");
+}
+
 console.log("🎉 订单导入智能拆分与日期防爆单元测试全部 100% 通过！");
