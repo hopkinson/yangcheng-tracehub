@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -48,6 +49,7 @@ export function MultiSpecIntakeDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   const [selectedFarmerId, setSelectedFarmerId] = useState(farmers[0]?.id || "");
   const selectedFarmer = farmers.find((f) => f.id === selectedFarmerId);
@@ -133,42 +135,55 @@ export function MultiSpecIntakeDialog({
       return;
     }
 
-    // 前端严格校验：所有明细行必须选择空池，且同单不得重复选池
+    if (new Set(items.map((it) => it.poolId)).size !== items.length) {
+      toast.error("码单明细分配冲突：同一码单每行明细必须分配到不同的空暂养池！");
+      return;
+    }
+
+    // 前端严格校验：所有明细行必须选择空池
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      const p = pools.find((x) => x.id === it.poolId);
-      if (p && p.liveCount > 0) {
-        toast.error(`暂养池隔离拦截：${p.name || p.code} 当前已有在养存量（${p.liveCount} 只），必须选择空池！`);
+      if (!it.poolId) {
+        toast.error(`第 ${i + 1} 行明细未选择暂养池，请选择空池`);
         return;
       }
-      for (let j = i + 1; j < items.length; j++) {
-        if (items[j].poolId === it.poolId) {
-          toast.error(`码单明细分配冲突：同一码单每行明细必须分配到不同的空暂养池（第 ${i + 1} 行与第 ${j + 1} 行重复）！`);
-          return;
-        }
+      if (!it.inPoolCount || it.inPoolCount <= 0) {
+        toast.error(`第 ${i + 1} 行入池数量必须大于 0`);
+        return;
+      }
+      const p = pools.find((x) => x.id === it.poolId);
+      if (!p) {
+        toast.error(`第 ${i + 1} 行所选暂养池无效`);
+        return;
+      }
+      if (p.liveCount > 0) {
+        toast.error(`暂养池隔离拦截：${p.name || p.code} 当前已有在养存量（${p.liveCount} 只），必须选择空池！`);
+        return;
       }
     }
 
     startTransition(async () => {
-      try {
-        const res = await createMultiSpecBatchAction({
-          farmerId: selectedFarmerId,
-          enclosureId: selectedEnclosureId,
-          formNo,
-          temp: parseFloat(temp) || 18.5,
-          humidity: parseFloat(humidity) || 85.0,
-          escort,
-          slipUrl: slipUrl || undefined,
-          slipName: `${formNo}_码单原件.jpg`,
-          items,
-          createdById: userId,
-        });
+      const res = await createMultiSpecBatchAction({
+        farmerId: selectedFarmerId,
+        enclosureId: selectedEnclosureId,
+        formNo,
+        temp: parseFloat(temp) || 18.5,
+        humidity: parseFloat(humidity) || 85.0,
+        escort,
+        slipUrl: slipUrl || undefined,
+        slipName: `${formNo}_码单原件.jpg`,
+        items,
+        createdById: userId,
+      });
 
-        toast.success(`原料批次 ${res.code} 创建成功（一码单 ${items.length} 规格共 ${totalCount} 只入池）`);
-        setOpen(false);
-      } catch (err: any) {
-        toast.error(err.message || "创建批次失败");
+      if (!res.success) {
+        toast.error(res.error || "创建批次失败");
+        return;
       }
+
+      toast.success(`原料批次 ${res.code} 创建成功（一码单 ${items.length} 规格共 ${totalCount} 只入池）`);
+      setOpen(false);
+      router.refresh();
     });
   };
 

@@ -83,12 +83,14 @@ export async function createBatchAction(data: {
     }
 
     const dateStr = getBeijingDateStr();
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const countToday = await tx.batch.count({
-      where: { createdAt: { gte: todayStart } },
+    const prefix = `PC-${dateStr}-`;
+    const latest = await tx.batch.findFirst({
+      where: { code: { startsWith: prefix } },
+      orderBy: { code: "desc" },
+      select: { code: true },
     });
-    const batchCode = `PC-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
+    const nextSeq = latest ? (parseInt(latest.code.slice(prefix.length), 10) || 0) + 1 : 1;
+    const batchCode = `${prefix}${String(nextSeq).padStart(3, "0")}`;
 
     const batch = await tx.batch.create({
       data: {
@@ -205,9 +207,7 @@ export async function createMultiSpecBatchAction(data: {
             batchItems: { where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
           },
         });
-        const directLive = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
-        const itemLive = pool.batchItems.reduce((sum, bi) => sum + (bi.inPoolCount - bi.outPoolCount - bi.lossCount), 0);
-        const activeInPool = pool.batchItems.length > 0 ? itemLive : directLive;
+        const activeInPool = Invariants.calculatePoolLiveCount(pool);
         const poolCheck = Invariants.checkPoolSpec(
           { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
           { gender: it.gender, weightTier: it.weightTier }
@@ -229,8 +229,13 @@ export async function createMultiSpecBatchAction(data: {
 
       const dateStr = getBeijingDateStr();
       const prefix = `YL${dateStr}`;
-      const count = await tx.batch.count({ where: { code: { startsWith: prefix } } });
-      const batchCode = `${prefix}${String(count + 1).padStart(2, "0")}`;
+      const latest = await tx.batch.findFirst({
+        where: { code: { startsWith: prefix } },
+        orderBy: { code: "desc" },
+        select: { code: true },
+      });
+      const nextSeq = latest ? (parseInt(latest.code.slice(prefix.length), 10) || 0) + 1 : 1;
+      const batchCode = `${prefix}${String(nextSeq).padStart(2, "0")}`;
 
       const firstItem = data.items[0];
 
