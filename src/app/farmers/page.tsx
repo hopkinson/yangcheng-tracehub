@@ -8,6 +8,7 @@ import { FarmerDialog, FarmerDetailDialog, type FarmerWithStats } from "@/compon
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Scale, MapPin } from "lucide-react";
 import { StaggerContainer, FadeIn, AnimatedNumber } from "@/components/motion/MotionWrapper";
+import { getBeijingYear } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +52,10 @@ export default async function FarmersPage({
 
   const farmers: FarmerWithStats[] = rawFarmers.map((f) => {
     const currentYearBatches = f.batches.filter(
-      (b) => new Date(b.inPoolTime).getFullYear() === f.year
+      (b) => getBeijingYear(b.inPoolTime) === f.year
     );
     const currentYearTags = f.tagClaims.filter(
-      (t) => new Date(t.claimDate).getFullYear() === f.year
+      (t) => getBeijingYear(t.claimDate) === f.year
     );
 
     const cumulativeInPool = currentYearBatches.reduce((sum, b) => sum + b.inPoolCount, 0);

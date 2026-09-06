@@ -66,9 +66,10 @@ export async function createBatchAction(data: {
     const directLive = pool.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
     const itemLive = pool.batchItems.reduce((sum, bi) => sum + (bi.inPoolCount - bi.outPoolCount - bi.lossCount), 0);
     const activeInPool = pool.batchItems.length > 0 ? itemLive : directLive;
+    const normWeightTier = Invariants.normalizeWeightTier(data.weightTier);
     const poolCheck = Invariants.checkPoolSpec(
       { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
-      { gender: data.gender, weightTier: data.weightTier }
+      { gender: data.gender, weightTier: normWeightTier }
     );
 
     if (!poolCheck.valid) {
@@ -78,7 +79,7 @@ export async function createBatchAction(data: {
     if (poolCheck.requiresBinding) {
       await tx.holdingPool.update({
         where: { id: pool.id },
-        data: { currentGender: data.gender, currentWeightTier: data.weightTier },
+        data: { currentGender: data.gender, currentWeightTier: normWeightTier },
       });
     }
 
@@ -99,7 +100,7 @@ export async function createBatchAction(data: {
         enclosureId: validEnclosure.id,
         poolId: data.poolId,
         gender: data.gender,
-        weightTier: data.weightTier,
+        weightTier: normWeightTier,
         inPoolCount: data.inPoolCount,
         createdById: data.createdById,
         reportUrl: data.reportUrl || null,
@@ -114,7 +115,7 @@ export async function createBatchAction(data: {
             {
               poolId: data.poolId,
               gender: data.gender,
-              weightTier: data.weightTier,
+              weightTier: normWeightTier,
               weight: Number((data.inPoolCount * 0.3).toFixed(1)),
               inPoolCount: data.inPoolCount,
             },
@@ -208,9 +209,10 @@ export async function createMultiSpecBatchAction(data: {
           },
         });
         const activeInPool = Invariants.calculatePoolLiveCount(pool);
+        const itNormWeightTier = Invariants.normalizeWeightTier(it.weightTier);
         const poolCheck = Invariants.checkPoolSpec(
           { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
-          { gender: it.gender, weightTier: it.weightTier }
+          { gender: it.gender, weightTier: itNormWeightTier }
         );
         if (!poolCheck.valid) {
           throw new Error(`${pool.code} ${pool.name} ${poolCheck.reason}`);
@@ -218,7 +220,7 @@ export async function createMultiSpecBatchAction(data: {
 
         await tx.holdingPool.update({
           where: { id: pool.id },
-          data: { currentGender: it.gender, currentWeightTier: it.weightTier },
+          data: { currentGender: it.gender, currentWeightTier: itNormWeightTier },
         });
       }
 
@@ -234,6 +236,7 @@ export async function createMultiSpecBatchAction(data: {
       const batchCode = `${prefix}${String(count + 1).padStart(2, "0")}`;
 
       const firstItem = data.items[0];
+      const firstItemNormTier = Invariants.normalizeWeightTier(firstItem?.weightTier);
 
       const createdBatch = await tx.batch.create({
         data: {
@@ -242,7 +245,7 @@ export async function createMultiSpecBatchAction(data: {
           enclosureId,
           poolId: firstItem?.poolId || "",
           gender: firstItem?.gender || "MALE",
-          weightTier: firstItem?.weightTier || "4.0两",
+          weightTier: firstItemNormTier,
           formNo: data.formNo || "YCGF-PZZX-202603",
           temp: data.temp || 18.5,
           humidity: data.humidity || 85.0,
@@ -263,7 +266,7 @@ export async function createMultiSpecBatchAction(data: {
             create: data.items.map((it) => ({
               poolId: it.poolId,
               gender: it.gender,
-              weightTier: it.weightTier,
+              weightTier: Invariants.normalizeWeightTier(it.weightTier),
               weight: it.weight,
               inPoolCount: it.inPoolCount,
             })),

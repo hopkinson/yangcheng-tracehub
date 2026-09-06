@@ -33,12 +33,11 @@ export function SettleTagClaimDialog({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const remaining = Math.max(0, claim.claimCount - claim.boundCount);
-
   const form = useForm<SettleTagClaimFormValues>({
     resolver: zodResolver(settleTagClaimFormSchema),
     defaultValues: {
-      returnedCount: claim.returnedCount || (claim.isBalanced ? 0 : remaining),
+      boundCount: claim.boundCount,
+      returnedCount: claim.returnedCount,
       returnReason: claim.returnReason || "",
       scrappedCount: claim.scrappedCount || 0,
       scrapReason: claim.scrapReason || "",
@@ -48,17 +47,19 @@ export function SettleTagClaimDialog({
   useEffect(() => {
     if (open) {
       form.reset({
-        returnedCount: claim.returnedCount || (claim.isBalanced ? 0 : remaining),
+        boundCount: claim.boundCount,
+        returnedCount: claim.returnedCount,
         returnReason: claim.returnReason || "",
         scrappedCount: claim.scrappedCount || 0,
         scrapReason: claim.scrapReason || "",
       });
     }
-  }, [open, claim, remaining, form]);
+  }, [open, claim, form]);
 
+  const boundVal = Number(form.watch("boundCount")) || 0;
   const returnedVal = Number(form.watch("returnedCount")) || 0;
   const scrappedVal = Number(form.watch("scrappedCount")) || 0;
-  const totalAccounted = claim.boundCount + returnedVal + scrappedVal;
+  const totalAccounted = boundVal + returnedVal + scrappedVal;
   const isBalanced = totalAccounted === claim.claimCount;
   const diff = claim.claimCount - totalAccounted;
 
@@ -72,10 +73,10 @@ export function SettleTagClaimDialog({
     try {
       await settleDailyTagClaimAction({
         tagClaimId: claim.id,
-        boundCount: claim.boundCount,
-        returnedCount: Number(data.returnedCount),
+        boundCount: data.boundCount,
+        returnedCount: data.returnedCount,
         returnReason: data.returnReason,
-        scrappedCount: Number(data.scrappedCount),
+        scrappedCount: data.scrappedCount,
         scrapReason: data.scrapReason,
         operatorId: userId,
       });
@@ -113,7 +114,7 @@ export function SettleTagClaimDialog({
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">出库已绑扣数:</span>
-            <span>{claim.boundCount} 只</span>
+            <span>{boundVal} 只</span>
           </div>
           <div className="flex justify-between border-t pt-1">
             <span className="text-muted-foreground">当前核销合计:</span>
@@ -125,7 +126,7 @@ export function SettleTagClaimDialog({
             {isBalanced ? (
               <span className="inline-flex items-center text-emerald-600 font-sans font-medium text-xs">
                 <CheckCircle2 className="size-3.5 mr-1" />
-                数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {claim.boundCount} + 退回 {returnedVal} + 作废 {scrappedVal})
+                数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal} + 退回 {returnedVal} + 作废 {scrappedVal})
               </span>
             ) : (
               <span className="inline-flex items-center text-amber-600 font-sans font-medium text-xs">
@@ -138,6 +139,25 @@ export function SettleTagClaimDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="boundCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>出库已绑扣数 (只)</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="0" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex flex-col justify-end text-[11px] text-muted-foreground pb-2">
+                <span>出库审批自动核销归集，亦支持仓管员根据实发修正</span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}

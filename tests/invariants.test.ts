@@ -336,5 +336,58 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   console.log("  ✔ 捆扎损耗计算与 5% 告警红线测试通过\n");
 }
 
-console.log("🎉 全部 11 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
+// 12. 捆扎批次创建分拣任务余量卡控 (PRD V2.1)
+{
+  console.log("▶ [Test 12] 捆扎批次创建分拣称重任务规格余量卡控");
+  // 12.1 正常分拣建单
+  const validSortTask = Invariants.checkSortTaskIntake({
+    bundleLineCount: 315,
+    alreadySortedCount: 0,
+    inputCount: 200,
+    bundleStatus: "COMPLETED",
+    bundleCode: "KZD2026090601",
+    spec: "母蟹 3.0两",
+  });
+  assert.equal(validSortTask.valid, true);
+  assert.equal(validSortTask.availableCount, 315);
+  assert.equal(validSortTask.remaining, 115);
+
+  // 12.2 全部建单分拣
+  const fullSortTask = Invariants.checkSortTaskIntake({
+    bundleLineCount: 315,
+    alreadySortedCount: 200,
+    inputCount: 115,
+    bundleStatus: "COMPLETED",
+    bundleCode: "KZD2026090601",
+    spec: "母蟹 3.0两",
+  });
+  assert.equal(fullSortTask.valid, true);
+  assert.equal(fullSortTask.remaining, 0);
+
+  // 12.3 超额建单拦截
+  const overSortTask = Invariants.checkSortTaskIntake({
+    bundleLineCount: 315,
+    alreadySortedCount: 315,
+    inputCount: 10,
+    bundleStatus: "COMPLETED",
+    bundleCode: "KZD2026090601",
+    spec: "母蟹 3.0两",
+  });
+  assert.equal(overSortTask.valid, false, "已全部分拣建单的规格再次建单必须被拦截");
+  assert.equal(overSortTask.availableCount, 0);
+
+  // 12.4 未完成捆扎批次拦截
+  const bundlingTask = Invariants.checkSortTaskIntake({
+    bundleLineCount: 315,
+    alreadySortedCount: 0,
+    inputCount: 100,
+    bundleStatus: "BUNDLING",
+    bundleCode: "KZD2026090602",
+  });
+  assert.equal(bundlingTask.valid, false, "捆扎中的批次禁止提前分拣建单");
+
+  console.log("  ✔ 捆扎批次创建分拣任务余量卡控测试通过\n");
+}
+
+console.log("🎉 全部 12 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
 

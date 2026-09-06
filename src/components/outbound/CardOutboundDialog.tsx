@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShoppingBag, Loader2, AlertTriangle } from "lucide-react";
 import { createCardUnifiedOutboundAction } from "@/actions/outbound";
+import { Invariants } from "@/lib/invariants";
 import {
   SpecColdBatchAllocation,
   resolveDemandBatchMap,
@@ -75,24 +76,27 @@ export function CardOutboundDialog({
     setSelectedBatchMap((prev) => ({ ...prev, [specKey]: batchId }));
   };
 
-  const getSpecAvailable = (gender: string, weightTier: string) => {
-    const stock = specStocks.find((s) => s.gender === gender && s.weightTier === weightTier);
-    return stock ? stock.available : 0;
-  };
+  const stockMap = useMemo(
+    () => new Map(specStocks.map((s) => [`${s.gender}_${Invariants.normalizeWeightTier(s.weightTier)}`, s.available])),
+    [specStocks]
+  );
+  const getSpecAvailable = (gender: string, weightTier: string) =>
+    stockMap.get(`${gender}_${Invariants.normalizeWeightTier(weightTier)}`) ?? 0;
 
   const selectedOrders = pendingCardOrders.filter((o) => selectedOrderIds.includes(o.id));
   const totalCrabs = selectedOrders.reduce((acc, cur) => acc + cur.count, 0);
 
-  // 核心变更：先由已选发货订单动态聚合出所需的规格需求清单
+  // 核心变更：先由已选发货订单动态聚合出所需的规格需求清单（规格自动标准化归一合并）
   const specDemands: SpecDemand[] = useMemo(() => {
     const map = new Map<string, SpecDemand>();
     for (const ord of selectedOrders) {
-      const key = `${ord.gender}_${ord.weightTier}`;
+      const normTier = Invariants.normalizeWeightTier(ord.weightTier);
+      const key = `${ord.gender}_${normTier}`;
       const existing = map.get(key);
       if (existing) {
         existing.count += ord.count;
       } else {
-        map.set(key, { gender: ord.gender, weightTier: ord.weightTier, count: ord.count });
+        map.set(key, { gender: ord.gender, weightTier: normTier, count: ord.count });
       }
     }
     return Array.from(map.values()).sort((a, b) =>

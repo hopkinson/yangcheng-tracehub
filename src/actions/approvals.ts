@@ -193,24 +193,115 @@ export async function approveOutboundOrderAction(data: {
         }
       }
 
-      // 联动绑扣核销：自动归集扣减该养殖户当日已审批的蟹扣领用
-      if (order.batch) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayClaims = await tx.tagClaim.findMany({
+      // 联动绑扣核销：按出库明细穿透养殖户与蟹扣批次，自动归集核销已审批蟹扣
+      // 1. 读取可能随出库申请留痕的 specBatchMap（用于精准定位规格与冷库批次）
+      let specBatchMap: Record<string, string> = {};
+      try {
+        const audit = await tx.auditLog.findFirst({
+          where: { entityId: order.id, action: { in: ["STORE_OUTBOUND_REQUEST", "CARD_OUTBOUND_REQUEST"] } },
+          orderBy: { createdAt: "desc" },
+        });
+        specBatchMap = JSON.parse(audit?.details || "{}").specBatchMap || {};
+      } catch {}
+
+      // 2. 统计各养殖户在本次出库中的只数及优先核销的蟹扣批次
+      interface FarmerDeduction {
+        farmerId: string;
+        count: number;
+        preferredClaimIds: Set<string>;
+      }
+      const deductionsByFarmer = new Map<string, FarmerDeduction>();
+      const specCache = new Map<string, { farmerId: string; tagClaimId?: string }>();
+
+      if (order.lines && order.lines.length > 0) {
+        for (const line of order.lines) {
+          const normTier = Invariants.normalizeWeightTier(line.weightTier);
+          const specKey = `${line.gender}_${normTier}`;
+
+          let info = specCache.get(specKey);
+          if (!info) {
+            const coldLogId = specBatchMap[specKey] || (order.lines.length === 1 ? order.coldLogId : null);
+            if (coldLogId) {
+              const coldLog = await tx.coldLog.findUnique({ where: { id: coldLogId } });
+              if (coldLog?.refId) {
+                const task = await tx.sortTask.findFirst({
+                  where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
+                  include: { bundleBatch: { include: { tagClaim: true } } },
+                });
+                const bundle = task?.bundleBatch || await tx.bundleBatch.findFirst({
+                  where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
+                  include: { tagClaim: true },
+                });
+                if (bundle?.tagClaim) {
+                  info = { farmerId: bundle.tagClaim.farmerId, tagClaimId: bundle.tagClaim.id };
+                }
+              }
+            }
+
+            if (!info) {
+              const task = await tx.sortTask.findFirst({
+                where: { status: "COMPLETED", gender: line.gender, weightTier: { in: [line.weightTier, normTier] } },
+                orderBy: { doneAt: "desc" },
+                include: { bundleBatch: { include: { tagClaim: true } } },
+              });
+              if (task?.bundleBatch?.tagClaim) {
+                info = { farmerId: task.bundleBatch.tagClaim.farmerId, tagClaimId: task.bundleBatch.tagClaim.id };
+              }
+            }
+
+            if (!info) {
+              const item = await tx.batchItem.findFirst({
+                where: { gender: line.gender, weightTier: { in: [line.weightTier, normTier] } },
+                orderBy: { createdAt: "desc" },
+                include: { batch: true },
+              });
+              if (item?.batch?.farmerId) info = { farmerId: item.batch.farmerId };
+            }
+
+            if (!info && order.batch?.farmerId) {
+              info = { farmerId: order.batch.farmerId };
+            }
+
+            if (info) specCache.set(specKey, info);
+          }
+
+          if (info) {
+            const d = deductionsByFarmer.get(info.farmerId) || { farmerId: info.farmerId, count: 0, preferredClaimIds: new Set<string>() };
+            d.count += line.count;
+            if (info.tagClaimId) d.preferredClaimIds.add(info.tagClaimId);
+            deductionsByFarmer.set(info.farmerId, d);
+          }
+        }
+      }
+
+      // 若无明细行（单票旧模式），兜底使用主批次养殖户
+      if (deductionsByFarmer.size === 0 && order.batch?.farmerId) {
+        deductionsByFarmer.set(order.batch.farmerId, {
+          farmerId: order.batch.farmerId,
+          count: order.outboundCount,
+          preferredClaimIds: new Set<string>(),
+        });
+      }
+
+      // 3. 对每个养殖户执行蟹扣扣减轧平
+      for (const { farmerId, count: farmerCount, preferredClaimIds } of deductionsByFarmer.values()) {
+        const claims = await tx.tagClaim.findMany({
           where: {
-            farmerId: order.batch.farmerId,
+            farmerId,
             status: "APPROVED",
           },
           orderBy: { claimDate: "asc" },
         });
 
-        let remainingToBind = order.outboundCount;
-        for (const claim of todayClaims) {
-          if (remainingToBind <= 0) break;
+        // 优先核销实际捆扎时选中的蟹扣批次
+        const sortedClaims = claims.sort((a, b) => +preferredClaimIds.has(b.id) - +preferredClaimIds.has(a.id));
+
+        let remaining = farmerCount;
+        for (const claim of sortedClaims) {
+          if (remaining <= 0) break;
           const availableInClaim = claim.claimCount - claim.boundCount - claim.returnedCount - claim.scrappedCount;
           if (availableInClaim > 0) {
-            const delta = Math.min(remainingToBind, availableInClaim);
+            const delta = Math.min(remaining, availableInClaim);
             const newBound = claim.boundCount + delta;
             const isBalanced = claim.claimCount === (newBound + claim.returnedCount + claim.scrappedCount);
             await tx.tagClaim.update({
@@ -220,28 +311,8 @@ export async function approveOutboundOrderAction(data: {
                 isBalanced,
               },
             });
-            remainingToBind -= delta;
+            remaining -= delta;
           }
-        }
-
-        // 检查池子是否全部清空，若清空则释放规格锁定
-        const activeBatchesInPool = await tx.batch.findMany({
-          where: {
-            poolId: order.batch.poolId,
-            status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] },
-          },
-        });
-
-        const poolRemaining = activeBatchesInPool.reduce(
-          (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
-          0
-        );
-
-        if (poolRemaining === 0) {
-          await tx.holdingPool.update({
-            where: { id: order.batch.poolId },
-            data: { currentGender: null, currentWeightTier: null },
-          });
         }
       }
 

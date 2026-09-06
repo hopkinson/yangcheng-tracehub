@@ -329,7 +329,7 @@ export default async function ApprovalsPage({
                         <div className="flex items-center gap-3 self-end sm:self-auto shrink-0">
                           <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
                             <Clock className="size-3" />
-                            <span>{formatDate(item.createdAt)} {formatTime(item.createdAt)}</span>
+                            <span>{formatDateTime(item.createdAt)}</span>
                           </div>
 
                           <div className="flex items-center gap-1.5">
@@ -463,7 +463,7 @@ export default async function ApprovalsPage({
                             <TableCell className="align-middle">
                               <div className="flex flex-col text-[11px] font-mono text-muted-foreground">
                                 <span className="text-foreground font-medium">{row.approver}</span>
-                                <span>{formatDate(row.approvedAt)} {formatTime(row.approvedAt)}</span>
+                                <span>{formatDateTime(row.approvedAt)}</span>
                               </div>
                             </TableCell>
 

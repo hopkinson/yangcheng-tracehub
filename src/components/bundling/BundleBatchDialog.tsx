@@ -24,6 +24,7 @@ export interface PoolOption {
   currentGender: string | null;
   currentWeightTier: string | null;
   liveCount: number;
+  farmerName?: string | null;
 }
 
 export interface TagClaimOption {
@@ -54,7 +55,7 @@ export function BundleBatchDialog({
 
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedTagId, setSelectedTagId] = useState(tagClaims[0]?.id || "");
-  const [ropeBatch, setRopeBatch] = useState("XS2026090101");
+  const [ropeBatch, setRopeBatch] = useState("");
 
   // 多选池子
   const [selectedPools, setSelectedPools] = useState<
@@ -267,7 +268,7 @@ export function BundleBatchDialog({
                           </span>
                         )}
                         <span className="text-[10px] text-muted-foreground font-mono">
-                          (在池存活: {p.liveCount} 只)
+                          (在池存活: {p.liveCount} 只{p.farmerName ? ` · 户: ${p.farmerName}` : ""})
                         </span>
                       </label>
 

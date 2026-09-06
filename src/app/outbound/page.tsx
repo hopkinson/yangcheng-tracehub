@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Invariants } from "@/lib/invariants";
 import { getCurrentUser } from "@/lib/auth";
 import { getTenant } from "@/config/tenant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,40 +113,10 @@ export default async function OutboundPage({
 
   const sortTaskMap = new Map(sortTasks.map((t: any) => [t.code, t]));
 
-  // 动态聚合规格：提取分拣任务中的规格，不足4项用基准规格补足四列栅格
-  const DEFAULT_SPECS = [
-    { gender: "MALE", weightTier: "4.0两", label: "4.0两 公蟹" },
-    { gender: "MALE", weightTier: "3.5两", label: "3.5两 公蟹" },
-    { gender: "FEMALE", weightTier: "3.5两", label: "3.5两 母蟹" },
-    { gender: "FEMALE", weightTier: "3.0两", label: "3.0两 母蟹" },
-  ];
-
-  const foundKeys = new Set(sortTasks.map((t: any) => `${t.gender}_${t.weightTier}`));
-  const foundSpecs = Array.from(foundKeys).map((k) => {
-    const [gender, weightTier] = k.split("_");
-    return { gender, weightTier, label: `${weightTier} ${gender === "FEMALE" ? "母蟹" : "公蟹"}` };
-  });
-
-  const activeSpecs = [
-    ...foundSpecs,
-    ...DEFAULT_SPECS.filter((d) => !foundKeys.has(`${d.gender}_${d.weightTier}`)),
-  ].slice(0, Math.max(4, foundSpecs.length))
-   .sort((a, b) => (a.gender !== b.gender ? (a.gender === "MALE" ? -1 : 1) : parseFloat(b.weightTier) - parseFloat(a.weightTier)));
-
-  // 计算冷库各规格可出库存：可出数量 = 分拣合格数累计 − 出库单已占用
-  const specStocks = activeSpecs.map((spec) => {
-    const qualified = sortTasks
-      .filter((t: any) => t.gender === spec.gender && t.weightTier === spec.weightTier)
-      .reduce((a: number, t: any) => a + t.qualifiedCount, 0);
-
-    const used = outboundLines
-      .filter((l: any) => l.gender === spec.gender && l.weightTier === spec.weightTier)
-      .reduce((a: number, l: any) => a + l.count, 0);
-
-    const available = Math.max(0, qualified - used);
-    const usagePct = qualified > 0 ? Math.min(100, Math.round((used / qualified) * 100)) : 0;
-
-    return { ...spec, qualified, used, available, usagePct };
+  // 动态聚合规格：提取分拣任务中的规格，同等规格（如 3两 与 3.0两）彻底合并归一化，不足4项用基准规格补足四列栅格
+  const specStocks = Invariants.aggregateSpecStocks({
+    sortTasks,
+    outboundLines,
   });
 
   const specStockMap = new Map(specStocks.map((s) => [`${s.gender}_${s.weightTier}`, s]));
@@ -156,7 +127,8 @@ export default async function OutboundPage({
     const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId || t.code === log.refId);
     const bundle = !task ? (bundleBatchMap.get(log.refId) || bundleBatches.find((b: any) => b.id === log.refId || b.code === log.refId)) : null;
     const gender = task?.gender || bundle?.lines?.[0]?.gender || "MALE";
-    const weightTier = task?.weightTier || bundle?.lines?.[0]?.weightTier || "4.0两";
+    const rawWeightTier = task?.weightTier || bundle?.lines?.[0]?.weightTier || "4.0两";
+    const weightTier = Invariants.normalizeWeightTier(rawWeightTier);
     const specLabel = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}`;
     const stock = specStockMap.get(`${gender}_${weightTier}`);
     const availableCount = stock ? Math.min(log.count, stock.available) : log.count;

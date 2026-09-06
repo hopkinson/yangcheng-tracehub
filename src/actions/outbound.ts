@@ -7,33 +7,30 @@ import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
 
 // 辅助：获取冷库某规格实时可用库存 (基于保鲜预冷入库 ColdLog)
-async function getColdStorageStock(gender: string, weightTier: string) {
-  // 1. 查找属于该规格的分拣任务编号
+async function getColdStorageStock(gender: string, rawWeightTier: string) {
+  const tiers = [rawWeightTier, Invariants.normalizeWeightTier(rawWeightTier)];
+
   const tasks = await prisma.sortTask.findMany({
-    where: { gender, weightTier },
+    where: { gender, weightTier: { in: tiers } },
     select: { code: true },
   });
-  const taskRefs = tasks.map((t) => t.code);
 
-  // 2. 统计保鲜预冷库该规格的实际入库总量
-  const coldAgg = await prisma.coldLog.aggregate({
-    where: {
-      type: "INTAKE",
-      refId: { in: taskRefs },
-    },
-    _sum: { count: true },
-  });
+  const [coldAgg, outboundAgg] = await Promise.all([
+    prisma.coldLog.aggregate({
+      where: { type: "INTAKE", refId: { in: tasks.map((t) => t.code) } },
+      _sum: { count: true },
+    }),
+    prisma.outboundLine.aggregate({
+      where: {
+        gender,
+        weightTier: { in: tiers },
+        outboundOrder: { status: { not: "REJECTED" } },
+      },
+      _sum: { count: true },
+    }),
+  ]);
+
   const totalStored = coldAgg._sum.count || 0;
-
-  // 3. 出库单已占用累计 (排除已驳回)
-  const outboundAgg = await prisma.outboundLine.aggregate({
-    where: {
-      gender,
-      weightTier,
-      outboundOrder: { status: { not: "REJECTED" } },
-    },
-    _sum: { count: true },
-  });
   const totalUsed = outboundAgg._sum.count || 0;
 
   return {
@@ -61,9 +58,13 @@ async function resolveBatchFromColdLog(
 
   const findBatchBySpec = async (farmerId?: string, gender?: string, weightTier?: string) => {
     if (!gender || !weightTier) return null;
+    const tiers = [weightTier, Invariants.normalizeWeightTier(weightTier)];
     const filter = {
       ...(farmerId ? { farmerId } : {}),
-      OR: [{ gender, weightTier }, { items: { some: { gender, weightTier } } }],
+      OR: [
+        { gender, weightTier: { in: tiers } },
+        { items: { some: { gender, weightTier: { in: tiers } } } },
+      ],
     };
     // 优先在养/部分出库批次，次选已全量出池的完结批次 (COMPLETED)
     return (
@@ -142,6 +143,11 @@ async function resolveBatchFromColdLog(
   throw new Error("系统内未找到任何养殖批次，请先创建养殖批次以保障供应链履约溯源闭环");
 }
 
+function findOrderForColdLog(orders: any[], coldLogId?: string | null, map?: Record<string, string>) {
+  if (!coldLogId || !map) return orders[0];
+  return orders.find((o) => map[`${o.gender}_${Invariants.normalizeWeightTier(o.weightTier)}`] === coldLogId) || orders[0];
+}
+
 /**
  * 门店订单出库申请 (合单)
  */
@@ -170,13 +176,14 @@ export async function createStoreOutboundAction(data: {
       throw new Error("请至少选择一个待发货的门店订单");
     }
 
-    // 聚合各规格数量校验库存
+    // 聚合各规格数量校验库存 (规格自动标准化合并，如 3两 统一为 3.0两)
     const specDemandMap: Record<string, { gender: string; weightTier: string; count: number }> = {};
     let totalCrabCount = 0;
 
     for (const ord of orders) {
-      const key = `${ord.gender}_${ord.weightTier}`;
-      if (!specDemandMap[key]) specDemandMap[key] = { gender: ord.gender, weightTier: ord.weightTier, count: 0 };
+      const normTier = Invariants.normalizeWeightTier(ord.weightTier);
+      const key = `${ord.gender}_${normTier}`;
+      if (!specDemandMap[key]) specDemandMap[key] = { gender: ord.gender, weightTier: normTier, count: 0 };
       specDemandMap[key].count += ord.count;
       totalCrabCount += ord.count;
     }
@@ -200,9 +207,7 @@ export async function createStoreOutboundAction(data: {
       (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
       null;
 
-    // 按选中的冷库批次规格对齐对应订单，1行即可匹配
-    const matchedOrder =
-      orders.find((o) => data.specBatchMap?.[`${o.gender}_${o.weightTier}`] === chosenColdLogId) || orders[0];
+    const matchedOrder = findOrderForColdLog(orders, chosenColdLogId, data.specBatchMap);
 
     const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, matchedOrder);
 
@@ -223,7 +228,7 @@ export async function createStoreOutboundAction(data: {
             orderId: o.id,
             orderNo: o.orderNo,
             gender: o.gender,
-            weightTier: o.weightTier,
+            weightTier: Invariants.normalizeWeightTier(o.weightTier),
             count: o.count,
           })),
         },
@@ -291,13 +296,14 @@ export async function createCardUnifiedOutboundAction(data: {
     });
     if (!defaultStore) throw new Error("未找到默认渠道门店");
 
-    // 聚合各规格数量校验库存
+    // 聚合各规格数量校验库存 (规格自动标准化合并，如 3两 统一为 3.0两)
     const specDemandMap: Record<string, { gender: string; weightTier: string; count: number }> = {};
     let totalCrabCount = 0;
 
     for (const ord of orders) {
-      const key = `${ord.gender}_${ord.weightTier}`;
-      if (!specDemandMap[key]) specDemandMap[key] = { gender: ord.gender, weightTier: ord.weightTier, count: 0 };
+      const normTier = Invariants.normalizeWeightTier(ord.weightTier);
+      const key = `${ord.gender}_${normTier}`;
+      if (!specDemandMap[key]) specDemandMap[key] = { gender: ord.gender, weightTier: normTier, count: 0 };
       specDemandMap[key].count += ord.count;
       totalCrabCount += ord.count;
     }
@@ -321,8 +327,7 @@ export async function createCardUnifiedOutboundAction(data: {
       (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
       null;
 
-    const matchedOrder =
-      orders.find((o) => data.specBatchMap?.[`${o.gender}_${o.weightTier}`] === chosenColdLogId) || orders[0];
+    const matchedOrder = findOrderForColdLog(orders, chosenColdLogId, data.specBatchMap);
 
     const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, matchedOrder);
 
@@ -344,7 +349,7 @@ export async function createCardUnifiedOutboundAction(data: {
             orderId: o.id,
             orderNo: o.orderNo,
             gender: o.gender,
-            weightTier: o.weightTier,
+            weightTier: Invariants.normalizeWeightTier(o.weightTier),
             count: o.count,
             expressCompany: data.transportCompany || "顺丰速运",
           })),

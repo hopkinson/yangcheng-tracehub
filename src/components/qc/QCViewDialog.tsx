@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileSearch, Clock, AlertTriangle, CheckCircle2, ExternalLink, Download, FileWarning, FileText } from "lucide-react";
-import { getPreviewFileUrl } from "@/lib/utils";
+import { getPreviewFileUrl, formatDateTime } from "@/lib/utils";
 
 export function QCViewDialog({
   record,
@@ -40,8 +40,8 @@ export function QCViewDialog({
   const safePreviewUrl = record.fileUrl ? getPreviewFileUrl(record.fileUrl, record.fileName || undefined) : "";
   const isPdf = /\.pdf$/i.test(record.fileName || "") || /\.pdf$/i.test(record.fileUrl || "") || record.fileUrl?.startsWith("data:application/pdf");
 
-  const checkDateStr = typeof record.checkTime === "string" ? record.checkTime : record.checkTime.toISOString().slice(5, 16).replace("T", " ");
-  const uploadDateStr = typeof record.uploadTime === "string" ? record.uploadTime : record.uploadTime.toISOString().slice(5, 16).replace("T", " ");
+  const checkDateStr = formatDateTime(record.checkTime);
+  const uploadDateStr = formatDateTime(record.uploadTime);
   const isException = record.result === "EXCEPTION" || record.result === "UNQUALIFIED";
 
   return (

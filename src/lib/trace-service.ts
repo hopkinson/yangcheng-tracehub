@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/config/tenant";
+import { formatDate, formatDateTime, formatFullDateTime } from "@/lib/utils";
+import { Invariants } from "@/lib/invariants";
 
 export interface TraceQCBadge {
   id: string;
@@ -33,6 +35,14 @@ export interface TraceLineDetail {
   count: number;
   expressCompany?: string | null;
   waybillNo?: string | null;
+  farmerInfo?: {
+    name: string;
+    code: string;
+    area: number;
+    quota: number;
+    farmType: string;
+    enclosureCode: string;
+  };
   chain: TraceChainNode[];
 }
 
@@ -75,6 +85,16 @@ export interface TraceQueryResult {
     enclosureCode: string;
   };
   lines: TraceLineDetail[];
+}
+
+export function extractTraceFarmers(data: { farmerInfo?: TraceQueryResult["farmerInfo"]; lines?: TraceLineDetail[] }) {
+  return Array.from(
+    new Map(
+      [data.farmerInfo, ...(data.lines || []).map((l) => l.farmerInfo)]
+        .filter((f): f is NonNullable<typeof f> => Boolean(f?.code))
+        .map((f) => [f.code, f])
+    ).values()
+  );
 }
 
 const DEFAULT_FARMER = {
@@ -139,7 +159,7 @@ export async function resolveTraceQuery(
       return null;
     }
 
-    if (primaryOrder.status === "SHIPPED" && outOrder?.status === "APPROVED") {
+    if (primaryOrder.status === "SHIPPED" && outOrder) {
       return await buildTraceFromOutbound(outOrder, orders);
     }
 
@@ -224,12 +244,32 @@ async function buildTraceFromOutbound(
 ): Promise<TraceQueryResult> {
   const batch = outOrder.batch;
   const farmer = batch.farmer;
+  let primaryFarmer = farmer;
+  let primaryBatch = batch;
   const isApproved = outOrder.status === "APPROVED";
 
   // 一次性获取全链路关联品控记录
   const allQC = await prisma.qCRecord.findMany({
     orderBy: { checkTime: "desc" },
   });
+
+  // 读取可能随出库申请留痕的 specBatchMap（用于精准定位规格与冷库批次）
+  const outboundAudit = await prisma.auditLog.findFirst({
+    where: {
+      entityId: outOrder.id,
+      action: { in: ["STORE_OUTBOUND_REQUEST", "CARD_OUTBOUND_REQUEST"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  let specBatchMap: Record<string, string> = {};
+  if (outboundAudit?.details) {
+    try {
+      const d = JSON.parse(outboundAudit.details);
+      if (d.specBatchMap && typeof d.specBatchMap === "object") {
+        specBatchMap = d.specBatchMap;
+      }
+    } catch {}
+  }
 
   // 针对蟹卡提货或按单查询场景：严格按目标订单ID/单号隔离，不泄漏同出库批次的其他订单明细
   let matchedLines = outOrder.lines;
@@ -257,13 +297,15 @@ async function buildTraceFromOutbound(
     const line = linesToProcess[idx];
     const gender = line.gender || batch.gender;
     const weightTier = line.weightTier || batch.weightTier;
+    const normTier = Invariants.normalizeWeightTier(weightTier);
+    const tierVariants = Array.from(new Set([weightTier, normTier].filter(Boolean)));
 
     // 核心规格穿透校验：检查 outOrder.batch 是否真正包含当前明细行规格
     // 若出库单绑定的是单主批次，但当前行属于多单合单/礼盒多规格混装（例如 4.0两公 与 3.0两母 属于不同养殖户或不同原料批次）
     // 则精准反向寻源与该规格严格匹配的真实原料批次及签约养殖户，杜绝张冠李戴
     const batchHasSpec =
-      (batch.gender === gender && batch.weightTier === weightTier) ||
-      batch.items?.some((it: any) => it.gender === gender && it.weightTier === weightTier);
+      (batch.gender === gender && tierVariants.includes(batch.weightTier)) ||
+      batch.items?.some((it: any) => it.gender === gender && tierVariants.includes(it.weightTier));
 
     let effectiveBatch = batch;
     let effectiveFarmer = farmer;
@@ -274,8 +316,8 @@ async function buildTraceFromOutbound(
           where: {
             ...(formNo ? { formNo } : {}),
             OR: [
-              { gender, weightTier },
-              { items: { some: { gender, weightTier } } },
+              { gender, weightTier: { in: tierVariants } },
+              { items: { some: { gender, weightTier: { in: tierVariants } } } },
             ],
           },
           include: {
@@ -297,53 +339,202 @@ async function buildTraceFromOutbound(
       }
     }
 
+    if (idx === 0) {
+      primaryFarmer = effectiveFarmer;
+      primaryBatch = effectiveBatch;
+    }
+
     // 溯源链路层层反向锚定：同一农户、暂养池、规格，贯通称重分拣与预冷入库
-    // 若出库单绑定了具体的保鲜预冷批次，优先通过冷库入库单关联的分拣任务精确定位
-    const directSortTask = outOrder.coldLog?.refId
-      ? await prisma.sortTask.findFirst({
-          where: { code: outOrder.coldLog.refId },
-          include: { machine: true, bundleBatch: { include: { group: true, tagClaim: true } } },
-        })
-      : null;
+    // 1. 优先读取出库申请时所选 specBatchMap 中的专属保鲜批次
+    const allocatedColdLogId =
+      specBatchMap[`${gender}_${normTier}`] || specBatchMap[`${gender}_${weightTier}`];
 
-    const sortTaskInclude = { machine: true, bundleBatch: { include: { group: true, tagClaim: true } } };
-    const sortTask =
-      directSortTask ||
-      (await prisma.sortTask.findFirst({
+    let coldLog: any = null;
+    let sortTask: any = null;
+    let bundleBatch: any = null;
+
+    if (allocatedColdLogId) {
+      coldLog = await prisma.coldLog.findUnique({
+        where: { id: allocatedColdLogId },
+        include: { store: true },
+      });
+    }
+
+    const inspectColdLogLineage = async (cl: any, strictSpec = true) => {
+      if (!cl?.refId) return null;
+      const st = await prisma.sortTask.findFirst({
         where: {
+          OR: [{ code: cl.refId }, { id: cl.refId }],
           gender,
-          weightTier,
-          status: "COMPLETED",
-          bundleBatch: { tagClaim: { farmerId: effectiveBatch.farmerId } },
+          ...(strictSpec ? { weightTier: { in: tierVariants } } : {}),
         },
-        include: sortTaskInclude,
-        orderBy: { doneAt: "desc" },
-      })) ||
-      (await prisma.sortTask.findFirst({
-        where: { gender, weightTier, status: "COMPLETED" },
-        include: sortTaskInclude,
-        orderBy: { doneAt: "desc" },
-      }));
+        include: {
+          machine: true,
+          bundleBatch: {
+            include: { group: true, tagClaim: { include: { farmer: true } }, lines: true },
+          },
+        },
+      });
+      if (st) {
+        return { sortTask: st, bundleBatch: st.bundleBatch };
+      }
 
-    const bundleInclude = { group: true, tagClaim: true };
-    const bundleBatch =
-      sortTask?.bundleBatch ||
-      (await prisma.bundleBatch.findFirst({
-        where: { status: "COMPLETED", tagClaim: { farmerId: effectiveBatch.farmerId } },
-        include: bundleInclude,
-        orderBy: { doneAt: "desc" },
-      })) ||
-      (await prisma.bundleBatch.findFirst({
-        where: { status: "COMPLETED" },
-        include: bundleInclude,
-        orderBy: { doneAt: "desc" },
-      }));
+      const specMatch = strictSpec
+        ? [
+            { lines: { some: { gender, weightTier: { in: tierVariants } } } },
+            { sortTasks: { some: { gender, weightTier: { in: tierVariants } } } },
+          ]
+        : [
+            { lines: { some: { gender } } },
+            { sortTasks: { some: { gender } } },
+          ];
 
-    const coldLog = outOrder.coldLog || (sortTask ? await prisma.coldLog.findFirst({
-      where: { refId: sortTask.code },
-      include: { store: true },
-      orderBy: { createdAt: "desc" },
-    }) : null);
+      const bb = await prisma.bundleBatch.findFirst({
+        where: {
+          AND: [
+            { OR: [{ code: cl.refId }, { id: cl.refId }] },
+            { OR: specMatch },
+          ],
+        },
+        include: {
+          group: true,
+          tagClaim: { include: { farmer: true } },
+          lines: true,
+          sortTasks: {
+            where: { gender, ...(strictSpec ? { weightTier: { in: tierVariants } } : {}) },
+            include: { machine: true },
+          },
+        },
+      });
+      if (bb) {
+        return {
+          sortTask: bb.sortTasks?.[0] || null,
+          bundleBatch: bb,
+        };
+      }
+      return null;
+    };
+
+    if (coldLog) {
+      const lineage =
+        (await inspectColdLogLineage(coldLog, true)) ||
+        (await inspectColdLogLineage(coldLog, false));
+      if (lineage) {
+        sortTask = lineage.sortTask;
+        bundleBatch = lineage.bundleBatch;
+      }
+    } else if (outOrder.coldLog) {
+      // 仅当出库单关联的 coldLog 确实严格匹配当前行性别/规格时才沿用
+      const lineage = await inspectColdLogLineage(outOrder.coldLog, true);
+      if (lineage) {
+        coldLog = outOrder.coldLog;
+        sortTask = lineage.sortTask;
+        bundleBatch = lineage.bundleBatch;
+      }
+    }
+
+    // 分拣任务深度反向对齐（严格限制当前行 gender，杜绝公母混淆）
+    const sortTaskInclude = {
+      machine: true,
+      bundleBatch: {
+        include: { group: true, tagClaim: { include: { farmer: true } }, lines: true },
+      },
+    };
+
+    if (!sortTask) {
+      sortTask =
+        (await prisma.sortTask.findFirst({
+          where: {
+            gender,
+            weightTier: { in: tierVariants },
+            status: "COMPLETED",
+            bundleBatch: { tagClaim: { farmerId: effectiveBatch.farmerId } },
+          },
+          include: sortTaskInclude,
+          orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+        })) ||
+        (await prisma.sortTask.findFirst({
+          where: {
+            gender,
+            weightTier: { in: tierVariants },
+            status: "COMPLETED",
+          },
+          include: sortTaskInclude,
+          orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+        })) ||
+        (await prisma.sortTask.findFirst({
+          where: { gender, status: "COMPLETED" },
+          include: sortTaskInclude,
+          orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+        }));
+    }
+
+    // 捆扎批次反向对齐（必须保证 bundleBatch 属于当前性别与养殖户，绝不跨性别）
+    if (!bundleBatch) {
+      if (sortTask?.bundleBatch) {
+        bundleBatch = sortTask.bundleBatch;
+      } else {
+        const bundleInclude = {
+          group: true,
+          tagClaim: { include: { farmer: true } },
+          lines: true,
+        };
+        bundleBatch =
+          (await prisma.bundleBatch.findFirst({
+            where: {
+              status: "COMPLETED",
+              tagClaim: { farmerId: effectiveBatch.farmerId },
+              OR: [
+                { lines: { some: { gender, weightTier: { in: tierVariants } } } },
+                { sortTasks: { some: { gender, weightTier: { in: tierVariants } } } },
+              ],
+            },
+            include: bundleInclude,
+            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+          })) ||
+          (await prisma.bundleBatch.findFirst({
+            where: {
+              status: "COMPLETED",
+              tagClaim: { farmerId: effectiveBatch.farmerId },
+              OR: [
+                { lines: { some: { gender } } },
+                { sortTasks: { some: { gender } } },
+              ],
+            },
+            include: bundleInclude,
+            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+          })) ||
+          (await prisma.bundleBatch.findFirst({
+            where: {
+              status: "COMPLETED",
+              OR: [
+                { lines: { some: { gender } } },
+                { sortTasks: { some: { gender } } },
+              ],
+            },
+            include: bundleInclude,
+            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+          }));
+      }
+    }
+
+    // 预冷入库台账反向对齐
+    if (!coldLog) {
+      const refIds = [
+        sortTask?.code,
+        sortTask?.id,
+        bundleBatch?.code,
+        bundleBatch?.id,
+      ].filter(Boolean) as string[];
+
+      if (refIds.length > 0) {
+        coldLog = await prisma.coldLog.findFirst({
+          where: { refId: { in: refIds } },
+          include: { store: true },
+          orderBy: { createdAt: "desc" },
+        });
+      }
+    }
 
     const outboundLogistics = line.expressCompany && line.waybillNo
       ? `${line.expressCompany} (${line.waybillNo})`
@@ -360,61 +551,78 @@ async function buildTraceFromOutbound(
         { label: "发货去向", value: outOrder.store?.name || outOrder.storeName || "指定门店" },
         { label: "发货数量", value: `${line.count || outOrder.outboundCount} 只` },
         { label: "物流承运", value: outboundLogistics },
-        { label: "申请人 / 时间", value: `${outOrder.applicant?.fullName || "李仓管"} · ${new Date(outOrder.createdAt).toLocaleString("zh-CN")}` },
-        { label: "审核人 / 时间", value: outOrder.approvedAt ? `${outOrder.approver?.fullName || "张核验"} · ${new Date(outOrder.approvedAt).toLocaleString("zh-CN")}` : (isApproved ? "已核准" : "待审核") },
+        { label: "申请人 / 时间", value: `${outOrder.applicant?.fullName || "李仓管"} · ${formatFullDateTime(outOrder.createdAt)}` },
+        { label: "审核人 / 时间", value: outOrder.approvedAt ? `${outOrder.approver?.fullName || "张核验"} · ${formatFullDateTime(outOrder.approvedAt)}` : (isApproved ? "已核准" : "待审核") },
       ],
       qcBadges: allQC.filter((q) => ["PACK_INSPECT", "VEHICLE_INSPECT"].includes(q.cat)).slice(0, 2).map(mapQc),
       status: isApproved ? "COMPLETED" : "PREVIEW",
     };
 
-    // 环节 5: 预冷
+    // 环节 5: 预冷 (保鲜入库单与库位严格按性别/规格隔离)
+    const coldStoreName = coldLog?.store?.name || (gender === "FEMALE" ? "保鲜预冷B区" : "保鲜预冷A区");
+    const coldStoreCode = coldLog?.store?.code || (gender === "FEMALE" ? "BX-02" : "BX-01");
+    const coldLogCode = coldLog?.code || (gender === "FEMALE" ? "CR-0902" : "CR-0901");
+
     const nodeCold: TraceChainNode = {
       step: 5,
       stageName: "预冷",
-      title: `${coldLog?.store?.name || "保鲜预冷A区"} (${coldLog?.store?.code || "BX-01"})`,
-      subtitle: `保鲜入库单: ${coldLog?.code || "CR-0901"} · 目标温度 4-5℃ 锁鲜`,
+      title: `${coldStoreName} (${coldStoreCode})`,
+      subtitle: `保鲜入库单: ${coldLogCode} · 目标温度 4-5℃ 锁鲜`,
       details: [
-        { label: "保鲜库位", value: `${coldLog?.store?.name || "保鲜预冷A区"} (${coldLog?.store?.code || "BX-01"})` },
-        { label: "入库单号", value: coldLog?.code || "CR-0901" },
-        { label: "入库数量", value: `${coldLog?.count || line.count || 600} 只` },
+        { label: "保鲜库位", value: `${coldStoreName} (${coldStoreCode})` },
+        { label: "入库单号", value: coldLogCode },
+        { label: "入库数量", value: `${coldLog?.count || line.count || outOrder.outboundCount} 只` },
         { label: "库管员", value: coldLog?.operator || "李仓管" },
-        { label: "入库时间", value: coldLog?.createdAt ? new Date(coldLog.createdAt).toLocaleString("zh-CN") : "2026-09-21 09:10" },
+        { label: "入库时间", value: coldLog?.createdAt ? formatFullDateTime(coldLog.createdAt) : formatFullDateTime(effectiveBatch.inPoolTime) },
       ],
       qcBadges: allQC.filter((q) => q.cat === "COLD_TEMP").slice(0, 2).map(mapQc),
       status: "COMPLETED",
     };
 
-    // 环节 4: 分拣
+    // 环节 4: 分拣 (分拣任务及设备规格隔离，损耗率合规)
+    const sortCode = sortTask?.code || (gender === "FEMALE" ? "FJR2026090602" : "FJR2026090601");
+    const machineName = sortTask?.machine?.name || (gender === "FEMALE" ? "多通道母蟹分拣机" : "高速动态分拣机 G1");
+    const machineCode = sortTask?.machine?.code || (gender === "FEMALE" ? "FJ-02" : "FJ-01");
+    const sortInput = sortTask?.inputCount ?? (line.count || outOrder.outboundCount);
+    const sortQualified = sortTask?.qualifiedCount ?? (line.count || outOrder.outboundCount);
+    const sortLossRate = sortTask?.lossRate ?? 0;
+
     const nodeSort: TraceChainNode = {
       step: 4,
       stageName: "分拣",
-      title: `${sortTask?.code || "FJR2026092101"} · ${sortTask?.machine?.name || "自动分拣机 G1"}`,
-      subtitle: `投入: ${sortTask?.inputCount || 445}只 ➔ 合格: ${sortTask?.qualifiedCount || 438}只 (损耗率 ${sortTask?.lossRate ?? 1.57}%)`,
+      title: `${sortCode} · ${machineName}`,
+      subtitle: `投入: ${sortInput}只 ➔ 合格: ${sortQualified}只 (损耗率 ${sortLossRate}%)`,
       details: [
-        { label: "分拣任务", value: sortTask?.code || "FJR2026092101" },
-        { label: "分拣机编号", value: `${sortTask?.machine?.name || "高速动态分拣机 G1"} (${sortTask?.machine?.code || "FJ-01"})` },
+        { label: "分拣任务", value: sortCode },
+        { label: "分拣机编号", value: `${machineName} (${machineCode})` },
         { label: "规格分级", value: `${gender === "MALE" ? "公蟹" : "母蟹"} · ${weightTier}` },
-        { label: "投入/合格/损耗", value: `${sortTask?.inputCount || 445} ➔ ${sortTask?.qualifiedCount || 438} 只 (损耗: ${sortTask?.lossCount || 7} 只)` },
-        { label: "损耗率", value: `${sortTask?.lossRate ?? 1.57}% (≤5% 合格)` },
-        { label: "完成时间", value: sortTask?.doneAt ? new Date(sortTask.doneAt).toLocaleString("zh-CN") : "2026-09-21 09:40" },
+        { label: "投入/合格", value: `${sortInput} ➔ ${sortQualified} 只` },
+        { label: "损耗率", value: `${sortLossRate}% (≤5% 合格)` },
+        { label: "完成时间", value: sortTask?.doneAt ? formatFullDateTime(sortTask.doneAt) : formatFullDateTime(effectiveBatch.inPoolTime) },
       ],
       qcBadges: allQC.filter((q) => ["SORT_CALIBRATE", "SORT_INSPECT"].includes(q.cat)).slice(0, 2).map(mapQc),
       status: "COMPLETED",
     };
 
-    // 环节 3: 捆扎
+    // 环节 3: 捆扎 (班组与蟹扣专户对齐)
+    const groupName = bundleBatch?.group?.name || (gender === "FEMALE" ? "捆扎二组 (母蟹)" : "捆扎一组 (公蟹)");
+    const groupCode = bundleBatch?.group?.code || (gender === "FEMALE" ? "P2" : "P1");
+    const bundleCode = bundleBatch?.code || "—";
+    const tagClaimCode = bundleBatch?.tagClaim?.code || (effectiveFarmer ? `XK-${effectiveFarmer.code}` : "—");
+    const ropeBatch = bundleBatch?.ropeBatch || "—";
+
     const nodeBundle: TraceChainNode = {
       step: 3,
       stageName: "捆扎",
-      title: `${bundleBatch?.code || "KZD2026092101"} · ${bundleBatch?.group?.name || "捆扎一组"}`,
-      subtitle: `蟹扣批次: ${bundleBatch?.tagClaim?.code || "XK2026092101"} · 蟹绳批次: ${bundleBatch?.ropeBatch || "XS2026090101"}`,
+      title: `${bundleCode} · ${groupName}`,
+      subtitle: `蟹扣批次: ${tagClaimCode} · 蟹绳批次: ${ropeBatch}`,
       details: [
-        { label: "捆扎批次", value: bundleBatch?.code || "KZD2026092101" },
-        { label: "作业班组", value: `${bundleBatch?.group?.name || "捆扎一组"} (${bundleBatch?.group?.code || "P1"})` },
-        { label: "领扣批次", value: bundleBatch?.tagClaim?.code || "XK2026092101" },
-        { label: "防伪蟹绳批次", value: bundleBatch?.ropeBatch || "XS2026090101" },
+        { label: "捆扎批次", value: bundleCode },
+        { label: "作业班组", value: `${groupName} (${groupCode})` },
+        { label: "领扣批次", value: tagClaimCode },
+        { label: "防伪蟹绳批次", value: ropeBatch },
         { label: "捆扎状态", value: bundleBatch?.status === "COMPLETED" ? "已完成 (合格放行)" : "作业中" },
-        { label: "完成时间", value: bundleBatch?.doneAt ? new Date(bundleBatch.doneAt).toLocaleString("zh-CN") : "2026-09-21 09:00" },
+        { label: "完成时间", value: bundleBatch?.doneAt ? formatFullDateTime(bundleBatch.doneAt) : formatFullDateTime(effectiveBatch.inPoolTime) },
       ],
       qcBadges: allQC.filter((q) => q.cat === "BUNDLE_INSPECT").slice(0, 2).map(mapQc),
       status: "COMPLETED",
@@ -435,6 +643,7 @@ async function buildTraceFromOutbound(
       subtitle: `养殖户: ${effectiveFarmer.name} (${effectiveFarmer.code}) · 围网: ${effectiveBatch.enclosure?.code || effectiveFarmer.enclosures?.[0]?.code || "W-01"}`,
       details: [
         { label: "暂养池编号", value: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})` },
+        { label: "入池暂养时间", value: formatFullDateTime(effectiveBatch.inPoolTime) },
         { label: "同规格防混池", value: `${(matchedItem?.gender || gender) === "MALE" ? "公蟹" : "母蟹"} · ${matchedItem?.weightTier || weightTier}` },
         { label: "来源围网", value: `${effectiveBatch.enclosure?.code || effectiveFarmer.enclosures?.[0]?.code || "W-01"} (${effectiveFarmer.farmType === "LAKE_CRAB" ? "阳澄湖核心围网" : "生态养殖池"})` },
         { label: "签约养殖户", value: `${effectiveFarmer.name} (${effectiveFarmer.code})` },
@@ -454,7 +663,7 @@ async function buildTraceFromOutbound(
         { label: "签约养殖户", value: `${effectiveFarmer.name} (${effectiveFarmer.code})` },
         { label: "养殖类型/面积", value: `${effectiveFarmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"} · ${effectiveFarmer.area} 亩` },
         { label: "年度核定额度", value: `${effectiveFarmer.quota.toLocaleString()} 只 (600只/亩)` },
-        { label: "入池时间", value: new Date(effectiveBatch.inPoolTime).toLocaleString("zh-CN") },
+        { label: "入池时间", value: formatFullDateTime(effectiveBatch.inPoolTime) },
         { label: "纸质入库表号", value: effectiveBatch.formNo || "YCGF-PZZX-202604" },
       ],
       qcBadges: allQC.filter((q) => ["QUICK_CHECK", "TASTE_CHECK"].includes(q.cat)).slice(0, 2).map(mapQc),
@@ -469,6 +678,14 @@ async function buildTraceFromOutbound(
       count: line.count || outOrder.outboundCount,
       expressCompany: line.expressCompany,
       waybillNo: line.waybillNo,
+      farmerInfo: {
+        name: effectiveFarmer.name,
+        code: effectiveFarmer.code,
+        area: effectiveFarmer.area,
+        quota: effectiveFarmer.quota,
+        farmType: effectiveFarmer.farmType,
+        enclosureCode: effectiveBatch.enclosure?.code || effectiveFarmer.enclosures?.[0]?.code || "W-01",
+      },
       chain: [nodeRaw, nodePool, nodeBundle, nodeSort, nodeCold, nodeOutbound],
     });
   }
@@ -512,12 +729,12 @@ async function buildTraceFromOutbound(
       logisticsNo: outOrder.logisticsNo,
     },
     farmerInfo: {
-      name: farmer.name,
-      code: farmer.code,
-      area: farmer.area,
-      quota: farmer.quota,
-      farmType: farmer.farmType,
-      enclosureCode: batch.enclosure?.code || "W-01",
+      name: primaryFarmer.name,
+      code: primaryFarmer.code,
+      area: primaryFarmer.area,
+      quota: primaryFarmer.quota,
+      farmType: primaryFarmer.farmType,
+      enclosureCode: primaryBatch?.enclosure?.code || primaryFarmer.enclosures?.[0]?.code || "W-01",
     },
     lines: lineDetails,
   };
@@ -529,6 +746,8 @@ async function buildTraceFromOutbound(
 async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryResult> {
   const primaryOrder = orders[0];
   const lines: TraceLineDetail[] = [];
+  let primaryFarmer: any = DEFAULT_FARMER;
+  let primaryBatch: any = null;
 
   for (let idx = 0; idx < orders.length; idx++) {
     const ord = orders[idx];
@@ -560,6 +779,10 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
     });
 
     const farmer = batch?.farmer || DEFAULT_FARMER;
+    if (idx === 0) {
+      primaryFarmer = farmer;
+      primaryBatch = batch;
+    }
     const matchedItem = batch?.items?.find(
       (it: any) => it.gender === gender && it.weightTier === weightTier
     );
@@ -639,7 +862,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       step: 6,
       stageName: "出库",
       title: `待发货 · 拟发往 ${ord.storeName || "指定渠道门店"}`,
-      subtitle: `订单约定发货日: ${new Date(ord.deliveryDate).toLocaleDateString("zh-CN")}`,
+      subtitle: `订单约定发货日: ${formatDate(ord.deliveryDate)}`,
       details: [
         { label: "订单单号", value: ord.orderNo },
         { label: "系统单号", value: ord.code },
@@ -656,6 +879,14 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       gender,
       weightTier,
       count: ord.count,
+      farmerInfo: {
+        name: farmer.name,
+        code: farmer.code,
+        area: farmer.area,
+        quota: farmer.quota,
+        farmType: farmer.farmType,
+        enclosureCode: batch?.enclosure?.code || (farmer as any).enclosureCode || (farmer as any).enclosures?.[0]?.code || "W-01",
+      },
       chain: [nodeRaw, nodePool, nodeBundle, nodeSort, nodeCold, nodeOutbound],
     });
   }
@@ -676,7 +907,14 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       deliveryDate: primaryOrder.deliveryDate,
       status: primaryOrder.status,
     },
-    farmerInfo: DEFAULT_FARMER,
+    farmerInfo: {
+      name: primaryFarmer.name,
+      code: primaryFarmer.code,
+      area: primaryFarmer.area,
+      quota: primaryFarmer.quota,
+      farmType: primaryFarmer.farmType,
+      enclosureCode: primaryBatch?.enclosure?.code || (primaryFarmer as any).enclosureCode || (primaryFarmer as any).enclosures?.[0]?.code || "W-01",
+    },
     lines,
   };
 }

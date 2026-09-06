@@ -21,11 +21,15 @@ export interface CompletedBundleOption {
   id: string;
   code: string;
   groupName: string;
+  totalQualified?: number;
+  availableCount?: number;
   lines: Array<{
     id: string;
     gender: string;
     weightTier: string;
     count: number;
+    totalCount?: number;
+    availableCount?: number;
     poolCode: string;
   }>;
 }
@@ -48,8 +52,11 @@ export function SortTaskDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
+  // 优先默认选中第一个有待分拣余量的批次
+  const initialBundle = completedBundles.find((b) => (b.availableCount ?? 0) > 0) || completedBundles[0];
+
   const [selectedMachineId, setSelectedMachineId] = useState(machines[0]?.id || "");
-  const [selectedBundleId, setSelectedBundleId] = useState(completedBundles[0]?.id || "");
+  const [selectedBundleId, setSelectedBundleId] = useState(initialBundle?.id || "");
   const [selectedLines, setSelectedLines] = useState<Record<string, number>>({});
   const [genderFilter, setGenderFilter] = useState<"ALL" | "MALE" | "FEMALE">("ALL");
 
@@ -59,10 +66,12 @@ export function SortTaskDialog({
 
   const currentBundle = completedBundles.find((b) => b.id === selectedBundleId);
   const currentLines = currentBundle?.lines || [];
+  const currentBundleAvailable = currentBundle?.availableCount ?? 0;
 
   const filteredLines = currentLines.filter((l) => genderFilter === "ALL" || l.gender === genderFilter);
-  const maleLines = currentLines.filter((l) => l.gender === "MALE");
-  const femaleLines = currentLines.filter((l) => l.gender === "FEMALE");
+  const maleLines = currentLines.filter((l) => l.gender === "MALE" && (l.availableCount ?? 0) > 0);
+  const femaleLines = currentLines.filter((l) => l.gender === "FEMALE" && (l.availableCount ?? 0) > 0);
+  const availableLines = currentLines.filter((l) => (l.availableCount ?? 0) > 0);
 
   const selectedCount = Object.keys(selectedLines).length;
   const totalInputCount = Object.values(selectedLines).reduce((acc, cur) => acc + (cur || 0), 0);
@@ -74,12 +83,7 @@ export function SortTaskDialog({
   };
 
   const handleToggleLine = (lineId: string, maxCount: number) => {
-    setSelectedLines((prev) => {
-      const next = { ...prev };
-      if (lineId in next) delete next[lineId];
-      else next[lineId] = maxCount;
-      return next;
-    });
+    setSelectedLines(({ [lineId]: _, ...rest }) => (lineId in selectedLines ? rest : { ...selectedLines, [lineId]: maxCount }));
   };
 
   const handleCountChange = (lineId: string, maxCount: number, val: number) => {
@@ -90,7 +94,7 @@ export function SortTaskDialog({
   };
 
   const selectLines = (lines: typeof currentLines) =>
-    setSelectedLines(Object.fromEntries(lines.map((l) => [l.id, l.count])));
+    setSelectedLines(Object.fromEntries(lines.map((l) => [l.id, l.availableCount ?? l.count])));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,16 +202,47 @@ export function SortTaskDialog({
                       暂无已完成捆扎批次，请先完成捆扎
                     </SelectItem>
                   ) : (
-                    completedBundles.map((b) => (
-                      <SelectItem key={b.id} value={b.id} className="text-xs font-mono">
-                        {b.code} ({b.groupName} · {b.lines.reduce((a, c) => a + c.count, 0)} 只)
-                      </SelectItem>
-                    ))
+                    completedBundles.map((b) => {
+                      const bundleAvailable = b.availableCount ?? 0;
+                      const isExhausted = bundleAvailable <= 0;
+                      const totalCrabs = b.totalQualified ?? 0;
+
+                      return (
+                        <SelectItem
+                          key={b.id}
+                          value={b.id}
+                          disabled={isExhausted}
+                          className="text-xs font-mono"
+                        >
+                          <div className="flex items-center justify-between gap-3 w-full">
+                            <span className={isExhausted ? "text-muted-foreground line-through" : "font-medium"}>
+                              {b.code} ({b.groupName})
+                            </span>
+                            <span
+                              className={`text-[11px] font-mono ${
+                                isExhausted ? "text-muted-foreground line-through" : "text-primary font-bold"
+                              }`}
+                            >
+                              {isExhausted
+                                ? "已全部分拣建单 (余 0 只)"
+                                : `余 ${bundleAvailable} 只 / 捆扎 ${totalCrabs} 只`}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })
                   )}
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {currentBundle && currentBundleAvailable <= 0 && (
+            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>该捆扎批次的所有大闸蟹已全部创建分拣任务（待分拣余量 0 只），不可重复建单。</span>
+            </div>
+          )}
 
           {isMachineBlocked && (
             <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs flex items-center gap-2">
@@ -226,7 +261,9 @@ export function SortTaskDialog({
               <div className="flex items-center gap-1.5">
                 <Layers className="size-4 text-primary" />
                 <Label className="text-xs font-semibold">选择分规规格明细</Label>
-                <span className="text-[11px] text-muted-foreground">({currentLines.length} 个规格)</span>
+                <span className="text-[11px] text-muted-foreground">
+                  (共 {currentLines.length} 个规格 · 待分拣 {availableLines.length} 个)
+                </span>
               </div>
 
               {/* 快筛与一键操作 */}
@@ -272,9 +309,9 @@ export function SortTaskDialog({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => selectLines(currentLines)}
+                  onClick={() => selectLines(availableLines)}
                   className="h-6 px-1.5 text-[11px]"
-                  disabled={currentLines.length === 0}
+                  disabled={availableLines.length === 0}
                 >
                   全选
                 </Button>
@@ -303,50 +340,75 @@ export function SortTaskDialog({
                 </div>
               ) : (
                 filteredLines.map((line) => {
+                  const lineAvailable = line.availableCount ?? line.count;
+                  const isExhausted = lineAvailable <= 0;
                   const isChecked = line.id in selectedLines;
-                  const currentInputCount = selectedLines[line.id] ?? line.count;
+                  const currentInputCount = selectedLines[line.id] ?? lineAvailable;
                   const isMale = line.gender === "MALE";
 
                   return (
                     <div
                       key={line.id}
                       className={`flex items-center justify-between gap-3 p-2 rounded border text-xs transition-colors ${
-                        isChecked ? "bg-primary/10 border-primary/40 font-medium" : "bg-background hover:bg-muted/40"
+                        isExhausted
+                          ? "opacity-60 bg-muted/30 cursor-not-allowed border-dashed"
+                          : isChecked
+                          ? "bg-primary/10 border-primary/40 font-medium"
+                          : "bg-background hover:bg-muted/40"
                       }`}
                     >
                       <label
-                        className="flex items-center gap-2 flex-1 select-none cursor-pointer"
+                        className={`flex items-center gap-2 flex-1 select-none ${
+                          isExhausted ? "cursor-not-allowed" : "cursor-pointer"
+                        }`}
                         onClick={(e) => {
                           e.preventDefault();
-                          handleToggleLine(line.id, line.count);
+                          if (isExhausted) return;
+                          handleToggleLine(line.id, lineAvailable);
                         }}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
+                          disabled={isExhausted}
                           onChange={() => {}}
-                          className="size-3.5 accent-primary cursor-pointer"
+                          className="size-3.5 accent-primary cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span className="font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded text-[11px]">
                           {line.poolCode} 来源
                         </span>
-                        <span className={`font-semibold ${isMale ? "text-sky-700 dark:text-sky-400" : "text-rose-700 dark:text-rose-400"}`}>
+                        <span
+                          className={`font-semibold ${
+                            isExhausted
+                              ? "text-muted-foreground line-through"
+                              : isMale
+                              ? "text-sky-700 dark:text-sky-400"
+                              : "text-rose-700 dark:text-rose-400"
+                          }`}
+                        >
                           {isMale ? "公蟹" : "母蟹"} {line.weightTier}
                         </span>
                         <span className="text-[11px] text-muted-foreground font-mono">
-                          ({line.count} 只)
+                          {isExhausted ? (
+                            <span className="text-muted-foreground">(已全部分拣建单 · 余 0 只)</span>
+                          ) : (
+                            <span>
+                              (待分拣: <strong className="text-foreground">{lineAvailable}</strong> 只
+                              {line.totalCount && line.totalCount !== lineAvailable ? ` / 共 ${line.totalCount} 只` : ""})
+                            </span>
+                          )}
                         </span>
                       </label>
 
-                      {isChecked && (
+                      {isChecked && !isExhausted && (
                         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <Label className="text-[11px] text-muted-foreground">投入:</Label>
                           <Input
                             type="number"
                             min={1}
-                            max={line.count}
+                            max={lineAvailable}
                             value={currentInputCount}
-                            onChange={(e) => handleCountChange(line.id, line.count, parseInt(e.target.value, 10))}
+                            onChange={(e) => handleCountChange(line.id, lineAvailable, parseInt(e.target.value, 10))}
                             className="h-7 w-20 text-xs font-mono text-right"
                           />
                           <span className="text-[11px] text-muted-foreground font-mono">只</span>
@@ -377,7 +439,13 @@ export function SortTaskDialog({
             <Button
               type="submit"
               size="sm"
-              disabled={isPending || isMachineBlocked || completedBundles.length === 0 || selectedCount === 0}
+              disabled={
+                isPending ||
+                isMachineBlocked ||
+                completedBundles.length === 0 ||
+                selectedCount === 0 ||
+                currentBundleAvailable <= 0
+              }
               className="gap-1.5 bg-primary text-primary-foreground font-medium"
             >
               {isPending && <Loader2 className="size-3.5 animate-spin" />}

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Invariants } from "../src/lib/invariants";
 
 /**
  * 诊断与回归测试：保鲜预冷与出库管理数据对账
@@ -10,13 +11,6 @@ import assert from "node:assert/strict";
  * - CR-0904: 母蟹 2.5两 (1,020 只) [B区]
  */
 
-const DEFAULT_BASE_SPECS = [
-  { gender: "MALE", weightTier: "4.0两" },
-  { gender: "MALE", weightTier: "3.5两" },
-  { gender: "FEMALE", weightTier: "3.5两" },
-  { gender: "FEMALE", weightTier: "3.0两" },
-];
-
 export function computeDynamicSpecStocks({
   sortTasks,
   outboundLines = [],
@@ -26,39 +20,9 @@ export function computeDynamicSpecStocks({
   pendingOrders?: any[];
   outboundLines?: Array<{ gender: string; weightTier: string; count: number }>;
 }) {
-  const DEFAULT_SPECS = [
-    { gender: "MALE", weightTier: "4.0两", label: "4.0两 公蟹" },
-    { gender: "MALE", weightTier: "3.5两", label: "3.5两 公蟹" },
-    { gender: "FEMALE", weightTier: "3.5两", label: "3.5两 母蟹" },
-    { gender: "FEMALE", weightTier: "3.0两", label: "3.0两 母蟹" },
-  ];
-
-  const foundSpecs = Array.from(
-    new Set(sortTasks.map((t) => `${t.gender}_${t.weightTier}`))
-  ).map((k) => {
-    const [gender, weightTier] = k.split("_");
-    return { gender, weightTier, label: `${weightTier} ${gender === "FEMALE" ? "母蟹" : "公蟹"}` };
-  });
-
-  const activeSpecs = [
-    ...foundSpecs,
-    ...DEFAULT_SPECS.filter((d) => !foundSpecs.some((s) => s.gender === d.gender && s.weightTier === d.weightTier)),
-  ].slice(0, Math.max(4, foundSpecs.length))
-   .sort((a, b) => (a.gender !== b.gender ? (a.gender === "MALE" ? -1 : 1) : parseFloat(b.weightTier) - parseFloat(a.weightTier)));
-
-  return activeSpecs.map((spec) => {
-    const qualified = sortTasks
-      .filter((t) => t.gender === spec.gender && t.weightTier === spec.weightTier)
-      .reduce((a, t) => a + t.qualifiedCount, 0);
-
-    const used = outboundLines
-      .filter((l) => l.gender === spec.gender && l.weightTier === spec.weightTier)
-      .reduce((a, l) => a + l.count, 0);
-
-    const available = Math.max(0, qualified - used);
-    const usagePct = qualified > 0 ? Math.min(100, Math.round((used / qualified) * 100)) : 0;
-
-    return { ...spec, qualified, used, available, usagePct };
+  return Invariants.aggregateSpecStocks({
+    sortTasks,
+    outboundLines,
   });
 }
 

@@ -19,7 +19,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
-import { formatDate, formatISODate } from "@/lib/utils";
+import { formatDate, formatDateTime, formatShortDateTime, formatISODate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -723,7 +723,7 @@ export default async function LedgersPage({
             exportFilename={`阳澄股份_台账五_品控记录表_${selectedDateStr || "全量"}`}
             exportHeaders={["日期", "记录编号", "类型", "关联对象", "内容", "结果", "上传人"]}
             exportRows={qcRecords.map((q) => [
-              q.checkTime.toISOString().slice(5, 16).replace("T", " "),
+              formatDateTime(q.checkTime),
               q.code,
               QC_CATEGORY_LABELS[q.cat] || q.cat,
               q.refId,
@@ -763,7 +763,7 @@ export default async function LedgersPage({
                     return (
                       <TableRow key={q.id} className="hover:bg-muted/40 transition-colors">
                         <TableCell className="font-mono text-xs">
-                          {q.checkTime.toISOString().slice(5, 16).replace("T", " ")}
+                          {formatShortDateTime(q.checkTime)}
                         </TableCell>
                         <TableCell className="font-mono font-medium text-xs">{q.code}</TableCell>
                         <TableCell className="text-xs">

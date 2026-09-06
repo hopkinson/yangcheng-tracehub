@@ -50,6 +50,15 @@ export interface ColdIntakeCheck {
   taskCode?: string;
 }
 
+export interface SortTaskIntakeCheck {
+  bundleLineCount: number;
+  alreadySortedCount: number;
+  inputCount: number;
+  bundleStatus?: string;
+  bundleCode?: string;
+  spec?: string;
+}
+
 export interface ProcessLossCheck {
   inputCount: number;
   qualifiedCount: number;
@@ -58,9 +67,19 @@ export type SortingLossCheck = ProcessLossCheck;
 export type BundleLossCheck = ProcessLossCheck;
 
 export interface ParsedSpecItem {
-  gender: "MALE" | "FEMALE";
+  gender: "FEMALE" | "MALE";
   weightTier: string;
   count: number;
+}
+
+export interface SpecStockInfo {
+  gender: string;
+  weightTier: string;
+  label: string;
+  qualified: number;
+  used: number;
+  available: number;
+  usagePct: number;
 }
 
 export interface RawImportOrder {
@@ -207,41 +226,83 @@ export const Invariants = {
     };
   },
 
-  // 7.1 分拣合格品入库保鲜预冷余量卡控 (PRD V2.1)
-  // 入库数量不得多于分拣合格剩余未入库只数: count <= qualifiedCount - alreadyIntakeCount
-  checkColdIntake: ({
-    qualifiedCount,
-    alreadyIntakeCount,
-    intakeCount,
-    taskStatus,
-    taskCode,
-  }: ColdIntakeCheck) => {
-    if (taskStatus && taskStatus !== "COMPLETED") {
+  // 7.1 流转环节通用余量卡控 (保鲜入库 / 分拣建单)
+  checkStageQuota: ({
+    totalCount,
+    usedCount,
+    reqCount,
+    status,
+    code,
+    spec,
+    stageName,
+    actionName,
+  }: {
+    totalCount: number;
+    usedCount: number;
+    reqCount: number;
+    status?: string;
+    code?: string;
+    spec?: string;
+    stageName: string;
+    actionName: string;
+  }) => {
+    const label = `${code ? ` [${code}]` : ""}${spec ? ` [${spec}]` : ""}`;
+    if (status && status !== "COMPLETED") {
       return {
         valid: false,
         availableCount: 0,
-        reason: `分拣批次${taskCode ? ` [${taskCode}] ` : ""}尚未完成称重分拣（当前状态：${taskStatus}），暂不可办理保鲜预冷入库`,
+        reason: `${stageName}${label}尚未完成（当前状态：${status}），暂不可${actionName}`,
       };
     }
-    const availableCount = Math.max(0, qualifiedCount - alreadyIntakeCount);
-    if (intakeCount <= 0) {
-      return { valid: false, availableCount, reason: "入库数量必须大于 0" };
+    const availableCount = Math.max(0, totalCount - usedCount);
+    if (reqCount <= 0) {
+      return { valid: false, availableCount, reason: "投入数量必须大于 0" };
     }
-    if (intakeCount > availableCount) {
+    if (availableCount <= 0) {
+      return {
+        valid: false,
+        availableCount: 0,
+        reason: `${stageName}${label}已无可流转余量（已全部${actionName}），禁止重复建单！`,
+      };
+    }
+    if (reqCount > availableCount) {
       return {
         valid: false,
         availableCount,
-        excess: intakeCount - availableCount,
-        reason: `超额入库拦截：申请入库 ${intakeCount} 只，该分拣批次${taskCode ? ` [${taskCode}] ` : ""}当前仅剩 ${availableCount} 只可入库（分拣合格 ${qualifiedCount} 只，已预冷入库 ${alreadyIntakeCount} 只）`,
+        excess: reqCount - availableCount,
+        reason: `超额${actionName}拦截：申请 ${reqCount} 只，该${stageName}${label}当前仅剩 ${availableCount} 只（合格 ${totalCount} 只，已${actionName} ${usedCount} 只）`,
       };
     }
     return {
       valid: true,
       availableCount,
-      remaining: availableCount - intakeCount,
-      reason: `分拣批次余量核验通过，准予入库登记（入库 ${intakeCount} 只，入库后剩余 ${availableCount - intakeCount} 只）`,
+      remaining: availableCount - reqCount,
+      reason: `${stageName}余量核验通过，准予${actionName}（本次 ${reqCount} 只，剩余 ${availableCount - reqCount} 只）`,
     };
   },
+
+  checkColdIntake: (p: ColdIntakeCheck) =>
+    Invariants.checkStageQuota({
+      totalCount: p.qualifiedCount,
+      usedCount: p.alreadyIntakeCount,
+      reqCount: p.intakeCount,
+      status: p.taskStatus,
+      code: p.taskCode,
+      stageName: "分拣批次",
+      actionName: "入库登记",
+    }),
+
+  checkSortTaskIntake: (p: SortTaskIntakeCheck) =>
+    Invariants.checkStageQuota({
+      totalCount: p.bundleLineCount,
+      usedCount: p.alreadySortedCount,
+      reqCount: p.inputCount,
+      status: p.bundleStatus,
+      code: p.bundleCode,
+      spec: p.spec,
+      stageName: "捆扎批次",
+      actionName: "创建分拣任务",
+    }),
 
   // 8. 加工环节通用损耗计算与 5% 红线告警 (分拣/捆扎)
   calculateProcessLoss: ({ inputCount, qualifiedCount }: ProcessLossCheck, stage = "加工") => {
@@ -276,23 +337,26 @@ export const Invariants = {
         const rawWeight = match[1] || match[4];
         const sex = match[2] || match[3];
         const count = parseInt(match[5], 10);
-        const formattedWeight = rawWeight.includes(".") ? rawWeight : `${rawWeight}.0`;
         return {
           gender: (sex === "母" ? "FEMALE" : "MALE") as "FEMALE" | "MALE",
-          weightTier: `${formattedWeight}两`,
+          weightTier: Invariants.normalizeWeightTier(rawWeight),
           count,
         };
       })
       .filter((item) => item.count > 0);
   },
 
-  // 10. 日期安全解析与标准化
+  // 9.1 重量档位规格标准化 (如 "3两" / "3" / "3.0" -> "3.0两", "3.5" -> "3.5两")
+  normalizeWeightTier: (val?: string | null, fallback = "4.0两"): string => {
+    const m = val?.match(/(\d+(?:\.\d+)?)/);
+    return m ? `${parseFloat(m[1]).toFixed(1)}两` : fallback;
+  },
+
+  // 10. 日期安全解析与标准化 (严格锁定北京时间 Asia/Shanghai)
   normalizeDateStr: (val?: string | Date | null): string => {
     if (val instanceof Date && !isNaN(val.getTime())) {
-      const y = val.getFullYear();
-      const m = String(val.getMonth() + 1).padStart(2, "0");
-      const d = String(val.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
+      const s = val.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
+      return s.slice(0, 10);
     }
     if (typeof val === "string") {
       const s = val.trim();
@@ -312,10 +376,7 @@ export const Invariants = {
       if (m) return `${m[1]}-${m[2]}-${m[3]}`;
     }
     const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, "0");
-    const d = String(today.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
+    return today.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
   },
 
   normalizeDate: (val?: string | Date | null): Date =>
@@ -413,13 +474,13 @@ export const Invariants = {
         const rawWeight = m[1] && !/公|母/.test(m[1]) ? m[1] : m[2];
         const rawSex = /公|母/.test(m[1]) ? m[1] : m[2];
         gender = rawSex === "母" ? "FEMALE" : "MALE";
-        weightTier = rawWeight.includes(".") ? `${rawWeight}两` : `${rawWeight}.0两`;
+        weightTier = Invariants.normalizeWeightTier(rawWeight);
       }
     } else {
       genderCell = cells.find((c) => !isDate(c) && (/^(母|母蟹|female)$/i.test(c) || /^(公|公蟹|male)$/i.test(c)));
       gender = genderCell && /母|female/i.test(genderCell) ? "FEMALE" : "MALE";
       weightCell = cells.find((c) => !isDate(c) && c !== genderCell && /^([1-9](?:\.[0-9])?)(?:两)?$/.test(c));
-      weightTier = weightCell ? (weightCell.endsWith("两") ? weightCell : `${Number(weightCell).toFixed(1)}两`) : "4.0两";
+      weightTier = weightCell ? Invariants.normalizeWeightTier(weightCell) : "4.0两";
     }
 
     // 3. 提取数量 (最后一个数字单元格) 与门店/订单信息
@@ -507,7 +568,7 @@ export const Invariants = {
         if (m) {
           const rawWeight = m[1];
           const sex = m[2];
-          const weightTier = rawWeight.includes(".") ? `${rawWeight}两` : `${rawWeight}.0两`;
+          const weightTier = Invariants.normalizeWeightTier(rawWeight);
           const gender = sex === "母" ? "FEMALE" : "MALE";
           const specTag = `${rawWeight.includes(".") ? rawWeight : `${rawWeight}.0`}${sex}`;
           foundSpecs.push({ colIdx: idx, weightTier, gender, specTag });
@@ -592,6 +653,66 @@ export const Invariants = {
       const item = Invariants.parseStoreOrderImportLine(line, defaultStoreName, storeCounter);
       return item ? [item] : [];
     });
+  },
+
+  // 15. 冷库各规格可出库存动态聚合与同规格合并 (PRD V2.3)
+  // 彻底消除由于输入差异（如 "3两" 与 "3.0两"）导致的未合并重叠展示问题
+  aggregateSpecStocks({
+    sortTasks = [],
+    outboundLines = [],
+    defaultSpecs = [
+      { gender: "MALE", weightTier: "4.0两", label: "4.0两 公蟹" },
+      { gender: "MALE", weightTier: "3.5两", label: "3.5两 公蟹" },
+      { gender: "FEMALE", weightTier: "3.5两", label: "3.5两 母蟹" },
+      { gender: "FEMALE", weightTier: "3.0两", label: "3.0两 母蟹" },
+    ],
+  }: {
+    sortTasks: Array<{ gender: string; weightTier: string; qualifiedCount: number }>;
+    outboundLines?: Array<{ gender: string; weightTier: string; count: number }>;
+    defaultSpecs?: Array<{ gender: string; weightTier: string; label: string }>;
+  }) {
+    const stockMap = new Map<string, { qualified: number; used: number }>();
+    for (const t of sortTasks) {
+      const k = `${t.gender}_${Invariants.normalizeWeightTier(t.weightTier)}`;
+      const e = stockMap.get(k) || { qualified: 0, used: 0 };
+      e.qualified += t.qualifiedCount || 0;
+      stockMap.set(k, e);
+    }
+    for (const l of outboundLines) {
+      const k = `${l.gender}_${Invariants.normalizeWeightTier(l.weightTier)}`;
+      const e = stockMap.get(k) || { qualified: 0, used: 0 };
+      e.used += l.count || 0;
+      stockMap.set(k, e);
+    }
+
+    const allKeys = new Set([
+      ...stockMap.keys(),
+      ...defaultSpecs.map((d) => `${d.gender}_${Invariants.normalizeWeightTier(d.weightTier)}`),
+    ]);
+
+    return Array.from(allKeys)
+      .map((k) => {
+        const [gender, weightTier] = k.split("_");
+        const { qualified = 0, used = 0 } = stockMap.get(k) || {};
+        const available = Math.max(0, qualified - used);
+        return {
+          gender,
+          weightTier,
+          label: `${weightTier} ${gender === "FEMALE" ? "母蟹" : "公蟹"}`,
+          qualified,
+          used,
+          available,
+          usagePct: qualified > 0 ? Math.min(100, Math.round((used / qualified) * 100)) : 0,
+        };
+      })
+      .sort((a, b) =>
+        a.gender !== b.gender
+          ? a.gender === "MALE"
+            ? -1
+            : 1
+          : parseFloat(b.weightTier) - parseFloat(a.weightTier)
+      )
+      .slice(0, Math.max(4, stockMap.size));
   },
 };
 

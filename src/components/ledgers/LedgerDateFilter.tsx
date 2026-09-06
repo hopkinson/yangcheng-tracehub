@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { format, parseISO } from "date-fns";
+import { parseISO } from "date-fns";
 import { Calendar as CalendarIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 export function LedgerDateFilter({ selectedDate }: { selectedDate?: string }) {
   const router = useRouter();
@@ -23,7 +23,7 @@ export function LedgerDateFilter({ selectedDate }: { selectedDate?: string }) {
     setDate(newDate);
     const params = new URLSearchParams(searchParams.toString());
     if (newDate) {
-      params.set("date", format(newDate, "yyyy-MM-dd"));
+      params.set("date", formatDate(newDate));
     } else {
       params.delete("date");
     }
@@ -51,7 +51,7 @@ export function LedgerDateFilter({ selectedDate }: { selectedDate?: string }) {
             )}
           >
             <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{date ? format(date, "yyyy-MM-dd") : "指定日期查询"}</span>
+            <span className="truncate">{date ? formatDate(date) : "指定日期查询"}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">

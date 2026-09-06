@@ -22,6 +22,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { TraceQueryResult, TraceLineDetail, TraceChainNode, TraceQCBadge } from "@/lib/trace-service";
+import { formatDateTime } from "@/lib/utils";
 
 interface TraceTopologyFlowProps {
   data: TraceQueryResult;
@@ -231,7 +232,7 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
                 <div>
                   <span className="text-muted-foreground text-[11px]">质检员 / 巡检时间</span>
                   <div className="font-medium text-foreground mt-0.5">
-                    {selectedQC.uploader} · {new Date(selectedQC.checkTime).toLocaleDateString("zh-CN")}
+                    {selectedQC.uploader} · {formatDateTime(selectedQC.checkTime)}
                   </div>
                 </div>
               </div>

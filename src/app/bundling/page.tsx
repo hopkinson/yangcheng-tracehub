@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BundleBatchDialog } from "@/components/bundling/BundleBatchDialog";
 import { BundleGroupDialog } from "@/components/bundling/BundleGroupDialog";
 import { CompleteBundleButton } from "@/components/bundling/CompleteBundleButton";
+import { CancelBundleButton } from "@/components/bundling/CancelBundleButton";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
@@ -67,9 +68,11 @@ export default async function BundlingPage({
     include: {
       batches: {
         where: { status: { not: "FROZEN" } },
+        include: { farmer: true },
       },
       batchItems: {
         where: { batch: { status: { not: "FROZEN" } } },
+        include: { batch: { include: { farmer: true } } },
       },
     },
     orderBy: { code: "asc" },
@@ -82,6 +85,8 @@ export default async function BundlingPage({
     currentGender: p.currentGender,
     currentWeightTier: p.currentWeightTier,
     liveCount: Invariants.calculatePoolLiveCount(p),
+    farmerName:
+      [...new Set([...p.batches, ...p.batchItems.map((i: any) => i.batch)].map((b: any) => b?.farmer?.name).filter(Boolean))].join(", ") || null,
   }));
 
   // 4. 查询捆扎批次
@@ -95,6 +100,7 @@ export default async function BundlingPage({
       group: true,
       tagClaim: { include: { farmer: true } },
       lines: { include: { pool: true } },
+      sortTasks: true,
     },
   });
 
@@ -110,10 +116,14 @@ export default async function BundlingPage({
   });
 
   const isBundlingActive = batches.some((b: any) => b.status === "BUNDLING");
+  const getBatchCrabs = (b: any) =>
+    b.status === "COMPLETED" && b.qualifiedCount != null
+      ? b.qualifiedCount
+      : b.lines.reduce((acc: number, l: any) => acc + l.count, 0);
+
   const totalBatchesAll = groups.reduce((acc: number, g: any) => acc + g.batches.length, 0);
   const totalCrabsAll = groups.reduce(
-    (acc: number, g: any) =>
-      acc + g.batches.reduce((bAcc: number, b: any) => bAcc + b.lines.reduce((lAcc: number, l: any) => lAcc + l.count, 0), 0),
+    (acc: number, g: any) => acc + g.batches.reduce((bAcc: number, b: any) => bAcc + getBatchCrabs(b), 0),
     0
   );
 
@@ -243,10 +253,7 @@ export default async function BundlingPage({
 
                 {/* 2. 各班组工位卡 */}
                 {groups.map((g: any) => {
-                  const totalCrabs = g.batches.reduce(
-                    (acc: number, b: any) => acc + b.lines.reduce((lAcc: number, l: any) => lAcc + l.count, 0),
-                    0
-                  );
+                  const totalCrabs = g.batches.reduce((acc: number, b: any) => acc + getBatchCrabs(b), 0);
                   const isBundling = g.batches.some((b: any) => b.status === "BUNDLING");
                   const isSelected = selectedGroupId === g.id;
                   const cleanName = g.name.replace(/-\d+_[a-z0-9]+$/i, "");
@@ -362,8 +369,8 @@ export default async function BundlingPage({
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-foreground border border-border/70 leading-none">
-                          {batch.group.name.replace(/-\d+_[a-z0-9]+$/i, "").replace(/_\d+$/i, "")}
-                          {batch.group.code && /^P\d+$/i.test(batch.group.code) ? `(${batch.group.code})` : ""}
+                          {batch.group.name.replace(/(-\d+_[a-z0-9]+|_\d+)$/i, "")}
+                          {batch.group.code && /^P\d+$/i.test(batch.group.code) && !/P\d+/i.test(batch.group.name) ? `(${batch.group.code})` : ""}
                         </span>
                       </td>
                       <td className="px-3 py-2 font-mono whitespace-nowrap">
@@ -437,15 +444,25 @@ export default async function BundlingPage({
                         {batch.doneAt ? formatDateTime(batch.doneAt) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
-                        {batch.status === "BUNDLING" ? (
-                          <CompleteBundleButton
-                            bundleId={batch.id}
-                            code={batch.code}
-                            lines={batch.lines}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground/50 text-[11px]">—</span>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {batch.status === "BUNDLING" && (
+                            <CompleteBundleButton
+                              bundleId={batch.id}
+                              code={batch.code}
+                              lines={batch.lines}
+                            />
+                          )}
+                          {(!batch.sortTasks || batch.sortTasks.length === 0) && (
+                            <CancelBundleButton
+                              bundleId={batch.id}
+                              code={batch.code}
+                              status={batch.status}
+                            />
+                          )}
+                          {batch.status === "COMPLETED" && batch.sortTasks?.length > 0 && (
+                            <span className="text-muted-foreground/50 text-[11px]">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

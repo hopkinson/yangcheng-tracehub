@@ -62,7 +62,7 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
         specModel: raw.specModel || null,
         deliveryDate: Invariants.normalizeDate(raw.deliveryDate),
         gender: raw.gender === "母" || raw.gender === "FEMALE" ? "FEMALE" : "MALE",
-        weightTier: raw.weightTier?.endsWith("两") ? raw.weightTier : `${raw.weightTier || "4.0"}两`,
+        weightTier: Invariants.normalizeWeightTier(raw.weightTier),
         count: Number(raw.count || 1),
         status: "PENDING" as const,
       });
@@ -225,38 +225,111 @@ export async function createBundleBatchAction(data: {
     }
 
     const dateStr = getBeijingDateStr();
-    const count = await prisma.bundleBatch.count();
-    const code = `KZD${dateStr}${String(count + 1).padStart(2, "0")}`;
 
-    const batch = await prisma.bundleBatch.create({
-      data: {
-        code,
-        groupId: data.groupId,
-        tagClaimId: data.tagClaimId,
-        ropeBatch: data.ropeBatch.trim(),
-        inputCount: totalCrabs,
-        status: "BUNDLING",
-        lines: {
-          create: data.lines.map((l) => ({
-            poolId: l.poolId,
-            gender: l.gender,
-            weightTier: l.weightTier,
-            count: l.count,
-          })),
+    const result = await prisma.$transaction(async (tx) => {
+      const count = await tx.bundleBatch.count();
+      const code = `KZD${dateStr}${String(count + 1).padStart(2, "0")}`;
+
+      const batch = await tx.bundleBatch.create({
+        data: {
+          code,
+          groupId: data.groupId,
+          tagClaimId: data.tagClaimId,
+          ropeBatch: data.ropeBatch.trim(),
+          inputCount: totalCrabs,
+          status: "BUNDLING",
+          lines: {
+            create: data.lines.map((l) => ({
+              poolId: l.poolId,
+              gender: l.gender,
+              weightTier: Invariants.normalizeWeightTier(l.weightTier),
+              count: l.count,
+            })),
+          },
         },
-      },
-      include: { lines: true },
-    });
+        include: { lines: true },
+      });
 
-    // 捆扎组状态更新为 BUNDLING
-    await prisma.bundleGroup.update({
-      where: { id: data.groupId },
-      data: { status: "BUNDLING" },
+      // 捆扎组状态更新为 BUNDLING
+      await tx.bundleGroup.update({
+        where: { id: data.groupId },
+        data: { status: "BUNDLING" },
+      });
+
+      // 立即扣减暂养池存活 (入池到捆扎即起池出池，起池数量计入 outPoolCount，锁定库存杜绝重复出池捆扎)
+      for (const line of data.lines) {
+        let remainingToDeduct = line.count;
+
+        const items = await tx.batchItem.findMany({
+          where: {
+            poolId: line.poolId,
+            gender: line.gender,
+            weightTier: line.weightTier,
+            batch: {
+              farmerId: tagClaim.farmerId,
+              status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] },
+            },
+          },
+          include: { batch: true },
+          orderBy: { createdAt: "asc" },
+        });
+
+        if (items.length > 0) {
+          for (const item of items) {
+            if (remainingToDeduct <= 0) break;
+            const itemLive = Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount);
+            if (itemLive <= 0) continue;
+            const deduct = Math.min(remainingToDeduct, itemLive);
+            const newOut = item.outPoolCount + deduct;
+            remainingToDeduct -= deduct;
+
+            await tx.batchItem.update({
+              where: { id: item.id },
+              data: { outPoolCount: newOut },
+            });
+
+            const newBatchOut = item.batch.outPoolCount + deduct;
+            const batchStatus = item.batch.inPoolCount - newBatchOut - item.batch.lossCount <= 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND";
+            await tx.batch.update({
+              where: { id: item.batchId },
+              data: { outPoolCount: { increment: deduct }, status: batchStatus },
+            });
+          }
+        } else {
+          const batches = await tx.batch.findMany({
+            where: {
+              poolId: line.poolId,
+              farmerId: tagClaim.farmerId,
+              status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] },
+            },
+            orderBy: { createdAt: "asc" },
+          });
+
+          for (const b of batches) {
+            if (remainingToDeduct <= 0) break;
+            const live = Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount);
+            if (live <= 0) continue;
+            const deduct = Math.min(remainingToDeduct, live);
+            const newOut = b.outPoolCount + deduct;
+            remainingToDeduct -= deduct;
+            const status = b.inPoolCount - newOut - b.lossCount <= 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND";
+
+            await tx.batch.update({
+              where: { id: b.id },
+              data: { outPoolCount: newOut, status },
+            });
+          }
+        }
+      }
+
+      return { code };
     });
 
     revalidate("/bundling");
+    revalidate("/pools");
+    revalidate("/batches");
     revalidate("/");
-    return { success: true, code, message: `捆扎批次 ${code} 创建成功，进入【捆扎中】状态` };
+    return { success: true, code: result.code, message: `捆扎批次 ${result.code} 创建成功，进入【捆扎中】状态` };
   } catch (error: any) {
     console.error("createBundleBatchAction error:", error);
     return { success: false, message: error.message || "创建捆扎批次失败" };
@@ -330,34 +403,6 @@ export async function completeBundleBatchAction(
         where: { id: batch.groupId },
         data: { status: "COMPLETED" },
       });
-
-      // 扣减暂养池存活 (入池到捆扎即出池，起池数量计入 outPoolCount)
-      for (const line of batch.lines) {
-        const item = await tx.batchItem.findFirst({
-          where: {
-            poolId: line.poolId,
-            gender: line.gender,
-            weightTier: line.weightTier,
-            batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-          },
-        });
-
-        if (item) {
-          const newOut = item.outPoolCount + line.count;
-          const status = item.inPoolCount - newOut - item.lossCount <= 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND";
-          await tx.batchItem.update({ where: { id: item.id }, data: { outPoolCount: newOut } });
-          await tx.batch.update({ where: { id: item.batchId }, data: { outPoolCount: { increment: line.count }, status } });
-        } else {
-          const b = await tx.batch.findFirst({
-            where: { poolId: line.poolId, status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-          });
-          if (b) {
-            const newOut = b.outPoolCount + line.count;
-            const status = b.inPoolCount - newOut - b.lossCount <= 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND";
-            await tx.batch.update({ where: { id: b.id }, data: { outPoolCount: newOut, status } });
-          }
-        }
-      }
     });
 
     revalidate("/bundling");
@@ -401,6 +446,78 @@ export async function deleteBundleGroupAction(groupId: string) {
   }
 }
 
+export async function deleteBundleBatchAction(bundleId: string) {
+  try {
+    const batch = await prisma.bundleBatch.findUnique({
+      where: { id: bundleId },
+      include: { lines: true, sortTasks: true },
+    });
+    if (!batch) return { success: false, message: "未找到指定的捆扎批次" };
+    if (batch.sortTasks.length > 0) {
+      return { success: false, message: "该批次已生成下游分拣任务，禁止撤销作废" };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 无论处于 BUNDLING 还是 COMPLETED，撤销捆扎批次都需原数退回暂养池库存
+      for (const line of batch.lines) {
+        let remaining = line.count;
+        const items = await tx.batchItem.findMany({
+          where: { poolId: line.poolId, gender: line.gender, weightTier: line.weightTier, outPoolCount: { gt: 0 } },
+          orderBy: { createdAt: "desc" },
+        });
+
+        for (const item of items) {
+          if (remaining <= 0) break;
+          const restore = Math.min(remaining, item.outPoolCount);
+          remaining -= restore;
+          await tx.batchItem.update({ where: { id: item.id }, data: { outPoolCount: { decrement: restore } } });
+          await tx.batch.update({
+            where: { id: item.batchId },
+            data: { outPoolCount: { decrement: restore }, status: "PARTIALLY_OUTBOUND" },
+          });
+        }
+
+        if (remaining > 0) {
+          const batches = await tx.batch.findMany({
+            where: { poolId: line.poolId, outPoolCount: { gt: 0 } },
+            orderBy: { createdAt: "desc" },
+          });
+          for (const b of batches) {
+            if (remaining <= 0) break;
+            const restore = Math.min(remaining, b.outPoolCount);
+            remaining -= restore;
+            await tx.batch.update({
+              where: { id: b.id },
+              data: { outPoolCount: { decrement: restore }, status: "PARTIALLY_OUTBOUND" },
+            });
+          }
+        }
+      }
+
+      await tx.bundleBatch.delete({ where: { id: bundleId } });
+
+      const remainingBundling = await tx.bundleBatch.count({
+        where: { groupId: batch.groupId, status: "BUNDLING" },
+      });
+      if (remainingBundling === 0) {
+        await tx.bundleGroup.update({
+          where: { id: batch.groupId },
+          data: { status: "IDLE" },
+        });
+      }
+    });
+
+    revalidate("/bundling");
+    revalidate("/sorting");
+    revalidate("/");
+    return { success: true, message: `捆扎批次 ${batch.code} 已成功撤销并作废，暂养池库存已原数恢复` };
+  } catch (error: any) {
+    console.error("deleteBundleBatchAction error:", error);
+    return { success: false, message: error.message || "撤销捆扎批次失败" };
+  }
+}
+
+
 // ============================================================================
 // 3. 分拣称重 Server Actions
 // ============================================================================
@@ -430,24 +547,47 @@ export async function createSortTasksAction(data: {
 
     const bundle = await prisma.bundleBatch.findUnique({
       where: { id: data.bundleBatchId },
-      include: { lines: true },
+      include: { lines: true, sortTasks: true },
     });
     if (!bundle || bundle.status !== "COMPLETED") {
       return { success: false, message: "只有【已完成】的捆扎批次才允许进入分拣任务" };
     }
 
+    // 统计各规格已占用的分拣投入量与捆扎批次各规格可用总量
+    const specUsedMap = new Map<string, number>();
+    for (const t of bundle.sortTasks) {
+      const key = `${t.gender}_${Invariants.normalizeWeightTier(t.weightTier)}`;
+      specUsedMap.set(key, (specUsedMap.get(key) || 0) + t.inputCount);
+    }
+
+    const specLineTotals = new Map<string, number>();
+    for (const l of bundle.lines) {
+      const key = `${l.gender}_${Invariants.normalizeWeightTier(l.weightTier)}`;
+      specLineTotals.set(key, (specLineTotals.get(key) || 0) + (l.qualifiedCount ?? l.count));
+    }
+
     for (const item of data.items) {
-      const matchedLine = item.lineId
-        ? bundle.lines.find((l) => l.id === item.lineId)
-        : bundle.lines.find((l) => l.gender === item.gender && l.weightTier === item.weightTier);
-      const maxAllowed = matchedLine ? (matchedLine.qualifiedCount ?? matchedLine.count) : 0;
-      if (item.inputCount <= 0 || item.inputCount > maxAllowed) {
-        const genderText = item.gender === "FEMALE" ? "母蟹" : "公蟹";
-        return {
-          success: false,
-          message: `【${genderText} ${item.weightTier}】投入只数 (${item.inputCount}) 必须大于0且不超过规格上限 (${maxAllowed} 只)`,
-        };
+      const normTier = Invariants.normalizeWeightTier(item.weightTier);
+      const specKey = `${item.gender}_${normTier}`;
+      const totalLineCount = specLineTotals.get(specKey) || 0;
+      const alreadySorted = specUsedMap.get(specKey) || 0;
+      const genderText = item.gender === "FEMALE" ? "母蟹" : "公蟹";
+      const specText = `${genderText} ${normTier}`;
+
+      const check = Invariants.checkSortTaskIntake({
+        bundleLineCount: totalLineCount,
+        alreadySortedCount: alreadySorted,
+        inputCount: item.inputCount,
+        bundleStatus: bundle.status,
+        bundleCode: bundle.code,
+        spec: specText,
+      });
+
+      if (!check.valid) {
+        return { success: false, message: check.reason };
       }
+
+      specUsedMap.set(specKey, alreadySorted + item.inputCount);
     }
 
     const dateStr = getBeijingDateStr();
@@ -464,7 +604,7 @@ export async function createSortTasksAction(data: {
             machineId: data.machineId,
             bundleBatchId: data.bundleBatchId,
             gender: item.gender,
-            weightTier: item.weightTier,
+            weightTier: Invariants.normalizeWeightTier(item.weightTier),
             inputCount: item.inputCount,
             status: "PENDING",
           },
@@ -533,6 +673,38 @@ export async function completeSortTaskAction(taskId: string, qualifiedCount: num
   } catch (error: any) {
     console.error("completeSortTaskAction error:", error);
     return { success: false, message: error.message || "完成分拣任务失败" };
+  }
+}
+
+export async function deleteSortTaskAction(taskId: string) {
+  try {
+    const task = await prisma.sortTask.findUnique({ where: { id: taskId } });
+    if (!task) return { success: false, message: "分拣任务未找到" };
+
+    const coldLog = await prisma.coldLog.findFirst({
+      where: { refId: task.code },
+      include: { outboundOrders: true },
+    });
+    if (coldLog && coldLog.outboundOrders.length > 0) {
+      return {
+        success: false,
+        message: `该分拣任务已被冷库记录 (${coldLog.code}) 关联并参与出库 (${coldLog.outboundOrders[0].code})，无法直接撤回`,
+      };
+    }
+    if (coldLog) {
+      await prisma.coldLog.delete({ where: { id: coldLog.id } });
+    }
+
+    await prisma.sortTask.delete({ where: { id: taskId } });
+
+    revalidate("/sorting");
+    revalidate("/cold-storage");
+    revalidate("/outbound");
+    revalidate("/");
+    return { success: true, message: `分拣任务 ${task.code} 已成功撤回删除` };
+  } catch (error: any) {
+    console.error("deleteSortTaskAction error:", error);
+    return { success: false, message: error.message || "撤销分拣任务失败" };
   }
 }
 

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { CheckCircle2, Scale, ShieldCheck, Tag } from "lucide-react";
-import { TraceQueryResult } from "@/lib/trace-service";
+import { TraceQueryResult, extractTraceFarmers } from "@/lib/trace-service";
 
 interface TraceAuditLedgerProps {
   data: TraceQueryResult;
@@ -11,6 +11,15 @@ interface TraceAuditLedgerProps {
 export function TraceAuditLedger({ data }: TraceAuditLedgerProps) {
   const { farmerInfo, orderInfo, outboundInfo, isPreview } = data;
   const count = orderInfo?.count || outboundInfo?.outboundCount || 0;
+
+  const farmers = extractTraceFarmers(data);
+  const hasMultipleFarmers = farmers.length > 1;
+  const totalQuota = hasMultipleFarmers
+    ? farmers.reduce((sum, f) => sum + (f.quota || 0), 0)
+    : farmerInfo.quota;
+  const farmerCodesAndNames = hasMultipleFarmers
+    ? farmers.map((f) => `${f.code} (${f.name})`).join(" / ")
+    : `${farmerInfo.code} (${farmerInfo.name})`;
 
   return (
     <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 flex flex-col gap-3">
@@ -23,7 +32,7 @@ export function TraceAuditLedger({ data }: TraceAuditLedgerProps) {
           <div className="min-w-0">
             <div className="font-semibold text-foreground">额度守恒闭环</div>
             <div className="text-[11px] text-muted-foreground truncate">
-              核定 {farmerInfo.quota.toLocaleString()} 只 · 本票核销 {count.toLocaleString()} 只
+              {hasMultipleFarmers ? "联合核定" : "核定"} {totalQuota.toLocaleString()} 只 · 本票核销 {count.toLocaleString()} 只
             </div>
           </div>
         </div>
@@ -34,8 +43,8 @@ export function TraceAuditLedger({ data }: TraceAuditLedgerProps) {
           </div>
           <div className="min-w-0">
             <div className="font-semibold text-foreground">蟹扣专户专用</div>
-            <div className="text-[11px] text-muted-foreground truncate font-mono">
-              {farmerInfo.code} ({farmerInfo.name})
+            <div className="text-[11px] text-muted-foreground truncate font-mono" title={farmerCodesAndNames}>
+              {farmerCodesAndNames}
             </div>
           </div>
         </div>

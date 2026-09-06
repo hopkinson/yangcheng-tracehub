@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { FileText, Thermometer, Droplets, User, CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, ExternalLink, Download, FileWarning, FileCheck } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
 
 export interface BatchDetailProps {
   batch: {
@@ -64,7 +65,7 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
   const [imageError, setImageError] = useState(false);
 
   const rawTime = batch.inPoolTime || batch.createdAt || new Date();
-  const inDateStr = typeof rawTime === "string" ? rawTime : rawTime.toISOString().slice(5, 16).replace("T", " ");
+  const inDateStr = formatDateTime(rawTime);
   const liveCount = Math.max(0, batch.inPoolCount - batch.outPoolCount - batch.lossCount);
 
   return (

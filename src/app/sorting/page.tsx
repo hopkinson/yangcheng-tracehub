@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SortTaskDialog } from "@/components/sorting/SortTaskDialog";
 import { CompleteSortDialog } from "@/components/sorting/CompleteSortDialog";
+import { SortTaskActions } from "@/components/sorting/SortTaskActions";
 import { SortMachineDialog } from "@/components/sorting/SortMachineDialog";
 import { MachineCardActions } from "@/components/sorting/MachineCardActions";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
@@ -17,7 +18,7 @@ import {
   ClipboardCheck,
   ShieldAlert,
 } from "lucide-react";
-import { format } from "date-fns";
+import { formatTime, formatShortDateTime, formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -59,14 +60,57 @@ export default async function SortingPage() {
     },
   });
 
-  // 2. 查询已完成捆扎批次 (status=COMPLETED)
+  // 2. 查询已完成捆扎批次 (status=COMPLETED) 及其关联分拣任务，精确计算各批次规格剩余待分拣只数
   const completedBundles = await prisma.bundleBatch.findMany({
     where: { status: "COMPLETED" },
     orderBy: { date: "desc" },
     include: {
       group: true,
       lines: { include: { pool: true } },
+      sortTasks: true,
     },
+  });
+
+  const completedBundleOptions = completedBundles.map((b: any) => {
+    const specUsed = new Map<string, number>();
+    for (const t of b.sortTasks) {
+      const key = `${t.gender}_${t.weightTier}`;
+      specUsed.set(key, (specUsed.get(key) || 0) + t.inputCount);
+    }
+
+    let totalAvailable = 0;
+    let totalQualified = 0;
+
+    const lines = b.lines.map((l: any) => {
+      const key = `${l.gender}_${l.weightTier}`;
+      const totalCount = l.qualifiedCount ?? l.count;
+      const used = specUsed.get(key) || 0;
+      const consumed = Math.min(used, totalCount);
+      specUsed.set(key, used - consumed);
+      const availableCount = totalCount - consumed;
+
+      totalAvailable += availableCount;
+      totalQualified += totalCount;
+
+      return {
+        id: l.id,
+        gender: l.gender,
+        weightTier: l.weightTier,
+        totalCount,
+        availableCount,
+        count: availableCount,
+        poolCode: l.pool.code,
+      };
+    });
+
+    return {
+      id: b.id,
+      code: b.code,
+      groupName: b.group.name,
+      totalQualified,
+      availableCount: totalAvailable,
+      lines,
+    };
   });
 
   // 3. 查询全部分拣任务
@@ -116,18 +160,7 @@ export default async function SortingPage() {
           <SortMachineDialog />
           <SortTaskDialog
             machines={machines}
-            completedBundles={completedBundles.map((b: any) => ({
-              id: b.id,
-              code: b.code,
-              groupName: b.group.name,
-              lines: b.lines.map((l: any) => ({
-                id: l.id,
-                gender: l.gender,
-                weightTier: l.weightTier,
-                count: l.qualifiedCount ?? l.count,
-                poolCode: l.pool.code,
-              })),
-            }))}
+            completedBundles={completedBundleOptions}
           />
         </div>
       </div>
@@ -224,11 +257,8 @@ export default async function SortingPage() {
               }
             }
 
-            const calibTimeStr = m.lastCalibratedAt
-              ? format(new Date(m.lastCalibratedAt), "HH:mm")
-              : calibrate?.checkTime
-              ? format(new Date(calibrate.checkTime), "HH:mm")
-              : "06:35";
+            const calibTime = m.lastCalibratedAt || calibrate?.checkTime;
+            const calibTimeStr = calibTime ? formatTime(calibTime) : "06:35";
 
             return (
               <Card
@@ -424,18 +454,17 @@ export default async function SortingPage() {
                         )}
                       </td>
                       <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                        {format(new Date(task.doneAt ?? task.date), "MM-dd HH:mm")}
+                        {formatShortDateTime(task.doneAt ?? task.date)}
                       </td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
-                        {task.status === "PENDING" && (
-                          <CompleteSortDialog
-                            taskId={task.id}
-                            code={task.code}
-                            inputCount={task.inputCount}
-                            spec={task.weightTier}
-                            gender={task.gender}
-                          />
-                        )}
+                        <SortTaskActions
+                          taskId={task.id}
+                          code={task.code}
+                          status={task.status}
+                          inputCount={task.inputCount}
+                          spec={task.weightTier}
+                          gender={task.gender}
+                        />
                       </td>
                     </tr>
                   );
@@ -510,7 +539,7 @@ export default async function SortingPage() {
                         {qc.refId}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap">
-                        {format(new Date(qc.checkTime), "yyyy-MM-dd HH:mm")}
+                        {formatDateTime(qc.checkTime)}
                       </td>
                       <td className="px-3 py-2.5">
                         <span className={isExp ? "text-destructive font-medium" : "text-foreground"}>

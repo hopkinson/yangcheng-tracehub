@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FadeIn, PulseBadge, StaggerContainer, AnimatedNumber } from "@/components/motion/MotionWrapper";
-import { cn } from "@/lib/utils";
+import { cn, formatTime, formatDate } from "@/lib/utils";
 import { getTenant } from "@/config/tenant";
 
 export interface DashboardProps {
@@ -222,7 +222,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         target: b.code,
         title: "原料批次被安全锁定冻结",
         reason: b.reason || "品控复检待确认，严禁进入捆扎及后续环节",
-        time: b.time ? new Date(b.time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "今日",
+        time: b.time ? formatTime(b.time) : "今日",
       });
     });
 
@@ -248,7 +248,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         target: t.code,
         title: `分拣损耗率超 5% 警戒线 (${t.lossRate}%)`,
         reason: `投入 ${t.inputCount} 只，损耗 ${t.lossCount} 只，需核验绑扣及装卸环节`,
-        time: t.time ? new Date(t.time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "今日",
+        time: t.time ? formatTime(t.time) : "今日",
       });
     });
 
@@ -261,7 +261,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         target: `${c.farmerName}`,
         title: `蟹扣日结未轧平 (差额 ${c.diff} 只)`,
         reason: `领扣 ${c.claimCount} 只，已核销 ${c.accountedCount} 只（绑扣/退回/作废），请及时完成日结轧平`,
-        time: c.claimDate ? new Date(c.claimDate).toLocaleDateString("zh-CN") : "今日",
+        time: c.claimDate ? formatDate(c.claimDate) : "今日",
       });
     });
 
@@ -280,7 +280,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
           target: q.refId,
           title: q.title,
           reason: q.reason || q.conclusion || "指标异常需核查",
-          time: new Date(q.checkTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+          time: formatTime(q.checkTime),
         });
       }
     });

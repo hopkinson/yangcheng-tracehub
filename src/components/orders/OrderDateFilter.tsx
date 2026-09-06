@@ -2,12 +2,11 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 export function OrderDateFilter({
   currentDate,
@@ -99,7 +98,7 @@ export function OrderDateFilter({
             <CalendarIcon className="size-3.5 text-muted-foreground" />
             <span>
               {isCustomDate && selectedDateObj
-                ? format(selectedDateObj, "yyyy-MM-dd")
+                ? formatDate(selectedDateObj)
                 : "选日历"}
             </span>
           </Button>
@@ -108,7 +107,7 @@ export function OrderDateFilter({
           <Calendar
             mode="single"
             selected={selectedDateObj}
-            onSelect={(date) => date && applyDate(format(date, "yyyy-MM-dd"))}
+            onSelect={(date) => date && applyDate(formatDate(date))}
           />
         </PopoverContent>
       </Popover>

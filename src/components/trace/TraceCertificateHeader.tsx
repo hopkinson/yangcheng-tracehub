@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ShieldCheck, FileText, Truck, Calendar, Store, Tag } from "lucide-react";
+import { ShieldCheck, FileText, Truck, Calendar, Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PrintTraceButton } from "@/components/trace/PrintTraceButton";
-import { TraceQueryResult } from "@/lib/trace-service";
+import { TraceQueryResult, extractTraceFarmers } from "@/lib/trace-service";
+import { formatDate } from "@/lib/utils";
 
 interface TraceCertificateHeaderProps {
   data: TraceQueryResult;
@@ -12,6 +13,10 @@ interface TraceCertificateHeaderProps {
 
 export function TraceCertificateHeader({ data }: TraceCertificateHeaderProps) {
   const { isPreview, orderInfo, outboundInfo, farmerInfo } = data;
+  const farmers = extractTraceFarmers(data);
+  const hasMultipleFarmers = farmers.length > 1;
+  const combinedQuota = farmers.reduce((sum, f) => sum + (f.quota || 0), 0);
+  const enclosures = Array.from(new Set(farmers.map((f) => f.enclosureCode).filter(Boolean))).join(", ");
 
   return (
     <div className="rounded-xl border bg-card p-4 md:p-5 shadow-xs flex flex-col gap-4">
@@ -49,8 +54,20 @@ export function TraceCertificateHeader({ data }: TraceCertificateHeaderProps) {
               </Badge>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              签约农户: <strong className="text-foreground">{farmerInfo.name}</strong> ({farmerInfo.code}) · 
-              额度: {farmerInfo.quota.toLocaleString()} 只 · 围网: {farmerInfo.enclosureCode}
+              签约农户:{" "}
+              {hasMultipleFarmers ? (
+                <>
+                  <strong className="text-foreground">
+                    {farmers.map((f) => `${f.name} (${f.code})`).join("、")}
+                  </strong>{" "}
+                  · 联合额度: {combinedQuota.toLocaleString()} 只 · 围网: {enclosures || farmerInfo.enclosureCode}
+                </>
+              ) : (
+                <>
+                  <strong className="text-foreground">{farmerInfo.name}</strong> ({farmerInfo.code}) · 
+                  额度: {farmerInfo.quota.toLocaleString()} 只 · 围网: {farmerInfo.enclosureCode}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -63,7 +80,7 @@ export function TraceCertificateHeader({ data }: TraceCertificateHeaderProps) {
       {/* 结构化信息卡片 */}
       {orderInfo ? (
         /* 1. 订单视角信息卡 */
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
             <div className="text-muted-foreground text-[11px] flex items-center gap-1">
               <Store className="size-3" />
@@ -76,21 +93,11 @@ export function TraceCertificateHeader({ data }: TraceCertificateHeaderProps) {
 
           <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
             <div className="text-muted-foreground text-[11px] flex items-center gap-1">
-              <Tag className="size-3" />
-              规格 / 型号
-            </div>
-            <div className="font-bold text-foreground text-sm mt-0.5">
-              {orderInfo.specModel || `${orderInfo.weightTier} · ${orderInfo.gender === "MALE" ? "公蟹" : "母蟹"}`}
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
-            <div className="text-muted-foreground text-[11px] flex items-center gap-1">
               <Calendar className="size-3" />
               约定发货日 / 状态
             </div>
             <div className="font-bold text-foreground text-sm mt-0.5 flex items-center gap-1.5">
-              <span>{new Date(orderInfo.deliveryDate).toLocaleDateString("zh-CN")}</span>
+              <span>{formatDate(orderInfo.deliveryDate)}</span>
               <Badge
                 variant="secondary"
                 className={`text-[10px] py-0 px-1.5 font-normal ${

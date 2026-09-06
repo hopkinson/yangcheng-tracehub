@@ -26,8 +26,7 @@ export default async function OrdersPage({
 
   const now = new Date();
   const todayStr = formatISODate(now);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrow = new Date(now.getTime() + 86400000);
   const tomorrowStr = formatISODate(tomorrow);
 
   // 1. 查询全部订单

@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ThermometerSnowflake, ShieldCheck } from "lucide-react";
+import { Invariants } from "@/lib/invariants";
 
 export interface ColdBatchOption {
   id: string;
@@ -31,11 +32,14 @@ export function resolveDemandBatchMap(
   coldBatches: ColdBatchOption[] = [],
   selectedMap: Record<string, string> = {}
 ): Record<string, string> {
+  const batchBySpec = new Map(
+    coldBatches.map((b) => [`${b.gender}_${Invariants.normalizeWeightTier(b.weightTier)}`, b.id])
+  );
   const map: Record<string, string> = { ...selectedMap };
   for (const d of demands) {
-    const key = `${d.gender}_${d.weightTier}`;
+    const key = `${d.gender}_${Invariants.normalizeWeightTier(d.weightTier)}`;
     if (!map[key]) {
-      map[key] = coldBatches.find((b) => b.gender === d.gender && b.weightTier === d.weightTier)?.id || "";
+      map[key] = batchBySpec.get(key) || "";
     }
   }
   return map;
@@ -57,11 +61,11 @@ export function SpecColdBatchAllocation({
   onSelectBatch: (specKey: string, batchId: string) => void;
 }) {
   return (
-    <div className="space-y-2.5 border rounded-lg p-3 bg-muted/15">
+    <div className="flex flex-col gap-2.5 border rounded-lg p-3 bg-muted/15">
       <div className="flex items-center justify-between">
         <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
           <ThermometerSnowflake className="size-3.5 text-primary" />
-          保鲜库调拨批次分配（按规格严格对齐）
+          按规格关联保鲜库预冷批次（出库冷库调拨确认）
         </Label>
         <span className="text-[11px] text-muted-foreground font-mono">
           {demands.length > 0 ? `涉及 ${demands.length} 种规格` : "待勾选订单"}
@@ -73,14 +77,17 @@ export function SpecColdBatchAllocation({
           请先在上方勾选待发货订单，系统将自动汇总规格需求并精准配对冷库批次
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="flex flex-col gap-2.5">
           {demands.map((demand) => {
-            const specKey = `${demand.gender}_${demand.weightTier}`;
-            const specLabel = `${demand.gender === "FEMALE" ? "母蟹" : "公蟹"} ${demand.weightTier}`;
+            const normDemandTier = Invariants.normalizeWeightTier(demand.weightTier);
+            const specKey = `${demand.gender}_${normDemandTier}`;
+            const specLabel = `${demand.gender === "FEMALE" ? "母蟹" : "公蟹"} ${normDemandTier}`;
 
-            // 严格过滤：仅展示同性别、同重量档位的预冷批次
+            // 严格过滤：仅展示同性别、同重量档位的预冷批次（规格自动标准化）
             const matchedBatches = coldBatches.filter(
-              (b) => b.gender === demand.gender && b.weightTier === demand.weightTier
+              (b) =>
+                b.gender === demand.gender &&
+                Invariants.normalizeWeightTier(b.weightTier) === normDemandTier
             );
 
             const activeBatchId =
@@ -93,7 +100,7 @@ export function SpecColdBatchAllocation({
             const isSufficient = (currentBatch?.availableCount ?? 0) >= demand.count;
 
             return (
-              <div key={specKey} className="p-2.5 rounded-md bg-background border space-y-2">
+              <div key={specKey} className="p-2.5 rounded-md bg-background border flex flex-col gap-2">
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="font-semibold text-xs border-primary/30 text-primary">
@@ -123,7 +130,7 @@ export function SpecColdBatchAllocation({
                     暂无该规格专属预冷批次，出库将按分拣合格品总可用量调拨扣减
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="flex flex-col gap-1.5">
                     <Select
                       value={activeBatchId}
                       onValueChange={(val) => onSelectBatch(specKey, val)}
@@ -177,7 +184,7 @@ export function ColdBatchSelect({
   const currentBatch = batches.find((b) => b.id === selectedBatchId) || batches[0];
 
   return (
-    <div className="space-y-2 border rounded-lg p-3 bg-muted/15">
+    <div className="flex flex-col gap-2 border rounded-lg p-3 bg-muted/15">
       <div className="flex items-center justify-between">
         <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
           <ThermometerSnowflake className="size-3.5 text-primary" />
@@ -195,7 +202,7 @@ export function ColdBatchSelect({
           暂无关联批次，系统将按规格实时可用库存进行调拨出库
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Select value={selectedBatchId} onValueChange={onSelectBatchId}>
             <SelectTrigger className="h-8 text-xs font-mono bg-background">
               <SelectValue placeholder="选择关联批次" />

@@ -8,7 +8,7 @@ import { ColdStoreDialog } from "@/components/coldStore/ColdStoreDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { ThermometerSnowflake, CheckSquare, Plus, Activity, ShieldCheck, AlertTriangle } from "lucide-react";
-import { formatISODate } from "@/lib/utils";
+import { formatISODate, formatShortDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +62,7 @@ export default async function ColdStoragePage({
   // 4. 查询已完成分拣任务并统计预冷入库余量 (基于分拣批次入库与数量卡控)
   const completedSortTasks = await prisma.sortTask.findMany({
     where: { status: "COMPLETED" },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ date: "desc" }, { code: "asc" }, { createdAt: "asc" }],
   });
 
   const sortTaskOptions = completedSortTasks.map((t) => {
@@ -303,7 +303,7 @@ export default async function ColdStoragePage({
                         {log.code}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap">
-                        {log.createdAt.toISOString().slice(5, 16).replace("T", " ")}
+                        {formatShortDateTime(log.createdAt)}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <Badge variant="outline" className="text-[10px] font-mono font-medium px-1.5 py-0 h-4">
@@ -437,7 +437,7 @@ export default async function ColdStoragePage({
                         </Badge>
                       </td>
                       <td className="px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap">
-                        {qc.checkTime.toISOString().slice(5, 16).replace("T", " ")}
+                        {formatShortDateTime(qc.checkTime)}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {qc.uploader}

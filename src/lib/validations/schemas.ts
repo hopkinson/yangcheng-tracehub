@@ -145,6 +145,7 @@ export const resubmitTagClaimFormSchema = z.object({
 export type ResubmitTagClaimFormValues = z.infer<typeof resubmitTagClaimFormSchema>;
 
 export const settleTagClaimFormSchema = z.object({
+  boundCount: z.coerce.number().int().min(0, "出库绑扣数不能为负数").optional(),
   returnedCount: z.coerce.number().int().min(0, "退回数量不能为负数").default(0),
   returnReason: z.string().optional(),
   scrappedCount: z.coerce.number().int().min(0, "作废数量不能为负数").default(0),
