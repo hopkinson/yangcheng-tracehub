@@ -352,7 +352,10 @@ export const Invariants = {
         !/^\d{10,14}$/.test(c) &&
         !/(?:提货单号|发货单号|单号|规格|型号|发货|日期)/.test(c)
     );
-    const modelName = otherParts.join(" ").trim();
+    const modelName =
+      otherParts.join(" ").trim() ||
+      trimmed.match(/([^\s\t(（,，]+(?:礼盒|装|型|卡|套餐|尊享))/)?.[1]?.trim() ||
+      "";
 
     const base = {
       orderNo,

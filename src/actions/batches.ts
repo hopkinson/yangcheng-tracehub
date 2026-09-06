@@ -23,7 +23,7 @@ export async function createBatchAction(data: {
   return await prisma.$transaction(async (tx) => {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
-      include: { batches: true },
+      include: { batches: true, enclosures: true },
     });
 
     if (farmer.status !== "ACTIVE") {
@@ -92,11 +92,16 @@ export async function createBatchAction(data: {
     const nextSeq = latest ? (parseInt(latest.code.slice(prefix.length), 10) || 0) + 1 : 1;
     const batchCode = `${prefix}${String(nextSeq).padStart(3, "0")}`;
 
+    const validEnclosure = farmer.enclosures.find((e) => e.id === data.enclosureId) || farmer.enclosures[0];
+    if (!validEnclosure) {
+      throw new Error("该养殖户未关联有效围网，禁止入池");
+    }
+
     const batch = await tx.batch.create({
       data: {
         code: batchCode,
         farmerId: data.farmerId,
-        enclosureId: data.enclosureId,
+        enclosureId: validEnclosure.id,
         poolId: data.poolId,
         gender: data.gender,
         weightTier: data.weightTier,
@@ -222,10 +227,11 @@ export async function createMultiSpecBatchAction(data: {
         });
       }
 
-      const enclosureId = data.enclosureId || farmer.enclosures[0]?.id;
-      if (!enclosureId) {
+      const validEnclosure = farmer.enclosures.find((e) => e.id === data.enclosureId) || farmer.enclosures[0];
+      if (!validEnclosure) {
         throw new Error("该养殖户未关联有效围网，禁止入池");
       }
+      const enclosureId = validEnclosure.id;
 
       const dateStr = getBeijingDateStr();
       const prefix = `YL${dateStr}`;

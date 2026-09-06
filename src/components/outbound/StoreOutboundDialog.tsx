@@ -18,6 +18,7 @@ import { Plus, Loader2, Store as StoreIcon, AlertTriangle } from "lucide-react";
 import { createStoreOutboundAction } from "@/actions/outbound";
 import {
   SpecColdBatchAllocation,
+  resolveDemandBatchMap,
   type ColdBatchOption,
   type SpecDemand,
 } from "./BatchLineageSelect";
@@ -142,12 +143,10 @@ export function StoreOutboundDialog({
 
     startTransition(async () => {
       try {
-        const primaryColdLogId = Object.values(selectedBatchMap)[0] || undefined;
         const res = await createStoreOutboundAction({
           storeId: selectedStoreId,
           orderIds: selectedOrderIds,
-          coldLogId: primaryColdLogId,
-          specBatchMap: selectedBatchMap,
+          specBatchMap: resolveDemandBatchMap(specDemands, coldBatches, selectedBatchMap),
           transportCompany,
           licensePlate,
           applicantId: userId,

@@ -115,13 +115,14 @@ export async function resolveTraceQuery(
                   farmer: { include: { enclosures: true } },
                   enclosure: true,
                   pool: true,
-                  items: true,
+                  items: { include: { pool: true } },
                 },
               },
               store: { include: { channel: true } },
               channel: true,
               applicant: true,
               approver: true,
+              lines: { include: { order: true } },
             },
           },
         },
@@ -173,7 +174,7 @@ export async function resolveTraceQuery(
           farmer: { include: { enclosures: true } },
           enclosure: true,
           pool: true,
-          items: true,
+          items: { include: { pool: true } },
         },
       },
       store: { include: { channel: true } },
@@ -220,7 +221,15 @@ async function buildTraceFromOutbound(
     const weightTier = line.weightTier || batch.weightTier;
 
     // 溯源链路层层反向锚定：同一农户、暂养池、规格，贯通称重分拣与预冷入库
-    const sortTask = await prisma.sortTask.findFirst({
+    // 若出库单绑定了具体的保鲜预冷批次，优先通过冷库入库单关联的分拣任务精确定位
+    const directSortTask = outOrder.coldLog?.refId
+      ? await prisma.sortTask.findFirst({
+          where: { code: outOrder.coldLog.refId },
+          include: { machine: true, bundleBatch: { include: { group: true, tagClaim: true } } },
+        })
+      : null;
+
+    const sortTask = directSortTask || await prisma.sortTask.findFirst({
       where: {
         gender,
         weightTier,
@@ -318,16 +327,23 @@ async function buildTraceFromOutbound(
       status: "COMPLETED",
     };
 
+    const matchedItem = batch.items?.find(
+      (it: any) => it.gender === gender && it.weightTier === weightTier
+    ) || batch.items?.[0];
+
+    const actualPool = matchedItem?.pool || batch.pool;
+    const itemInPoolCount = matchedItem?.inPoolCount ?? batch.inPoolCount;
+
     // 环节 2: 暂养
     const nodePool: TraceChainNode = {
       step: 2,
       stageName: "暂养",
-      title: `${batch.pool?.name || "1号恒温池"} (${batch.pool?.code || "ZY-01"})`,
-      subtitle: `养殖户: ${farmer.name} (${farmer.code}) · 围网: ${batch.enclosure?.code || "W-01"}`,
+      title: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})`,
+      subtitle: `养殖户: ${farmer.name} (${farmer.code}) · 围网: ${batch.enclosure?.code || farmer.enclosures?.[0]?.code || "W-01"}`,
       details: [
-        { label: "暂养池编号", value: `${batch.pool?.name || "1号恒温池"} (${batch.pool?.code || "ZY-01"})` },
-        { label: "同规格防混池", value: `${batch.pool?.currentGender === "MALE" ? "公蟹" : "母蟹"} · ${batch.pool?.currentWeightTier || weightTier}` },
-        { label: "来源围网", value: `${batch.enclosure?.code || "W-01"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖核心围网" : "生态养殖池"})` },
+        { label: "暂养池编号", value: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})` },
+        { label: "同规格防混池", value: `${actualPool?.currentGender === "MALE" ? "公蟹" : "母蟹"} · ${actualPool?.currentWeightTier || weightTier}` },
+        { label: "来源围网", value: `${batch.enclosure?.code || farmer.enclosures?.[0]?.code || "W-01"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖核心围网" : "生态养殖池"})` },
         { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
       ],
       qcBadges: allQC.filter((q) => ["WATER_QUALITY", "POOL_INSPECT"].includes(q.cat)).slice(0, 2).map(mapQc),
@@ -338,8 +354,8 @@ async function buildTraceFromOutbound(
     const nodeRaw: TraceChainNode = {
       step: 1,
       stageName: "原料",
-      title: `${batch.code} · 入池 ${batch.inPoolCount.toLocaleString()} 只`,
-      subtitle: `签约户: ${farmer.name} · 表号: ${batch.formNo || "YCGF-PZZX-202604"}`,
+      title: `${batch.code} · ${gender === "MALE" ? "公蟹" : "母蟹"} ${weightTier} 入池 ${itemInPoolCount.toLocaleString()} 只`,
+      subtitle: `签约户: ${farmer.name} · 表号: ${batch.formNo || "YCGF-PZZX-202604"}${batch.items && batch.items.length > 1 ? ` (整单 ${batch.inPoolCount.toLocaleString()} 只)` : ""}`,
       details: [
         { label: "原料批次号", value: batch.code },
         { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
@@ -365,20 +381,23 @@ async function buildTraceFromOutbound(
   }
 
   const primaryOrder = relatedOrders?.[0] || outOrder.lines?.[0]?.order;
+  const orderCount = relatedOrders?.reduce((sum: number, o: any) => sum + o.count, 0) || outOrder.outboundCount;
+  const specModel = formatOrderSpec(primaryOrder, relatedOrders);
+  const orderCode = relatedOrders?.map((o: any) => o.code).join(" / ") || primaryOrder?.code;
 
   return {
     found: true,
     mode: primaryOrder ? "ORDER" : "OUTBOUND",
     isPreview: !isApproved,
     orderInfo: primaryOrder ? {
-      code: primaryOrder.code,
+      code: orderCode,
       orderNo: primaryOrder.orderNo,
       type: primaryOrder.type,
       storeName: primaryOrder.storeName || outOrder.store?.name || getTenant().storeLabel,
-      specModel: primaryOrder.specModel,
+      specModel,
       gender: primaryOrder.gender,
       weightTier: primaryOrder.weightTier,
-      count: primaryOrder.count,
+      count: orderCount,
       deliveryDate: primaryOrder.deliveryDate,
       status: primaryOrder.status,
       outboundOrderCode: outOrder.code,
@@ -431,6 +450,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
         farmer: { include: { enclosures: true } },
         enclosure: true,
         pool: true,
+        items: { include: { pool: true } },
       },
       orderBy: { createdAt: "desc" },
     }) || await prisma.batch.findFirst({
@@ -438,11 +458,16 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
         farmer: { include: { enclosures: true } },
         enclosure: true,
         pool: true,
+        items: { include: { pool: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
     const farmer = batch?.farmer || DEFAULT_FARMER;
+    const matchedItem = batch?.items?.find(
+      (it: any) => it.gender === gender && it.weightTier === weightTier
+    );
+    const actualPool = matchedItem?.pool || batch?.pool;
 
     const nodeRaw: TraceChainNode = {
       step: 1,
@@ -452,8 +477,8 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       details: [
         { label: "原料批次号", value: batch?.code || "YL2026092101" },
         { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
-        { label: "来源围网", value: `${batch?.enclosure?.code || "W-01"} (阳澄湖东湖1号网)` },
-        { label: "入池只数", value: `${batch?.inPoolCount || 5000} 只` },
+        { label: "来源围网", value: `${batch?.enclosure?.code || (farmer as any).enclosureCode || (farmer as any).enclosures?.[0]?.code || "W-01"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"})` },
+        { label: "入池只数", value: `${matchedItem?.inPoolCount || batch?.inPoolCount || 5000} 只` },
         { label: "农残快检", value: "已检测合格 (留痕可验)" },
       ],
       qcBadges: [],
@@ -463,10 +488,10 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
     const nodePool: TraceChainNode = {
       step: 2,
       stageName: "暂养",
-      title: `${batch?.pool?.name || "1号恒温池"} (${batch?.pool?.code || "ZY-01"})`,
+      title: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})`,
       subtitle: `在养锁定: ${gender === "MALE" ? "公蟹" : "母蟹"} · ${weightTier} · 水质正常`,
       details: [
-        { label: "暂养池号", value: `${batch?.pool?.name || "1号恒温池"} (${batch?.pool?.code || "ZY-01"})` },
+        { label: "暂养池号", value: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})` },
         { label: "水温/溶氧", value: "水温 21.0℃ · 溶氧 7.5mg/L" },
         { label: "在养状态", value: "正常暂养中 (同规格防混池)" },
       ],
@@ -544,11 +569,11 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
     mode: "ORDER",
     isPreview: true,
     orderInfo: {
-      code: primaryOrder.code,
+      code: orders.map((o: any) => o.code).join(" / "),
       orderNo: primaryOrder.orderNo,
       type: primaryOrder.type,
       storeName: primaryOrder.storeName || getTenant().storeLabel,
-      specModel: primaryOrder.specModel,
+      specModel: formatOrderSpec(primaryOrder, orders),
       gender: primaryOrder.gender,
       weightTier: primaryOrder.weightTier,
       count: orders.reduce((sum, o) => sum + o.count, 0),
@@ -558,6 +583,18 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
     farmerInfo: DEFAULT_FARMER,
     lines,
   };
+}
+
+function formatOrderSpec(primaryOrder: any, relatedOrders?: any[]): string | undefined {
+  if (!primaryOrder) return undefined;
+  if (!relatedOrders || relatedOrders.length <= 1) {
+    return primaryOrder.specModel || `${primaryOrder.weightTier} · ${primaryOrder.gender === "MALE" ? "公蟹" : "母蟹"}`;
+  }
+  const pkgTitle = primaryOrder.specModel?.match(/^([^(（]+)[(（]/)?.[1]?.trim();
+  const specs = relatedOrders
+    .map((o) => `${o.weightTier}${o.gender === "FEMALE" ? "母蟹" : "公蟹"}×${o.count}只`)
+    .join("，");
+  return pkgTitle ? `${pkgTitle} (${specs})` : specs;
 }
 
 function mapQc(q: any): TraceQCBadge {

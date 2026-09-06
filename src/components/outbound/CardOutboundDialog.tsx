@@ -17,6 +17,7 @@ import { ShoppingBag, Loader2, AlertTriangle } from "lucide-react";
 import { createCardUnifiedOutboundAction } from "@/actions/outbound";
 import {
   SpecColdBatchAllocation,
+  resolveDemandBatchMap,
   type ColdBatchOption,
   type SpecDemand,
 } from "./BatchLineageSelect";
@@ -108,11 +109,9 @@ export function CardOutboundDialog({
 
     startTransition(async () => {
       try {
-        const primaryColdLogId = Object.values(selectedBatchMap)[0] || undefined;
         const res = await createCardUnifiedOutboundAction({
           orderIds: selectedOrderIds,
-          coldLogId: primaryColdLogId,
-          specBatchMap: selectedBatchMap,
+          specBatchMap: resolveDemandBatchMap(specDemands, coldBatches, selectedBatchMap),
           transportCompany,
           applicantId: userId,
         });

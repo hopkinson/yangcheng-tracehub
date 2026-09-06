@@ -37,9 +37,25 @@ async function getColdStorageStock(gender: string, weightTier: string) {
 async function resolveBatchFromColdLog(
   tx: any,
   coldLogId?: string | null,
-  explicitBatchId?: string | null
+  explicitBatchId?: string | null,
+  spec?: { gender?: string; weightTier?: string } | null
 ): Promise<string> {
   if (explicitBatchId) return explicitBatchId;
+
+  const findBatchBySpec = (farmerId?: string, gender?: string, weightTier?: string) => {
+    if (!gender || !weightTier) return null;
+    return tx.batch.findFirst({
+      where: {
+        ...(farmerId ? { farmerId } : { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } }),
+        OR: [
+          { gender, weightTier },
+          { items: { some: { gender, weightTier } } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  };
+
   if (coldLogId) {
     const coldLog = await tx.coldLog.findUnique({
       where: { id: coldLogId },
@@ -56,6 +72,14 @@ async function resolveBatchFromColdLog(
           },
         },
       });
+
+      const matchedBatch = await findBatchBySpec(
+        sortTask?.bundleBatch?.tagClaim?.farmerId,
+        spec?.gender || sortTask?.gender,
+        spec?.weightTier || sortTask?.weightTier
+      );
+      if (matchedBatch) return matchedBatch.id;
+
       const resolvedBatch =
         sortTask?.bundleBatch?.tagClaim?.farmer?.batches?.[0] ||
         sortTask?.bundleBatch?.lines?.[0]?.pool?.batches?.[0];
@@ -64,6 +88,10 @@ async function resolveBatchFromColdLog(
       }
     }
   }
+
+  // 兜底：若带规格，优先查找规格匹配的在养批次
+  const defaultMatchedBatch = await findBatchBySpec(undefined, spec?.gender, spec?.weightTier);
+  if (defaultMatchedBatch) return defaultMatchedBatch.id;
 
   const defaultBatch = await tx.batch.findFirst({
     where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
@@ -127,8 +155,11 @@ export async function createStoreOutboundAction(data: {
     const countToday = await tx.outboundOrder.count();
     const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
 
-    const chosenColdLogId = data.coldLogId || null;
-    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId);
+    const chosenColdLogId =
+      data.coldLogId ||
+      (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
+      null;
+    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, orders[0]);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
@@ -242,8 +273,11 @@ export async function createCardUnifiedOutboundAction(data: {
     const countToday = await tx.outboundOrder.count();
     const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
 
-    const chosenColdLogId = data.coldLogId || null;
-    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId);
+    const chosenColdLogId =
+      data.coldLogId ||
+      (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
+      null;
+    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, orders[0]);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {

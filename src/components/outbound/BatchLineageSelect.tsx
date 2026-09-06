@@ -26,6 +26,21 @@ export interface SpecDemand {
   count: number;
 }
 
+export function resolveDemandBatchMap(
+  demands: SpecDemand[],
+  coldBatches: ColdBatchOption[] = [],
+  selectedMap: Record<string, string> = {}
+): Record<string, string> {
+  const map: Record<string, string> = { ...selectedMap };
+  for (const d of demands) {
+    const key = `${d.gender}_${d.weightTier}`;
+    if (!map[key]) {
+      map[key] = coldBatches.find((b) => b.gender === d.gender && b.weightTier === d.weightTier)?.id || "";
+    }
+  }
+  return map;
+}
+
 /**
  * 按规格智能对齐预冷批次调拨组件
  * 核心规则：先由发货订单确定规格需求，再针对每一项规格精确过滤并选择对应预冷批次

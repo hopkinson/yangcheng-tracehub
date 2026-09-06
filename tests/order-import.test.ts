@@ -258,5 +258,24 @@ SO20260921009\t山姆(上海店)\t母\t3.5两\t800\t2026-09-22`;
   console.log("  ✔ 用户真实场景 9/8/26 与表头过滤回归测试通过\n");
 }
 
+// 9. 用户 A0004 双规格礼盒导入与型号提取回归测试
+{
+  console.log("▶ [Test 9] 用户 A0004 双规格礼盒解析与型号名完整保留测试");
+  const comboText = "A0004\t8只装礼盒(4.0公蟹X4只，3.0母蟹X4只)\t2026/9/8";
+  const parsed = Invariants.parseOrderImportText(comboText, "CARD");
+
+  assert.equal(parsed.length, 2, "A0004 礼盒应被准确拆分为 2 条子规格明细");
+  assert.equal(parsed[0].orderNo, "A0004");
+  assert.equal(parsed[0].storeName, "蟹卡提货 (8只装礼盒)", "店铺名应包含礼盒型号");
+  assert.equal(parsed[0].specModel, "8只装礼盒 (4.0两公蟹×4只)", "明细 1 型号应保留礼盒前缀");
+  assert.equal(parsed[0].count, 4);
+
+  assert.equal(parsed[1].orderNo, "A0004");
+  assert.equal(parsed[1].specModel, "8只装礼盒 (3.0两母蟹×4只)", "明细 2 型号应保留礼盒前缀");
+  assert.equal(parsed[1].count, 4);
+  console.log("  ✔ A0004 礼盒型号智能提取测试通过\n");
+}
+
 console.log("🎉 订单导入智能拆分与日期防爆单元测试全部 100% 通过！");
+
 
