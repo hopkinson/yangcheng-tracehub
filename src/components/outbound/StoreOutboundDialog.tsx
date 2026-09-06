@@ -16,7 +16,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Loader2, Store as StoreIcon, AlertTriangle } from "lucide-react";
 import { createStoreOutboundAction } from "@/actions/outbound";
-import { ColdBatchSelect, type ColdBatchOption } from "./BatchLineageSelect";
+import {
+  SpecColdBatchAllocation,
+  type ColdBatchOption,
+  type SpecDemand,
+} from "./BatchLineageSelect";
 
 export interface PendingOrderOption {
   id: string;
@@ -56,7 +60,8 @@ export function StoreOutboundDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const [selectedBatchId, setSelectedBatchId] = useState(coldBatches[0]?.id || "");
+  // 按规格保存选中的冷库预冷批次：{ "MALE_4.0两": "cr_id", ... }
+  const [selectedBatchMap, setSelectedBatchMap] = useState<Record<string, string>>({});
 
   // 仅保留有待发货订单的门店可选（14.3 规范）
   const activeStores = useMemo(() => {
@@ -99,6 +104,10 @@ export function StoreOutboundDialog({
     }
   };
 
+  const handleSelectBatch = (specKey: string, batchId: string) => {
+    setSelectedBatchMap((prev) => ({ ...prev, [specKey]: batchId }));
+  };
+
   const getSpecAvailable = (gender: string, weightTier: string) => {
     const stock = specStocks.find((s) => s.gender === gender && s.weightTier === weightTier);
     return stock ? stock.available : 0;
@@ -106,6 +115,23 @@ export function StoreOutboundDialog({
 
   const selectedOrders = currentStoreOrders.filter((o) => selectedOrderIds.includes(o.id));
   const totalCrabs = selectedOrders.reduce((acc, cur) => acc + cur.count, 0);
+
+  // 核心变更：先由已选发货订单动态聚合出所需的规格需求清单
+  const specDemands: SpecDemand[] = useMemo(() => {
+    const map = new Map<string, SpecDemand>();
+    for (const ord of selectedOrders) {
+      const key = `${ord.gender}_${ord.weightTier}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += ord.count;
+      } else {
+        map.set(key, { gender: ord.gender, weightTier: ord.weightTier, count: ord.count });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.gender !== b.gender ? (a.gender === "MALE" ? -1 : 1) : parseFloat(b.weightTier) - parseFloat(a.weightTier)
+    );
+  }, [selectedOrders]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,10 +142,12 @@ export function StoreOutboundDialog({
 
     startTransition(async () => {
       try {
+        const primaryColdLogId = Object.values(selectedBatchMap)[0] || undefined;
         const res = await createStoreOutboundAction({
           storeId: selectedStoreId,
           orderIds: selectedOrderIds,
-          coldLogId: selectedBatchId || undefined,
+          coldLogId: primaryColdLogId,
+          specBatchMap: selectedBatchMap,
           transportCompany,
           licensePlate,
           applicantId: userId,
@@ -197,18 +225,11 @@ export function StoreOutboundDialog({
             </div>
           </div>
 
-          {/* 关联保鲜库预冷批次确认卡片 */}
-          <ColdBatchSelect
-            coldBatches={coldBatches}
-            selectedBatchId={selectedBatchId}
-            onSelectBatchId={setSelectedBatchId}
-          />
-
-          {/* 订单勾选列表 */}
+          {/* 第一步：订单勾选列表 */}
           <div className="space-y-2 border rounded-lg p-3 bg-muted/10">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Label className="text-xs font-semibold">选择本次合单出库订单</Label>
+                <Label className="text-xs font-semibold">1. 选择本次合单出库订单</Label>
                 <span className="text-[11px] text-muted-foreground">({currentStoreOrders.length} 单可选)</span>
               </div>
               {currentStoreOrders.length > 0 && (
@@ -279,6 +300,14 @@ export function StoreOutboundDialog({
               </span>
             </div>
           </div>
+
+          {/* 第二步：按规格智能对齐保鲜库预冷批次 */}
+          <SpecColdBatchAllocation
+            demands={specDemands}
+            coldBatches={coldBatches}
+            selectedBatchMap={selectedBatchMap}
+            onSelectBatch={handleSelectBatch}
+          />
 
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>

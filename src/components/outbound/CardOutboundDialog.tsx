@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -15,7 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShoppingBag, Loader2, AlertTriangle } from "lucide-react";
 import { createCardUnifiedOutboundAction } from "@/actions/outbound";
-import { ColdBatchSelect, type ColdBatchOption } from "./BatchLineageSelect";
+import {
+  SpecColdBatchAllocation,
+  type ColdBatchOption,
+  type SpecDemand,
+} from "./BatchLineageSelect";
 
 export interface SpecStockInfo {
   gender: string;
@@ -45,7 +49,8 @@ export function CardOutboundDialog({
   const [isPending, startTransition] = useTransition();
   const [transportCompany, setTransportCompany] = useState("顺丰冷运速递");
 
-  const [selectedBatchId, setSelectedBatchId] = useState(coldBatches[0]?.id || "");
+  // 按规格保存选中的冷库预冷批次：{ "MALE_4.0两": "cr_id", ... }
+  const [selectedBatchMap, setSelectedBatchMap] = useState<Record<string, string>>({});
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
@@ -65,6 +70,10 @@ export function CardOutboundDialog({
     }
   };
 
+  const handleSelectBatch = (specKey: string, batchId: string) => {
+    setSelectedBatchMap((prev) => ({ ...prev, [specKey]: batchId }));
+  };
+
   const getSpecAvailable = (gender: string, weightTier: string) => {
     const stock = specStocks.find((s) => s.gender === gender && s.weightTier === weightTier);
     return stock ? stock.available : 0;
@@ -72,6 +81,23 @@ export function CardOutboundDialog({
 
   const selectedOrders = pendingCardOrders.filter((o) => selectedOrderIds.includes(o.id));
   const totalCrabs = selectedOrders.reduce((acc, cur) => acc + cur.count, 0);
+
+  // 核心变更：先由已选发货订单动态聚合出所需的规格需求清单
+  const specDemands: SpecDemand[] = useMemo(() => {
+    const map = new Map<string, SpecDemand>();
+    for (const ord of selectedOrders) {
+      const key = `${ord.gender}_${ord.weightTier}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += ord.count;
+      } else {
+        map.set(key, { gender: ord.gender, weightTier: ord.weightTier, count: ord.count });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.gender !== b.gender ? (a.gender === "MALE" ? -1 : 1) : parseFloat(b.weightTier) - parseFloat(a.weightTier)
+    );
+  }, [selectedOrders]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,9 +108,11 @@ export function CardOutboundDialog({
 
     startTransition(async () => {
       try {
+        const primaryColdLogId = Object.values(selectedBatchMap)[0] || undefined;
         const res = await createCardUnifiedOutboundAction({
           orderIds: selectedOrderIds,
-          coldLogId: selectedBatchId || undefined,
+          coldLogId: primaryColdLogId,
+          specBatchMap: selectedBatchMap,
           transportCompany,
           applicantId: userId,
         });
@@ -146,17 +174,10 @@ export function CardOutboundDialog({
             </div>
           </div>
 
-          {/* 关联保鲜库预冷批次确认卡片 */}
-          <ColdBatchSelect
-            coldBatches={coldBatches}
-            selectedBatchId={selectedBatchId}
-            onSelectBatchId={setSelectedBatchId}
-          />
-
-          {/* 提蟹订单列表 */}
+          {/* 第一步：待发货提蟹订单列表 (先选需求) */}
           <div className="space-y-2 border rounded-lg p-3 bg-muted/10">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold">待发货提蟹订单列表</Label>
+              <Label className="text-xs font-semibold">1. 待发货提蟹订单列表（勾选发货）</Label>
               {pendingCardOrders.length > 0 && (
                 <Button
                   type="button"
@@ -218,6 +239,14 @@ export function CardOutboundDialog({
               </div>
             )}
           </div>
+
+          {/* 第二步：按规格智能对齐保鲜库预冷批次 */}
+          <SpecColdBatchAllocation
+            demands={specDemands}
+            coldBatches={coldBatches}
+            selectedBatchMap={selectedBatchMap}
+            onSelectBatch={handleSelectBatch}
+          />
 
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>

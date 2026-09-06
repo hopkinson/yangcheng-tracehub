@@ -79,6 +79,7 @@ export async function createStoreOutboundAction(data: {
   storeId: string;
   orderIds: string[];
   coldLogId?: string;
+  specBatchMap?: Record<string, string>;
   batchId?: string;
   transportCompany?: string;
   licensePlate?: string;
@@ -167,7 +168,13 @@ export async function createStoreOutboundAction(data: {
         action: "STORE_OUTBOUND_REQUEST",
         entityType: "OUTBOUND_ORDER",
         entityId: outboundOrder.id,
-        details: JSON.stringify({ orderCode, storeName: store.name, totalCrabCount, ordersCount: orders.length }),
+        details: JSON.stringify({
+          orderCode,
+          storeName: store.name,
+          totalCrabCount,
+          ordersCount: orders.length,
+          specBatchMap: data.specBatchMap,
+        }),
       },
     });
 
@@ -187,6 +194,7 @@ export async function createStoreOutboundAction(data: {
 export async function createCardUnifiedOutboundAction(data: {
   orderIds: string[];
   coldLogId?: string;
+  specBatchMap?: Record<string, string>;
   batchId?: string;
   transportCompany?: string;
   applicantId: string;
@@ -276,7 +284,12 @@ export async function createCardUnifiedOutboundAction(data: {
         action: "CARD_UNIFIED_OUTBOUND_REQUEST",
         entityType: "OUTBOUND_ORDER",
         entityId: outboundOrder.id,
-        details: JSON.stringify({ orderCode, totalCrabCount, ordersCount: orders.length }),
+        details: JSON.stringify({
+          orderCode,
+          totalCrabCount,
+          ordersCount: orders.length,
+          specBatchMap: data.specBatchMap,
+        }),
       },
     });
 
