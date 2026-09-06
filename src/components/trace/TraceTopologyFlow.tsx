@@ -56,24 +56,24 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 头部导航与明细行切分 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/40 p-3 rounded-xl border">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-primary" />
-          <h3 className="text-sm font-bold text-foreground">
+      {/* 头部导航与明细行自适应切换 */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-muted/40 p-3 rounded-xl border border-border/80">
+        <div className="flex items-center gap-2 shrink-0">
+          <ShieldCheck className="size-4 text-primary shrink-0" />
+          <h3 className="text-sm font-bold text-foreground shrink-0 whitespace-nowrap">
             六环节时间线溯源链
           </h3>
           {isPreview && (
-            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[11px]">
+            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[11px] shrink-0 whitespace-nowrap">
               按规格履约预览
             </Badge>
           )}
         </div>
 
-        {/* 多行明细切换 Tabs */}
+        {/* 多行明细切换 */}
         {lines.length > 1 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-xs text-muted-foreground shrink-0 mr-1 flex items-center gap-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full">
+            <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
               <Layers className="size-3.5" />
               明细行 ({lines.length}):
             </span>
@@ -82,7 +82,7 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
                 key={idx}
                 type="button"
                 onClick={() => setActiveLineIndex(idx)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-colors cursor-pointer border ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-colors cursor-pointer border shrink-0 whitespace-nowrap ${
                   activeLineIndex === idx
                     ? "bg-primary text-primary-foreground font-bold border-primary shadow-xs"
                     : "bg-background text-muted-foreground hover:text-foreground border-border"
@@ -95,14 +95,22 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
         )}
       </div>
 
-      {/* 当前明细行规格摘要 */}
-      <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">
-          当前链路：{activeLine.specTitle}
-        </span>
-        <span className="font-mono text-[11px]">
+      {/* 当前明细行规格摘要条 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-muted/20 rounded-lg border border-border/60 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-foreground">
+            当前链路：{activeLine.specTitle}
+          </span>
+          {activeLine.waybillNo && (
+            <span className="font-mono text-muted-foreground bg-background px-1.5 py-0.5 rounded border text-[11px]">
+              {activeLine.expressCompany || "快递"}: {activeLine.waybillNo}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
           链路穿透环节: 6/6 全覆盖
-        </span>
+        </div>
       </div>
 
       {/* 时间线样式展开六环节 */}

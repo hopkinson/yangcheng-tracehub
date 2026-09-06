@@ -84,13 +84,8 @@ export async function createBatchAction(data: {
 
     const dateStr = getBeijingDateStr();
     const prefix = `PC-${dateStr}-`;
-    const latest = await tx.batch.findFirst({
-      where: { code: { startsWith: prefix } },
-      orderBy: { code: "desc" },
-      select: { code: true },
-    });
-    const nextSeq = latest ? (parseInt(latest.code.slice(prefix.length), 10) || 0) + 1 : 1;
-    const batchCode = `${prefix}${String(nextSeq).padStart(3, "0")}`;
+    const count = await tx.batch.count({ where: { code: { startsWith: prefix } } });
+    const batchCode = `${prefix}${String(count + 1).padStart(3, "0")}`;
 
     const validEnclosure = farmer.enclosures.find((e) => e.id === data.enclosureId) || farmer.enclosures[0];
     if (!validEnclosure) {
@@ -235,13 +230,8 @@ export async function createMultiSpecBatchAction(data: {
 
       const dateStr = getBeijingDateStr();
       const prefix = `YL${dateStr}`;
-      const latest = await tx.batch.findFirst({
-        where: { code: { startsWith: prefix } },
-        orderBy: { code: "desc" },
-        select: { code: true },
-      });
-      const nextSeq = latest ? (parseInt(latest.code.slice(prefix.length), 10) || 0) + 1 : 1;
-      const batchCode = `${prefix}${String(nextSeq).padStart(2, "0")}`;
+      const count = await tx.batch.count({ where: { code: { startsWith: prefix } } });
+      const batchCode = `${prefix}${String(count + 1).padStart(2, "0")}`;
 
       const firstItem = data.items[0];
 

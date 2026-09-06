@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderImportDialog } from "@/components/orders/OrderImportDialog";
 import { OrderTable } from "@/components/orders/OrderTable";
 import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
 import { formatISODate } from "@/lib/utils";
 
@@ -12,9 +13,17 @@ export const dynamic = "force-dynamic";
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; status?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    status?: string;
+    page?: string;
+    pageSize?: string;
+  }>;
 }) {
   const params = await searchParams;
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = Math.max(1, Number(params.pageSize) || 10);
+
   const now = new Date();
   const todayStr = formatISODate(now);
   const tomorrow = new Date(now);
@@ -39,6 +48,12 @@ export default async function OrdersPage({
       : allOrders.filter(
           (o: any) => formatISODate(o.deliveryDate) === targetDateStr
         );
+
+  const totalOrders = displayedOrders.length;
+  const pagedOrders = displayedOrders.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
 
   // 2. 查询当前暂养池在池存活数 (按公母+规格聚合)
   const batchItems = await prisma.batchItem.findMany({
@@ -172,8 +187,8 @@ export default async function OrdersPage({
             <Layers className="size-4 text-primary" />
             <CardTitle className="text-sm font-semibold">
               {targetDateStr === "all"
-                ? `全量订单台账（共 ${displayedOrders.length} 条需求明细）`
-                : `订单台账明细（发货日：${targetDateStr}，共 ${displayedOrders.length} 条需求明细）`}
+                ? `全量订单台账（共 ${totalOrders} 条需求明细）`
+                : `订单台账明细（发货日：${targetDateStr}，共 ${totalOrders} 条需求明细）`}
             </CardTitle>
           </div>
           {targetDateStr !== "all" && (
@@ -182,7 +197,20 @@ export default async function OrdersPage({
             </Badge>
           )}
         </CardHeader>
-        <OrderTable orders={displayedOrders} targetDateStr={targetDateStr} />
+        <OrderTable
+          key={`${targetDateStr}-${page}`}
+          orders={pagedOrders}
+          targetDateStr={targetDateStr}
+        />
+        {totalOrders > 0 && (
+          <div className="p-4 border-t border-border/60">
+            <DataTablePagination
+              total={totalOrders}
+              page={page}
+              pageSize={pageSize}
+            />
+          </div>
+        )}
       </Card>
     </div>
   );

@@ -134,7 +134,7 @@ export default async function FarmersPage({
 
       <FadeIn>
         <Card>
-          <CardContent>
+          <CardContent className="p-4">
             <div className="rounded-md border">
               <Table>
                 <TableHeader>

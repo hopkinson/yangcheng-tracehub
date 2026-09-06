@@ -36,6 +36,7 @@ export function OrderDateFilter({
     } else {
       params.set("date", dateStr);
     }
+    params.delete("page");
     const query = params.toString();
     router.push(query ? `${pathname}?${query}` : pathname);
     setOpen(false);

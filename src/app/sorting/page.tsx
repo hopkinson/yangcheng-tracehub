@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SortTaskDialog } from "@/components/sorting/SortTaskDialog";
 import { CompleteSortDialog } from "@/components/sorting/CompleteSortDialog";
 import { SortMachineDialog } from "@/components/sorting/SortMachineDialog";
@@ -19,6 +20,33 @@ import {
 import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
+
+const QC_PRESETS = {
+  calibrate: {
+    cat: "SORT_CALIBRATE" as const,
+    categoryLabel: "分拣校准",
+    defaultTitle: "分拣设备精度校验记录表",
+    formNoPreset: "YCGF-PZZX-202607",
+    refType: "MACHINE" as const,
+    conclusions: [
+      "50g/150g/200g 标准砝码校验误差均 <= +-1.5g，准予开机",
+      "校验误差超限 (>+-3.0g)，需停机校正重新标定",
+    ],
+  },
+  inspect: {
+    cat: "SORT_INSPECT" as const,
+    categoryLabel: "分拣巡检",
+    defaultTitle: "分拣品质与车间巡检记录表",
+    formNoPreset: "YCGF-PZZX-202608",
+    refType: "WORKSHOP" as const,
+    refId: "FJ-WORKSHOP",
+    conclusions: [
+      "分拣规格精准，落料无卡顿，品质抽检全部合格",
+      "发现规格混入超标，已停机重新校验标定",
+      "分拣破损率偏高，已通知班组检查落料斜槽",
+    ],
+  },
+};
 
 export default async function SortingPage() {
   // 1. 查询分拣设备列表
@@ -67,8 +95,12 @@ export default async function SortingPage() {
     return { calibrate, inspect };
   };
 
+  const qualifiedMachines = machines.filter((m) => m.lastCalibrationStatus === "QUALIFIED").length;
+  const exceptionMachines = machines.filter((m) => m.lastCalibrationStatus === "EXCEPTION").length;
+  const pendingTasksCount = tasks.filter((t: any) => t.status === "PENDING").length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 头部标题与操作栏 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -83,13 +115,7 @@ export default async function SortingPage() {
         <div className="flex items-center flex-wrap gap-2">
           <SortMachineDialog />
           <SortTaskDialog
-            machines={machines.map((m: any) => ({
-              id: m.id,
-              code: m.code,
-              name: m.name,
-              status: m.status,
-              lastCalibrationStatus: m.lastCalibrationStatus,
-            }))}
+            machines={machines}
             completedBundles={completedBundles.map((b: any) => ({
               id: b.id,
               code: b.code,
@@ -106,39 +132,98 @@ export default async function SortingPage() {
         </div>
       </div>
 
-      {/* 12.2 分拣设备与校准卡控卡片 */}
-      <div>
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-2">
-            <Cpu className="size-4 text-primary" />
-            <h2 className="text-sm font-semibold text-foreground">分拣设备监控与校准卡控</h2>
+      {/* 方案 A: Tab 标签分流工作台 */}
+      <Tabs defaultValue="tasks" className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b pb-2">
+          <TabsList className="h-9 p-1">
+            <TabsTrigger value="tasks" className="gap-1.5 text-xs">
+              <Scale className="size-3.5" />
+              分拣任务台账
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
+                {tasks.length}
+              </Badge>
+              {pendingTasksCount > 0 && (
+                <span className="size-2 rounded-full bg-amber-500 ring-2 ring-amber-500/20 animate-pulse" />
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="machines" className="gap-1.5 text-xs">
+              <Cpu className="size-3.5" />
+              设备监控与校准
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
+                {machines.length}
+              </Badge>
+              {exceptionMachines > 0 && (
+                <span className="size-2 rounded-full bg-destructive ring-2 ring-destructive/20 animate-pulse" />
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="qc" className="gap-1.5 text-xs">
+              <ClipboardCheck className="size-3.5" />
+              精度与巡检留痕
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
+                {sortingQCs.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+            <span className="inline-flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              设备: <b className="text-emerald-600 dark:text-emerald-400">{qualifiedMachines}</b>/{machines.length} 合格
+            </span>
+            {exceptionMachines > 0 && (
+              <span className="text-destructive font-semibold">
+                · {exceptionMachines} 台联锁锁定
+              </span>
+            )}
+            {pendingTasksCount > 0 && (
+              <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                · {pendingTasksCount} 笔待处理
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Tab 2: 分拣设备监控与校准卡控 */}
+        <TabsContent value="machines" className="m-0 space-y-3">
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Cpu className="size-4 text-primary" />
+                <h2 className="text-sm font-semibold text-foreground">分拣设备监控与校准卡控</h2>
             <Badge variant="outline" className="text-[10px] font-mono">
               共 {machines.length} 台设备
             </Badge>
+            <span className="text-xs text-muted-foreground hidden sm:inline-flex items-center gap-2 ml-1">
+              <span className="text-emerald-600 font-medium">
+                {qualifiedMachines} 台合格
+              </span>
+              {exceptionMachines > 0 && (
+                <span className="text-destructive font-semibold">
+                  · {exceptionMachines} 台异常联锁
+                </span>
+              )}
+            </span>
           </div>
           <span className="text-[11px] text-muted-foreground">
-            * 仅当日校验合格设备允许开机作业，异常设备触发安全联锁强制锁定
+            * 仅当日校验合格设备允许开机，异常设备强制锁定
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
           {machines.map((m: any) => {
             const isException = m.lastCalibrationStatus === "EXCEPTION";
-            const isPending = m.lastCalibrationStatus === "PENDING";
             const isDisabled = m.status === "DISABLED";
             const { calibrate, inspect } = getMachineQCs(m.code);
 
-            const totalQualified = m.tasks.reduce(
-              (a: number, t: any) => a + (t.status === "COMPLETED" ? t.qualifiedCount : 0),
-              0
-            );
-            const totalLoss = m.tasks.reduce(
-              (a: number, t: any) => a + (t.status === "COMPLETED" ? t.lossCount : 0),
-              0
-            );
-            const pendingTasks = m.tasks.filter((t: any) => t.status === "PENDING").length;
+            let pendingTasks = 0, totalQualified = 0, totalLoss = 0;
+            for (const t of m.tasks) {
+              if (t.status === "PENDING") pendingTasks++;
+              else if (t.status === "COMPLETED") {
+                totalQualified += t.qualifiedCount;
+                totalLoss += t.lossCount;
+              }
+            }
 
-            // 格式化校准时间
             const calibTimeStr = m.lastCalibratedAt
               ? format(new Date(m.lastCalibratedAt), "HH:mm")
               : calibrate?.checkTime
@@ -148,119 +233,92 @@ export default async function SortingPage() {
             return (
               <Card
                 key={m.id}
-                className={`border shadow-xs transition-all ${
+                className={`p-3 transition-all border shadow-2xs flex flex-col justify-between gap-2.5 ${
                   isException
-                    ? "border-destructive/50 bg-destructive/5"
+                    ? "border-destructive/60 bg-destructive/5"
                     : isDisabled
                     ? "opacity-60 border-border/60"
-                    : "border-border/80"
+                    : "border-border/80 hover:border-primary/40"
                 }`}
               >
-                <CardHeader className="py-2.5 px-3.5 border-b bg-muted/20 flex flex-row items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="size-4 text-primary" />
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <CardTitle className="text-xs font-semibold">{m.name}</CardTitle>
-                        <span className="text-[11px] font-mono text-muted-foreground">
-                          ({m.code})
-                        </span>
-                        {isDisabled && (
-                          <Badge variant="secondary" className="text-[10px] h-4 px-1">
-                            已停用
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <MachineCardActions machine={m} tasksCount={m.tasks.length} />
-                </CardHeader>
-
-                <CardContent className="p-3.5 space-y-3">
-                  {/* 异常警示条 */}
-                  {isException && (
-                    <div className="p-2 rounded bg-destructive/15 border border-destructive/30 text-destructive text-xs font-semibold flex items-center gap-1.5 animate-pulse">
-                      <ShieldAlert className="size-4 shrink-0" />
-                      <span>校验未通过，设备安全联锁启动，禁止开机作业！</span>
-                    </div>
-                  )}
-
-                  {/* 校准与巡检品控状态 */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded bg-muted/30 border text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground text-[11px]">当日校准：</span>
-                      {m.lastCalibrationStatus === "QUALIFIED" ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-600 font-medium font-mono text-[11px]">
-                          <CheckCircle2 className="size-3.5" />
-                          已合格 ({calibTimeStr})
-                        </span>
-                      ) : isException ? (
-                        <span className="inline-flex items-center gap-1 text-destructive font-bold font-mono text-[11px]">
-                          <AlertTriangle className="size-3.5" />
-                          校验异常
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-amber-600 font-medium font-mono text-[11px]">
-                          <Clock className="size-3.5" />
-                          待校验
-                        </span>
+                {/* 头部：设备名与操作 */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-xs font-semibold text-foreground truncate" title={m.name}>
+                        {m.name}
+                      </h3>
+                      {isDisabled && (
+                        <Badge variant="secondary" className="text-[9px] h-3.5 px-1 shrink-0">
+                          已停用
+                        </Badge>
                       )}
                     </div>
-
-                    {calibrate && (
-                      <QCViewDialog
-                        record={calibrate}
-                        triggerText="查看精度校验原件 (202607)"
-                      />
-                    )}
+                    <p className="text-[10px] font-mono text-muted-foreground truncate">
+                      {m.code}
+                    </p>
                   </div>
+                  <MachineCardActions machine={m} tasksCount={m.tasks.length} />
+                </div>
 
-                  {/* 巡检记录关联 */}
-                  {inspect && (
-                    <div className="text-[11px] flex items-center justify-between text-muted-foreground px-1">
-                      <span className="truncate">
-                        巡检留痕：
-                        <span className="text-foreground font-medium">{inspect.conclusion}</span>
-                      </span>
-                      <QCViewDialog record={inspect} triggerText="巡检原件" />
-                    </div>
-                  )}
-
-                  {/* 运行与任务统计 */}
-                  <div className="grid grid-cols-4 gap-2 text-xs font-mono pt-1 border-t">
-                    <div>
-                      <span className="text-[11px] text-muted-foreground block">累计任务</span>
-                      <span className="text-sm font-bold text-foreground">{m.tasks.length} 笔</span>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-muted-foreground block">待分拣</span>
-                      <span
-                        className={`text-sm font-bold ${
-                          pendingTasks > 0 ? "text-amber-500 font-semibold" : "text-muted-foreground"
-                        }`}
-                      >
-                        {pendingTasks} 笔
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-muted-foreground block">合格入库</span>
-                      <span className="text-sm font-bold text-primary">{totalQualified} 只</span>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-muted-foreground block">分拣损耗</span>
-                      <span className="text-sm font-bold text-muted-foreground">{totalLoss} 只</span>
+                {/* 中间状态：异常联锁警告或校准与巡检信息 */}
+                {isException ? (
+                  <div className="p-1.5 rounded bg-destructive/15 border border-destructive/30 text-destructive text-[11px] font-semibold flex items-center gap-1.5 animate-pulse">
+                    <ShieldAlert className="size-3.5 shrink-0" />
+                    <span className="truncate">安全联锁已启动，禁止开机</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span className="font-mono flex items-center gap-1">
+                      校准: {calibTimeStr}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      {calibrate && (
+                        <QCViewDialog record={calibrate} triggerText="校验原件" />
+                      )}
+                      {inspect && (
+                        <QCViewDialog record={inspect} triggerText="巡检留痕" />
+                      )}
                     </div>
                   </div>
-                </CardContent>
+                )}
+
+                {/* 底部四项指标 */}
+                <div className="grid grid-cols-4 gap-1 text-center font-mono text-[11px] pt-1.5 border-t border-border/50">
+                  <div>
+                    <span className="text-[10px] text-muted-foreground block">累计</span>
+                    <span className="font-semibold text-foreground">{m.tasks.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground block">待分拣</span>
+                    <span
+                      className={`font-semibold ${
+                        pendingTasks > 0 ? "text-amber-500" : "text-muted-foreground"
+                      }`}
+                    >
+                      {pendingTasks}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground block">合格</span>
+                    <span className="font-semibold text-primary">{totalQualified}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground block">损耗</span>
+                    <span className="font-semibold text-muted-foreground">{totalLoss}</span>
+                  </div>
+                </div>
               </Card>
             );
           })}
         </div>
       </div>
+    </TabsContent>
 
-      {/* 12.3 分拣任务台账 */}
-      <Card className="border-border/80 shadow-xs">
-        <CardHeader className="py-3 px-4 border-b bg-muted/30 flex flex-row items-center justify-between">
+        {/* Tab 1: 分拣任务台账 */}
+        <TabsContent value="tasks" className="m-0 space-y-4">
+          <Card className="border-border/80 shadow-xs">
+            <CardHeader className="py-3 px-4 border-b bg-muted/30 flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <Scale className="size-4 text-primary" />
             <CardTitle className="text-sm font-semibold">
@@ -272,23 +330,23 @@ export default async function SortingPage() {
           </span>
         </CardHeader>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-muted/50 text-muted-foreground border-b uppercase font-mono">
+          <table className="w-full min-w-[1020px] text-xs text-left">
+            <thead className="bg-muted/40 text-muted-foreground border-b font-mono text-[11px]">
               <tr>
-                <th className="px-3 py-2.5 font-medium">任务号 (FJR)</th>
-                <th className="px-3 py-2.5 font-medium">作业设备</th>
-                <th className="px-3 py-2.5 font-medium">来源捆扎批次</th>
-                <th className="px-3 py-2.5 font-medium">分规规格</th>
-                <th className="px-3 py-2.5 font-medium">投入只数</th>
-                <th className="px-3 py-2.5 font-medium">合格只数</th>
-                <th className="px-3 py-2.5 font-medium">损耗只数</th>
-                <th className="px-3 py-2.5 font-medium">损耗率 (%)</th>
-                <th className="px-3 py-2.5 font-medium">状态</th>
-                <th className="px-3 py-2.5 font-medium">作业时间</th>
-                <th className="px-3 py-2.5 font-medium text-right">操作</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[140px]">任务号 (FJR)</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[110px]">作业设备</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[130px]">来源捆扎批次</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[90px]">规格</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[85px]">投入 (只)</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[85px]">合格 (只)</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[80px]">损耗 (只)</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[80px]">损耗率</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[90px]">状态</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[95px]">作业时间</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[115px]">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/60">
+            <tbody className="divide-y divide-border/50">
               {tasks.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="text-center py-8 text-muted-foreground">
@@ -297,76 +355,78 @@ export default async function SortingPage() {
                 </tr>
               ) : (
                 tasks.map((task: any) => {
-                  const isHighLoss = task.lossRate > 5.0;
-                  const timeDisplay = task.doneAt
-                    ? format(new Date(task.doneAt), "MM-dd HH:mm")
-                    : format(new Date(task.date), "MM-dd HH:mm");
+                  const isCompleted = task.status === "COMPLETED";
+                  const isHighLoss = isCompleted && task.lossRate > 5.0;
 
                   return (
-                    <tr key={task.id} className="hover:bg-muted/40 transition-colors">
-                      <td className="px-3 py-2.5 font-mono font-bold text-foreground">
+                    <tr key={task.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-3 py-2 font-mono font-medium text-foreground whitespace-nowrap">
                         {task.code}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant="outline" className="text-[10px] font-mono">
-                          {task.machine.code} ({task.machine.name})
-                        </Badge>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="font-mono text-foreground font-medium">{task.machine.code}</div>
+                        <div className="text-[11px] text-muted-foreground truncate max-w-[120px]" title={task.machine.name}>
+                          {task.machine.name}
+                        </div>
                       </td>
-                      <td className="px-3 py-2.5 font-mono text-primary font-medium">
-                        {task.bundleBatch.code}
-                        <span className="text-muted-foreground text-[11px] block">
+                      <td className="px-3 py-2 font-mono text-foreground whitespace-nowrap">
+                        <div>{task.bundleBatch.code}</div>
+                        <span className="text-muted-foreground text-[11px] font-sans block">
                           {task.bundleBatch.group.name}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 font-medium">
-                        <span className={task.gender === "FEMALE" ? "text-rose-600 font-semibold" : "text-sky-600 font-semibold"}>
-                          {task.gender === "FEMALE" ? "母蟹" : "公蟹"}
-                        </span>{" "}
-                        <span className="font-mono">{task.weightTier}</span>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                            task.gender === "FEMALE"
+                              ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                              : "bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                          }`}
+                        >
+                          {task.gender === "FEMALE" ? "母" : "公"} {task.weightTier}
+                        </span>
                       </td>
-                      <td className="px-3 py-2.5 font-mono font-bold text-foreground">
-                        {task.inputCount} 只
+                      <td className="px-3 py-2 font-mono tabular-nums text-right text-foreground whitespace-nowrap">
+                        {task.inputCount.toLocaleString()}
                       </td>
-                      <td className="px-3 py-2.5 font-mono font-bold text-emerald-600">
-                        {task.status === "COMPLETED" ? `${task.qualifiedCount} 只` : "—"}
+                      <td className="px-3 py-2 font-mono tabular-nums text-right text-foreground font-medium whitespace-nowrap">
+                        {isCompleted ? task.qualifiedCount.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 font-mono text-muted-foreground">
-                        {task.status === "COMPLETED" ? `${task.lossCount} 只` : "—"}
+                      <td className="px-3 py-2 font-mono tabular-nums text-right text-muted-foreground whitespace-nowrap">
+                        {isCompleted ? task.lossCount.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 font-mono">
-                        {task.status === "COMPLETED" ? (
+                      <td className="px-3 py-2 font-mono tabular-nums text-right whitespace-nowrap">
+                        {isCompleted ? (
                           <span
-                            className={`font-bold ${
-                              isHighLoss ? "text-destructive" : "text-foreground"
-                            }`}
+                            className={
+                              isHighLoss ? "text-destructive font-semibold bg-destructive/10 px-1 py-0.5 rounded" : "text-muted-foreground"
+                            }
                           >
-                            {task.lossRate}% {isHighLoss && "⚠️"}
+                            {task.lossRate}%{isHighLoss && " ⚠️"}
                           </span>
                         ) : (
-                          "—"
+                          <span className="text-muted-foreground/40">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5">
-                        {task.status === "COMPLETED" ? (
-                          <Badge
-                            variant="secondary"
-                            className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]"
-                          >
-                            <CheckCircle2 className="size-3 mr-1" /> 已完成
-                          </Badge>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {isCompleted ? (
+                          <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
+                            <span className="size-1.5 rounded-full bg-emerald-500" />
+                            已完成
+                          </span>
                         ) : (
                           <Badge
                             variant="outline"
-                            className="text-amber-500 border-amber-500/30 text-[10px] animate-pulse"
+                            className="text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5 text-[10px]"
                           >
                             <Clock className="size-3 mr-1" /> 待分拣
                           </Badge>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
-                        {timeDisplay}
+                      <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
+                        {format(new Date(task.doneAt ?? task.date), "MM-dd HH:mm")}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
                         {task.status === "PENDING" && (
                           <CompleteSortDialog
                             taskId={task.id}
@@ -385,8 +445,10 @@ export default async function SortingPage() {
           </table>
         </div>
       </Card>
+    </TabsContent>
 
-      {/* 12.4 品控留痕记录区 (校准与巡检台账) */}
+    {/* Tab 3: 品控留痕记录区 (校准与巡检台账) */}
+    <TabsContent value="qc" className="m-0 space-y-4">
       <Card className="border-border/80 shadow-xs">
         <CardHeader className="py-2.5 px-4 border-b bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
@@ -400,50 +462,27 @@ export default async function SortingPage() {
           </div>
           <div className="flex items-center flex-wrap gap-2 shrink-0">
             <QCRecordDialog
-              config={{
-                cat: "SORT_CALIBRATE",
-                categoryLabel: "分拣校准",
-                defaultTitle: "分拣设备精度校验记录表",
-                formNoPreset: "YCGF-PZZX-202607",
-                refType: "MACHINE",
-                refId: machines[0]?.code || "FJ-01",
-                conclusions: [
-                  "50g/150g/200g 标准砝码校验误差均 <= +-1.5g，准予开机",
-                  "校验误差超限 (>+-3.0g)，需停机校正重新标定",
-                ],
-              }}
+              config={{ ...QC_PRESETS.calibrate, refId: machines[0]?.code || "FJ-01" }}
               triggerLabel="登记精度校验 (202607)"
             />
             <QCRecordDialog
-              config={{
-                cat: "SORT_INSPECT",
-                categoryLabel: "分拣巡检",
-                defaultTitle: "分拣品质与车间巡检记录表",
-                formNoPreset: "YCGF-PZZX-202608",
-                refType: "WORKSHOP",
-                refId: "FJ-WORKSHOP",
-                conclusions: [
-                  "分拣规格精准，落料无卡顿，品质抽检全部合格",
-                  "发现规格混入超标，已停机重新校验标定",
-                  "分拣破损率偏高，已通知班组检查落料斜槽",
-                ],
-              }}
+              config={QC_PRESETS.inspect}
               triggerLabel="登记车间巡检 (202608)"
             />
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
+          <table className="w-full min-w-[1050px] text-xs text-left">
             <thead className="bg-muted/50 text-muted-foreground border-b uppercase font-mono">
               <tr>
-                <th className="px-3 py-2.5 font-medium">品控编号</th>
-                <th className="px-3 py-2.5 font-medium">类目 / 纸质表号</th>
-                <th className="px-3 py-2.5 font-medium">关联设备</th>
-                <th className="px-3 py-2.5 font-medium">现场校验时间</th>
-                <th className="px-3 py-2.5 font-medium">校验/巡检结论</th>
-                <th className="px-3 py-2.5 font-medium">质检员</th>
-                <th className="px-3 py-2.5 font-medium">状态</th>
-                <th className="px-3 py-2.5 font-medium text-right">原件档案</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[140px]">品控编号</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[180px]">类目 / 纸质表号</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[110px]">关联设备</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">现场校验时间</th>
+                <th className="px-3 py-2.5 font-medium min-w-[200px]">校验/巡检结论</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[100px]">质检员</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[110px]">状态</th>
+                <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap w-[90px]">原件档案</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -458,19 +497,19 @@ export default async function SortingPage() {
                   const isExp = qc.result === "EXCEPTION";
                   return (
                     <tr key={qc.id} className="hover:bg-muted/40 transition-colors">
-                      <td className="px-3 py-2.5 font-mono font-bold text-foreground">
+                      <td className="px-3 py-2.5 font-mono font-bold text-foreground whitespace-nowrap">
                         {qc.code}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <span className="font-medium text-foreground block">{qc.title}</span>
                         <span className="text-[11px] font-mono text-muted-foreground">
                           {qc.formNo || "—"}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 font-mono font-semibold text-primary">
+                      <td className="px-3 py-2.5 font-mono font-semibold text-primary whitespace-nowrap">
                         {qc.refId}
                       </td>
-                      <td className="px-3 py-2.5 font-mono text-muted-foreground">
+                      <td className="px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap">
                         {format(new Date(qc.checkTime), "yyyy-MM-dd HH:mm")}
                       </td>
                       <td className="px-3 py-2.5">
@@ -483,8 +522,8 @@ export default async function SortingPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">{qc.uploader}</td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{qc.uploader}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         {isExp ? (
                           <Badge variant="destructive" className="text-[10px]">
                             <AlertTriangle className="size-3 mr-1" /> 异常/需整改
@@ -498,7 +537,7 @@ export default async function SortingPage() {
                           </Badge>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
                         <QCViewDialog record={qc} triggerText="查验原件" />
                       </td>
                     </tr>
@@ -509,6 +548,8 @@ export default async function SortingPage() {
           </table>
         </div>
       </Card>
-    </div>
+    </TabsContent>
+  </Tabs>
+</div>
   );
 }

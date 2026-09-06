@@ -186,7 +186,33 @@ export async function resolveTraceQuery(
     orderBy: { createdAt: "desc" },
   });
 
-  return outboundOrders.length > 0 ? await buildTraceFromOutbound(outboundOrders[0]) : null;
+  if (outboundOrders.length > 0) {
+    const ob = outboundOrders[0];
+    const isExplicitBatchSearch =
+      ob.code.toLowerCase().includes(term.toLowerCase()) ||
+      Boolean(ob.batch?.code && ob.batch.code.toLowerCase().includes(term.toLowerCase())) ||
+      Boolean(ob.logisticsNo && ob.logisticsNo.toLowerCase().includes(term.toLowerCase()));
+
+    if (!isExplicitBatchSearch) {
+      const matchedOrders = ob.lines
+        ?.filter(
+          (l: any) =>
+            (l.orderNo && l.orderNo.toLowerCase().includes(term.toLowerCase())) ||
+            (l.waybillNo && l.waybillNo.toLowerCase().includes(term.toLowerCase())) ||
+            (l.order?.code && l.order.code.toLowerCase().includes(term.toLowerCase()))
+        )
+        .map((l: any) => l.order)
+        .filter(Boolean);
+
+      if (matchedOrders?.length) {
+        return await buildTraceFromOutbound(ob, matchedOrders);
+      }
+    }
+
+    return await buildTraceFromOutbound(ob);
+  }
+
+  return null;
 }
 
 /**
@@ -205,7 +231,19 @@ async function buildTraceFromOutbound(
     orderBy: { checkTime: "desc" },
   });
 
-  const linesToProcess = outOrder.lines?.length > 0 ? outOrder.lines : [{
+  // 针对蟹卡提货或按单查询场景：严格按目标订单ID/单号隔离，不泄漏同出库批次的其他订单明细
+  let matchedLines = outOrder.lines;
+  if (relatedOrders && relatedOrders.length > 0) {
+    const targetKeys = new Set(relatedOrders.flatMap((o: any) => [o.id, o.orderNo, o.code]).filter(Boolean));
+    matchedLines = outOrder.lines?.filter(
+      (l: any) =>
+        (l.orderId && targetKeys.has(l.orderId)) ||
+        (l.orderNo && targetKeys.has(l.orderNo)) ||
+        (l.order?.code && targetKeys.has(l.order.code))
+    );
+  }
+
+  const linesToProcess = matchedLines && matchedLines.length > 0 ? matchedLines : [{
     gender: batch.gender,
     weightTier: batch.weightTier,
     count: outOrder.outboundCount,
@@ -220,6 +258,45 @@ async function buildTraceFromOutbound(
     const gender = line.gender || batch.gender;
     const weightTier = line.weightTier || batch.weightTier;
 
+    // 核心规格穿透校验：检查 outOrder.batch 是否真正包含当前明细行规格
+    // 若出库单绑定的是单主批次，但当前行属于多单合单/礼盒多规格混装（例如 4.0两公 与 3.0两母 属于不同养殖户或不同原料批次）
+    // 则精准反向寻源与该规格严格匹配的真实原料批次及签约养殖户，杜绝张冠李戴
+    const batchHasSpec =
+      (batch.gender === gender && batch.weightTier === weightTier) ||
+      batch.items?.some((it: any) => it.gender === gender && it.weightTier === weightTier);
+
+    let effectiveBatch = batch;
+    let effectiveFarmer = farmer;
+
+    if (!batchHasSpec) {
+      const findSourceBatch = (formNo?: string | null) =>
+        prisma.batch.findFirst({
+          where: {
+            ...(formNo ? { formNo } : {}),
+            OR: [
+              { gender, weightTier },
+              { items: { some: { gender, weightTier } } },
+            ],
+          },
+          include: {
+            farmer: { include: { enclosures: true } },
+            enclosure: true,
+            pool: true,
+            items: { include: { pool: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+
+      const matchedSourceBatch =
+        (batch.formNo && (await findSourceBatch(batch.formNo))) ||
+        (await findSourceBatch());
+
+      if (matchedSourceBatch) {
+        effectiveBatch = matchedSourceBatch;
+        effectiveFarmer = matchedSourceBatch.farmer;
+      }
+    }
+
     // 溯源链路层层反向锚定：同一农户、暂养池、规格，贯通称重分拣与预冷入库
     // 若出库单绑定了具体的保鲜预冷批次，优先通过冷库入库单关联的分拣任务精确定位
     const directSortTask = outOrder.coldLog?.refId
@@ -229,22 +306,38 @@ async function buildTraceFromOutbound(
         })
       : null;
 
-    const sortTask = directSortTask || await prisma.sortTask.findFirst({
-      where: {
-        gender,
-        weightTier,
-        status: "COMPLETED",
-        bundleBatch: { tagClaim: { farmerId: batch.farmerId } },
-      },
-      include: { machine: true, bundleBatch: { include: { group: true, tagClaim: true } } },
-      orderBy: { doneAt: "desc" },
-    });
+    const sortTaskInclude = { machine: true, bundleBatch: { include: { group: true, tagClaim: true } } };
+    const sortTask =
+      directSortTask ||
+      (await prisma.sortTask.findFirst({
+        where: {
+          gender,
+          weightTier,
+          status: "COMPLETED",
+          bundleBatch: { tagClaim: { farmerId: effectiveBatch.farmerId } },
+        },
+        include: sortTaskInclude,
+        orderBy: { doneAt: "desc" },
+      })) ||
+      (await prisma.sortTask.findFirst({
+        where: { gender, weightTier, status: "COMPLETED" },
+        include: sortTaskInclude,
+        orderBy: { doneAt: "desc" },
+      }));
 
-    const bundleBatch = sortTask?.bundleBatch || await prisma.bundleBatch.findFirst({
-      where: { status: "COMPLETED", tagClaim: { farmerId: batch.farmerId } },
-      include: { group: true, tagClaim: true },
-      orderBy: { doneAt: "desc" },
-    });
+    const bundleInclude = { group: true, tagClaim: true };
+    const bundleBatch =
+      sortTask?.bundleBatch ||
+      (await prisma.bundleBatch.findFirst({
+        where: { status: "COMPLETED", tagClaim: { farmerId: effectiveBatch.farmerId } },
+        include: bundleInclude,
+        orderBy: { doneAt: "desc" },
+      })) ||
+      (await prisma.bundleBatch.findFirst({
+        where: { status: "COMPLETED" },
+        include: bundleInclude,
+        orderBy: { doneAt: "desc" },
+      }));
 
     const coldLog = outOrder.coldLog || (sortTask ? await prisma.coldLog.findFirst({
       where: { refId: sortTask.code },
@@ -327,24 +420,24 @@ async function buildTraceFromOutbound(
       status: "COMPLETED",
     };
 
-    const matchedItem = batch.items?.find(
+    const matchedItem = effectiveBatch.items?.find(
       (it: any) => it.gender === gender && it.weightTier === weightTier
-    ) || batch.items?.[0];
+    ) || effectiveBatch.items?.[0];
 
-    const actualPool = matchedItem?.pool || batch.pool;
-    const itemInPoolCount = matchedItem?.inPoolCount ?? batch.inPoolCount;
+    const actualPool = matchedItem?.pool || effectiveBatch.pool;
+    const itemInPoolCount = matchedItem?.inPoolCount ?? effectiveBatch.inPoolCount;
 
     // 环节 2: 暂养
     const nodePool: TraceChainNode = {
       step: 2,
       stageName: "暂养",
       title: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})`,
-      subtitle: `养殖户: ${farmer.name} (${farmer.code}) · 围网: ${batch.enclosure?.code || farmer.enclosures?.[0]?.code || "W-01"}`,
+      subtitle: `养殖户: ${effectiveFarmer.name} (${effectiveFarmer.code}) · 围网: ${effectiveBatch.enclosure?.code || effectiveFarmer.enclosures?.[0]?.code || "W-01"}`,
       details: [
         { label: "暂养池编号", value: `${actualPool?.name || "1号恒温池"} (${actualPool?.code || "ZY-01"})` },
-        { label: "同规格防混池", value: `${actualPool?.currentGender === "MALE" ? "公蟹" : "母蟹"} · ${actualPool?.currentWeightTier || weightTier}` },
-        { label: "来源围网", value: `${batch.enclosure?.code || farmer.enclosures?.[0]?.code || "W-01"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖核心围网" : "生态养殖池"})` },
-        { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
+        { label: "同规格防混池", value: `${(matchedItem?.gender || gender) === "MALE" ? "公蟹" : "母蟹"} · ${matchedItem?.weightTier || weightTier}` },
+        { label: "来源围网", value: `${effectiveBatch.enclosure?.code || effectiveFarmer.enclosures?.[0]?.code || "W-01"} (${effectiveFarmer.farmType === "LAKE_CRAB" ? "阳澄湖核心围网" : "生态养殖池"})` },
+        { label: "签约养殖户", value: `${effectiveFarmer.name} (${effectiveFarmer.code})` },
       ],
       qcBadges: allQC.filter((q) => ["WATER_QUALITY", "POOL_INSPECT"].includes(q.cat)).slice(0, 2).map(mapQc),
       status: "COMPLETED",
@@ -354,15 +447,15 @@ async function buildTraceFromOutbound(
     const nodeRaw: TraceChainNode = {
       step: 1,
       stageName: "原料",
-      title: `${batch.code} · ${gender === "MALE" ? "公蟹" : "母蟹"} ${weightTier} 入池 ${itemInPoolCount.toLocaleString()} 只`,
-      subtitle: `签约户: ${farmer.name} · 表号: ${batch.formNo || "YCGF-PZZX-202604"}${batch.items && batch.items.length > 1 ? ` (整单 ${batch.inPoolCount.toLocaleString()} 只)` : ""}`,
+      title: `${effectiveBatch.code} · ${gender === "MALE" ? "公蟹" : "母蟹"} ${weightTier} 入池 ${itemInPoolCount.toLocaleString()} 只`,
+      subtitle: `签约户: ${effectiveFarmer.name} · 表号: ${effectiveBatch.formNo || "YCGF-PZZX-202604"}${effectiveBatch.items && effectiveBatch.items.length > 1 ? ` (整单 ${effectiveBatch.inPoolCount.toLocaleString()} 只)` : ""}`,
       details: [
-        { label: "原料批次号", value: batch.code },
-        { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
-        { label: "养殖类型/面积", value: `${farmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"} · ${farmer.area} 亩` },
-        { label: "年度核定额度", value: `${farmer.quota.toLocaleString()} 只 (600只/亩)` },
-        { label: "入池时间", value: new Date(batch.inPoolTime).toLocaleString("zh-CN") },
-        { label: "纸质入库表号", value: batch.formNo || "YCGF-PZZX-202604" },
+        { label: "原料批次号", value: effectiveBatch.code },
+        { label: "签约养殖户", value: `${effectiveFarmer.name} (${effectiveFarmer.code})` },
+        { label: "养殖类型/面积", value: `${effectiveFarmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"} · ${effectiveFarmer.area} 亩` },
+        { label: "年度核定额度", value: `${effectiveFarmer.quota.toLocaleString()} 只 (600只/亩)` },
+        { label: "入池时间", value: new Date(effectiveBatch.inPoolTime).toLocaleString("zh-CN") },
+        { label: "纸质入库表号", value: effectiveBatch.formNo || "YCGF-PZZX-202604" },
       ],
       qcBadges: allQC.filter((q) => ["QUICK_CHECK", "TASTE_CHECK"].includes(q.cat)).slice(0, 2).map(mapQc),
       status: "COMPLETED",
@@ -380,8 +473,11 @@ async function buildTraceFromOutbound(
     });
   }
 
-  const primaryOrder = relatedOrders?.[0] || outOrder.lines?.[0]?.order;
-  const orderCount = relatedOrders?.reduce((sum: number, o: any) => sum + o.count, 0) || outOrder.outboundCount;
+  const primaryOrder = relatedOrders?.[0] || matchedLines?.[0]?.order || outOrder.lines?.[0]?.order;
+  const orderCount = relatedOrders?.reduce((sum: number, o: any) => sum + o.count, 0) ||
+    (matchedLines && matchedLines.length > 0
+      ? matchedLines.reduce((sum: number, l: any) => sum + (l.count || 0), 0)
+      : outOrder.outboundCount);
   const specModel = formatOrderSpec(primaryOrder, relatedOrders);
   const orderCode = relatedOrders?.map((o: any) => o.code).join(" / ") || primaryOrder?.code;
 

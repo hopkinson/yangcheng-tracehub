@@ -330,6 +330,34 @@ export async function completeBundleBatchAction(
         where: { id: batch.groupId },
         data: { status: "COMPLETED" },
       });
+
+      // 扣减暂养池存活 (入池到捆扎即出池，起池数量计入 outPoolCount)
+      for (const line of batch.lines) {
+        const item = await tx.batchItem.findFirst({
+          where: {
+            poolId: line.poolId,
+            gender: line.gender,
+            weightTier: line.weightTier,
+            batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+          },
+        });
+
+        if (item) {
+          const newOut = item.outPoolCount + line.count;
+          const status = item.inPoolCount - newOut - item.lossCount <= 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND";
+          await tx.batchItem.update({ where: { id: item.id }, data: { outPoolCount: newOut } });
+          await tx.batch.update({ where: { id: item.batchId }, data: { outPoolCount: { increment: line.count }, status } });
+        } else {
+          const b = await tx.batch.findFirst({
+            where: { poolId: line.poolId, status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+          });
+          if (b) {
+            const newOut = b.outPoolCount + line.count;
+            const status = b.inPoolCount - newOut - b.lossCount <= 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND";
+            await tx.batch.update({ where: { id: b.id }, data: { outPoolCount: newOut, status } });
+          }
+        }
+      }
     });
 
     revalidate("/bundling");

@@ -6,16 +6,26 @@ import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
 
-// 辅助：获取冷库某规格实时可用库存
+// 辅助：获取冷库某规格实时可用库存 (基于保鲜预冷入库 ColdLog)
 async function getColdStorageStock(gender: string, weightTier: string) {
-  // 1. 分拣合格累计
-  const qualifiedAgg = await prisma.sortTask.aggregate({
-    where: { status: "COMPLETED", gender, weightTier },
-    _sum: { qualifiedCount: true },
+  // 1. 查找属于该规格的分拣任务编号
+  const tasks = await prisma.sortTask.findMany({
+    where: { gender, weightTier },
+    select: { code: true },
   });
-  const totalQualified = qualifiedAgg._sum.qualifiedCount || 0;
+  const taskRefs = tasks.map((t) => t.code);
 
-  // 2. 出库单已占用累计 (排除已驳回)
+  // 2. 统计保鲜预冷库该规格的实际入库总量
+  const coldAgg = await prisma.coldLog.aggregate({
+    where: {
+      type: "INTAKE",
+      refId: { in: taskRefs },
+    },
+    _sum: { count: true },
+  });
+  const totalStored = coldAgg._sum.count || 0;
+
+  // 3. 出库单已占用累计 (排除已驳回)
   const outboundAgg = await prisma.outboundLine.aggregate({
     where: {
       gender,
@@ -27,9 +37,9 @@ async function getColdStorageStock(gender: string, weightTier: string) {
   const totalUsed = outboundAgg._sum.count || 0;
 
   return {
-    totalQualified,
+    totalQualified: totalStored,
     totalUsed,
-    availableCount: Math.max(0, totalQualified - totalUsed),
+    availableCount: Math.max(0, totalStored - totalUsed),
   };
 }
 
@@ -80,11 +90,10 @@ async function resolveBatchFromColdLog(
       );
       if (matchedBatch) return matchedBatch.id;
 
-      const resolvedBatch =
-        sortTask?.bundleBatch?.tagClaim?.farmer?.batches?.[0] ||
-        sortTask?.bundleBatch?.lines?.[0]?.pool?.batches?.[0];
-      if (resolvedBatch) {
-        return resolvedBatch.id;
+      // 仅当没有指定具体规格时，才使用该养殖户的历史批次兜底
+      if (!spec?.gender && !spec?.weightTier) {
+        return sortTask?.bundleBatch?.tagClaim?.farmer?.batches?.[0]?.id ||
+          sortTask?.bundleBatch?.lines?.[0]?.pool?.batches?.[0]?.id;
       }
     }
   }

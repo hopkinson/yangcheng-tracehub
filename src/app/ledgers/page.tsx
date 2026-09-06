@@ -184,7 +184,17 @@ export default async function LedgersPage({
             : undefined,
           include: {
             farmer: true,
-            pool: true,
+            pool: {
+              include: {
+                bundleLines: {
+                  include: {
+                    bundleBatch: {
+                      include: { group: true },
+                    },
+                  },
+                },
+              },
+            },
             enclosure: true,
             outboundOrders: {
               where: { status: "APPROVED" },
@@ -466,98 +476,112 @@ export default async function LedgersPage({
 
         {/* 3. 台账三 · 暂养池出入库（管流转） */}
         <TabsContent value="ledger3">
-          <LedgerCardSection
-            title="台账三 · 暂养池出入库（管流转 · 批次入出池与损耗推导）"
-            exportFilename={`阳澄股份_台账三_暂养池出入库_${selectedDateStr || "全量"}`}
-            exportHeaders={[
-              "日期",
-              "YL 批次",
-              "池编号",
-              "养殖户",
-              "围网",
-              "入池数",
-              "出池数",
-              "损耗数",
-              "出库批次订单",
-              "对应门店",
-            ]}
-            exportRows={batches.map((b) => [
-              formatISODate(b.inPoolTime),
-              b.code,
-              b.pool.code,
-              b.farmer.name,
-              b.enclosure?.code || "—",
-              b.inPoolCount,
-              b.outPoolCount,
-              b.lossCount,
-              b.outboundOrders.map((o) => o.code).join(", ") || "—",
-              Array.from(new Set(b.outboundOrders.map((o) => o.store.name))).join(", ") || "—",
-            ])}
-            total={batches.length}
-            page={l3Page}
-            pageSize={l3PageSize}
-            pageParam="l3Page"
-            pageSizeParam="l3PageSize"
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">日期</TableHead>
-                  <TableHead className="w-[120px]">YL 批次</TableHead>
-                  <TableHead className="w-[90px]">池编号</TableHead>
-                  <TableHead className="w-[100px]">养殖户</TableHead>
-                  <TableHead className="w-[80px]">围网</TableHead>
-                  <TableHead className="w-[90px]">入池数</TableHead>
-                  <TableHead className="w-[90px]">出池数</TableHead>
-                  <TableHead className="w-[90px]">损耗数</TableHead>
-                  <TableHead className="min-w-[130px]">出库批次订单</TableHead>
-                  <TableHead className="min-w-[140px]">对应门店</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {batches.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                      暂无暂养池出入库记录
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pagedBatches.map((b) => {
-                    const orderCodes = b.outboundOrders.map((o) => o.code).join(", ");
-                    const stores = Array.from(new Set(b.outboundOrders.map((o) => o.store.name))).join(", ");
-                    return (
-                      <TableRow key={b.id} className="hover:bg-muted/40 transition-colors">
-                        <TableCell className="font-mono text-xs">{formatDate(b.inPoolTime)}</TableCell>
-                        <TableCell className="font-mono font-medium text-xs">{b.code}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          <Badge variant="outline" className="text-xs font-mono py-0">
-                            {b.pool.code}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs font-medium">{b.farmer.name}</TableCell>
-                        <TableCell className="font-mono text-xs">{b.enclosure?.code || "—"}</TableCell>
-                        <TableCell className="font-mono text-xs font-medium">{b.inPoolCount} 只</TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{b.outPoolCount} 只</TableCell>
-                        <TableCell className="font-mono text-xs text-amber-600 dark:text-amber-400">
-                          {b.lossCount} 只
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {orderCodes || "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {stores ? (
-                            <span className="text-foreground">{stores}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
+          {(() => {
+            const getBatchFlow = (b: any) => {
+              const kzd = Array.from(new Set(b.pool?.bundleLines?.map((l: any) => l.bundleBatch?.code).filter(Boolean)));
+              const grp = Array.from(new Set(b.pool?.bundleLines?.map((l: any) => l.bundleBatch?.group?.name).filter(Boolean)));
+              return {
+                dest: kzd.length > 0 ? kzd.join(", ") : (b.outboundOrders?.map((o: any) => o.code).join(", ") || "—"),
+                target: grp.length > 0 ? grp.join(", ") : (Array.from(new Set(b.outboundOrders?.map((o: any) => o.store?.name))).join(", ") || "—"),
+              };
+            };
+            return (
+              <LedgerCardSection
+                title="台账三 · 暂养池出入库（管流转 · 批次入出池与损耗推导）"
+                exportFilename={`阳澄股份_台账三_暂养池出入库_${selectedDateStr || "全量"}`}
+                exportHeaders={[
+                  "日期",
+                  "YL 批次",
+                  "池编号",
+                  "养殖户",
+                  "围网",
+                  "入池数",
+                  "出池数",
+                  "损耗数",
+                  "出池去向(捆扎批次)",
+                  "作业班组/去向",
+                ]}
+                exportRows={batches.map((b) => {
+                  const flow = getBatchFlow(b);
+                  return [
+                    formatISODate(b.inPoolTime),
+                    b.code,
+                    b.pool.code,
+                    b.farmer.name,
+                    b.enclosure?.code || "—",
+                    b.inPoolCount,
+                    b.outPoolCount,
+                    b.lossCount,
+                    flow.dest,
+                    flow.target,
+                  ];
+                })}
+                total={batches.length}
+                page={l3Page}
+                pageSize={l3PageSize}
+                pageParam="l3Page"
+                pageSizeParam="l3PageSize"
+              >
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[100px]">日期</TableHead>
+                      <TableHead className="w-[120px]">YL 批次</TableHead>
+                      <TableHead className="w-[90px]">池编号</TableHead>
+                      <TableHead className="w-[100px]">养殖户</TableHead>
+                      <TableHead className="w-[80px]">围网</TableHead>
+                      <TableHead className="w-[90px]">入池数</TableHead>
+                      <TableHead className="w-[90px]">出池数</TableHead>
+                      <TableHead className="w-[90px]">损耗数</TableHead>
+                      <TableHead className="min-w-[130px]">出池去向 (捆扎批次)</TableHead>
+                      <TableHead className="min-w-[140px]">作业班组 / 去向</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {batches.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                          暂无暂养池出入库记录
                         </TableCell>
                       </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
+                    ) : (
+                      pagedBatches.map((b) => {
+                        const flow = getBatchFlow(b);
+                        return (
+                          <TableRow key={b.id} className="hover:bg-muted/40 transition-colors">
+                            <TableCell className="font-mono text-xs">{formatDate(b.inPoolTime)}</TableCell>
+                            <TableCell className="font-mono font-medium text-xs">{b.code}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              <Badge variant="outline" className="text-xs font-mono py-0">
+                                {b.pool.code}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs font-medium">{b.farmer.name}</TableCell>
+                            <TableCell className="font-mono text-xs">{b.enclosure?.code || "—"}</TableCell>
+                            <TableCell className="font-mono text-xs font-medium">{b.inPoolCount} 只</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{b.outPoolCount} 只</TableCell>
+                            <TableCell className="font-mono text-xs text-amber-600 dark:text-amber-400">
+                              {b.lossCount} 只
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {flow.dest}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {flow.target !== "—" ? (
+                                <span className="text-foreground">{flow.target}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </LedgerCardSection>
+            );
+          })()}
         </TabsContent>
 
         {/* 4. 台账四 · 出库与订单（管去向） */}

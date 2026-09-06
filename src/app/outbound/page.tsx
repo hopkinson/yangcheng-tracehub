@@ -45,6 +45,7 @@ export default async function OutboundPage({
     outboundLines,
     qcRecords,
     coldLogs,
+    bundleBatches,
   ] = await Promise.all([
     getCurrentUser(),
     prisma.outboundOrder.count(),
@@ -98,6 +99,12 @@ export default async function OutboundPage({
       },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.bundleBatch.findMany({
+      include: {
+        tagClaim: { include: { farmer: true } },
+        lines: true,
+      },
+    }),
   ]);
 
   const currentUserId = currentUser?.id || "";
@@ -144,14 +151,16 @@ export default async function OutboundPage({
   const specStockMap = new Map(specStocks.map((s) => [`${s.gender}_${s.weightTier}`, s]));
 
   // 格式化保鲜库在库批次信息（供出库调拨核对，与规格库存精确同步）
+  const bundleBatchMap = new Map(bundleBatches.map((b: any) => [b.code, b]));
   const coldBatchOptions = coldLogs.map((log: any) => {
-    const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId);
-    const gender = task?.gender || "MALE";
-    const weightTier = task?.weightTier || "4.0两";
+    const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId || t.code === log.refId);
+    const bundle = !task ? (bundleBatchMap.get(log.refId) || bundleBatches.find((b: any) => b.id === log.refId || b.code === log.refId)) : null;
+    const gender = task?.gender || bundle?.lines?.[0]?.gender || "MALE";
+    const weightTier = task?.weightTier || bundle?.lines?.[0]?.weightTier || "4.0两";
     const specLabel = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}`;
     const stock = specStockMap.get(`${gender}_${weightTier}`);
     const availableCount = stock ? Math.min(log.count, stock.available) : log.count;
-    const farmer = task?.bundleBatch?.tagClaim?.farmer;
+    const farmer = task?.bundleBatch?.tagClaim?.farmer || bundle?.tagClaim?.farmer;
 
     return {
       id: log.id,
@@ -208,48 +217,39 @@ export default async function OutboundPage({
         )}
       </FadeIn>
 
-      {/* 14.2 页首：冷库可出库库存卡 */}
+      {/* 14.2 页首：冷库规格库存紧凑指标条 */}
       <FadeIn>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="flex items-center gap-2 overflow-x-auto p-2 bg-muted/20 rounded-lg border border-border/70 text-xs no-scrollbar">
+          <div className="flex items-center gap-1.5 text-muted-foreground font-medium shrink-0 px-1">
+            <ThermometerSnowflake className="size-3.5 text-primary" />
+            <span>规格库存:</span>
+          </div>
           {specStocks.map((stock, idx) => (
-            <Card key={idx} className="border-border/80 shadow-xs">
-              <CardHeader className="py-1.5 px-3 border-b bg-muted/15 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <ThermometerSnowflake className="size-3.5 text-primary" />
-                  <CardTitle className="text-xs font-semibold">{stock.label}</CardTitle>
-                </div>
-                <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 font-mono">
-                  占用 {stock.usagePct}%
-                </Badge>
-              </CardHeader>
-              <CardContent className="p-2.5 space-y-1.5">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[11px] text-muted-foreground">冷库可出库存</span>
-                  <div className="flex items-baseline gap-1">
-                    <span className={cn("text-base font-bold font-mono", stock.available > 0 ? "text-primary" : "text-destructive")}>
-                      {stock.available.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">只</span>
-                  </div>
-                </div>
-
-                {/* 占用进度条：有可出=绿，罄=红 */}
-                <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-all",
-                      stock.available > 0 ? "bg-emerald-500" : "bg-rose-500"
-                    )}
-                    style={{ width: `${Math.max(4, Math.min(100, stock.usagePct))}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                  <span>分拣合格: {stock.qualified}</span>
-                  <span>出库已占: {stock.used}</span>
-                </div>
-              </CardContent>
-            </Card>
+            <div
+              key={idx}
+              title={`分拣合格: ${stock.qualified} | 出库已占: ${stock.used}`}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-background border border-border/80 shrink-0 hover:border-primary/50 transition-colors"
+            >
+              <span className="font-medium text-foreground">{stock.label}</span>
+              <div className="flex items-baseline gap-0.5 font-mono">
+                <span className={cn("font-bold", stock.available > 0 ? "text-primary" : "text-destructive")}>
+                  {stock.available.toLocaleString()}
+                </span>
+                <span className="text-[10px] text-muted-foreground">只</span>
+              </div>
+              {stock.usagePct > 0 && (
+                <span
+                  className={cn(
+                    "text-[10px] px-1 py-0.2 rounded font-mono font-medium",
+                    stock.usagePct >= 80
+                      ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  占 {stock.usagePct}%
+                </span>
+              )}
+            </div>
           ))}
         </div>
       </FadeIn>

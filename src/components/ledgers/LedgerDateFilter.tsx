@@ -60,11 +60,11 @@ export function LedgerDateFilter({ selectedDate }: { selectedDate?: string }) {
             selected={date}
             onSelect={(d) => applyDate(d)}
           />
-          <div className="flex items-center justify-between border-t p-2">
-            <Button variant="ghost" size="sm" className="text-xs h-7" onClick={handleToday}>
+          <div className="flex items-center justify-between border-t border-border/60 px-3 py-2 bg-muted/20">
+            <Button variant="ghost" size="sm" className="text-xs h-7 px-2 hover:bg-muted font-medium text-foreground" onClick={handleToday}>
               选择今天
             </Button>
-            <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground" onClick={handleClear}>
+            <Button variant="ghost" size="sm" className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground" onClick={handleClear}>
               重置 (查全量)
             </Button>
           </div>
