@@ -95,9 +95,6 @@ export default async function OutboundPage({
       where: { type: "INTAKE" },
       include: {
         store: true,
-        outboundOrders: {
-          where: { status: { not: "REJECTED" } },
-        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -107,32 +104,6 @@ export default async function OutboundPage({
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
 
   const sortTaskMap = new Map(sortTasks.map((t: any) => [t.code, t]));
-
-  // 格式化保鲜库在库批次信息（供出库调拨核对）
-  const coldBatchOptions = coldLogs.map((log: any) => {
-    const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId);
-    const gender = task?.gender || "MALE";
-    const weightTier = task?.weightTier || "4.0两";
-    const specLabel = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}`;
-    const used = log.outboundOrders?.reduce((acc: number, o: any) => acc + o.outboundCount, 0) || 0;
-    const availableCount = Math.max(0, log.count - used);
-    const farmer = task?.bundleBatch?.tagClaim?.farmer;
-
-    return {
-      id: log.id,
-      code: log.code,
-      storeName: log.store.name,
-      storeCode: log.store.code,
-      targetTemp: log.store.targetTemp,
-      gender,
-      weightTier,
-      specLabel,
-      intakeCount: log.count,
-      availableCount,
-      refTaskCode: task?.code || log.refId || undefined,
-      farmerSummary: farmer ? `${farmer.name} (${farmer.code})` : undefined,
-    };
-  });
 
   // 动态聚合规格：提取分拣任务中的规格，不足4项用基准规格补足四列栅格
   const DEFAULT_SPECS = [
@@ -168,6 +139,34 @@ export default async function OutboundPage({
     const usagePct = qualified > 0 ? Math.min(100, Math.round((used / qualified) * 100)) : 0;
 
     return { ...spec, qualified, used, available, usagePct };
+  });
+
+  const specStockMap = new Map(specStocks.map((s) => [`${s.gender}_${s.weightTier}`, s]));
+
+  // 格式化保鲜库在库批次信息（供出库调拨核对，与规格库存精确同步）
+  const coldBatchOptions = coldLogs.map((log: any) => {
+    const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId);
+    const gender = task?.gender || "MALE";
+    const weightTier = task?.weightTier || "4.0两";
+    const specLabel = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}`;
+    const stock = specStockMap.get(`${gender}_${weightTier}`);
+    const availableCount = stock ? Math.min(log.count, stock.available) : log.count;
+    const farmer = task?.bundleBatch?.tagClaim?.farmer;
+
+    return {
+      id: log.id,
+      code: log.code,
+      storeName: log.store.name,
+      storeCode: log.store.code,
+      targetTemp: log.store.targetTemp,
+      gender,
+      weightTier,
+      specLabel,
+      intakeCount: log.count,
+      availableCount,
+      refTaskCode: task?.code || log.refId || undefined,
+      farmerSummary: farmer ? `${farmer.name} (${farmer.code})` : undefined,
+    };
   });
 
   const pendingStoreOrders = pendingOrders.filter((o: any) => o.type !== "CRAB_CARD");
