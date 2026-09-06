@@ -311,7 +311,9 @@ export default async function OutboundPage({
                             </span>
                             <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
                               {order.coldLog ? (
-                                <span className="text-primary font-medium">{order.coldLog.code} ({order.coldLog.store.code})</span>
+                                <span className="text-primary font-medium">
+                                  {order.coldLog.code} ({order.coldLog.store?.code || "冷库"})
+                                </span>
                               ) : (
                                 <span>{order.lines?.length || 1} 笔明细合单</span>
                               )}

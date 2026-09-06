@@ -43,6 +43,13 @@ async function getColdStorageStock(gender: string, weightTier: string) {
   };
 }
 
+// 辅助：生成当日唯一的出库单号
+async function nextOutboundCode(tx: any): Promise<string> {
+  const prefix = `CK-${getBeijingDateStr()}-`;
+  const count = await tx.outboundOrder.count({ where: { code: { startsWith: prefix } } });
+  return `${prefix}${String(count + 1).padStart(3, "0")}`;
+}
+
 // 辅助：从保鲜入库批次穿透追溯原始批次
 async function resolveBatchFromColdLog(
   tx: any,
@@ -52,18 +59,19 @@ async function resolveBatchFromColdLog(
 ): Promise<string> {
   if (explicitBatchId) return explicitBatchId;
 
-  const findBatchBySpec = (farmerId?: string, gender?: string, weightTier?: string) => {
+  const findBatchBySpec = async (farmerId?: string, gender?: string, weightTier?: string) => {
     if (!gender || !weightTier) return null;
-    return tx.batch.findFirst({
-      where: {
-        ...(farmerId ? { farmerId } : { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } }),
-        OR: [
-          { gender, weightTier },
-          { items: { some: { gender, weightTier } } },
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const filter = {
+      ...(farmerId ? { farmerId } : {}),
+      OR: [{ gender, weightTier }, { items: { some: { gender, weightTier } } }],
+    };
+    // 优先在养/部分出库批次，次选已全量出池的完结批次 (COMPLETED)
+    return (
+      (await tx.batch.findFirst({
+        where: { ...filter, status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+        orderBy: { createdAt: "desc" },
+      })) || (await tx.batch.findFirst({ where: filter, orderBy: { createdAt: "desc" } }))
+    );
   };
 
   if (coldLogId) {
@@ -71,6 +79,7 @@ async function resolveBatchFromColdLog(
       where: { id: coldLogId },
     });
     if (coldLog?.refId) {
+      // 1. 优先从分拣任务或捆扎批次穿透来源养殖户与批次
       const sortTask = await tx.sortTask.findFirst({
         where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
         include: {
@@ -83,30 +92,54 @@ async function resolveBatchFromColdLog(
         },
       });
 
-      const matchedBatch = await findBatchBySpec(
-        sortTask?.bundleBatch?.tagClaim?.farmerId,
-        spec?.gender || sortTask?.gender,
-        spec?.weightTier || sortTask?.weightTier
-      );
-      if (matchedBatch) return matchedBatch.id;
+      const bundleBatch = !sortTask
+        ? await tx.bundleBatch.findFirst({
+            where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
+            include: {
+              lines: { include: { pool: { include: { batches: true } } } },
+              tagClaim: { include: { farmer: { include: { batches: true } } } },
+            },
+          })
+        : sortTask.bundleBatch;
 
-      // 仅当没有指定具体规格时，才使用该养殖户的历史批次兜底
-      if (!spec?.gender && !spec?.weightTier) {
-        return sortTask?.bundleBatch?.tagClaim?.farmer?.batches?.[0]?.id ||
-          sortTask?.bundleBatch?.lines?.[0]?.pool?.batches?.[0]?.id;
+      const farmerId = bundleBatch?.tagClaim?.farmerId;
+      const farmerBatches = bundleBatch?.tagClaim?.farmer?.batches || [];
+      const poolBatches = bundleBatch?.lines?.flatMap((l: any) => l.pool?.batches || []) || [];
+
+      // 该冷库批次真实规格
+      const targetGender = sortTask?.gender || bundleBatch?.lines?.[0]?.gender || spec?.gender;
+      const targetWeight = sortTask?.weightTier || bundleBatch?.lines?.[0]?.weightTier || spec?.weightTier;
+
+      if (farmerId) {
+        const matched =
+          (await findBatchBySpec(farmerId, targetGender, targetWeight)) ||
+          (spec?.gender && spec?.weightTier ? await findBatchBySpec(farmerId, spec.gender, spec.weightTier) : null);
+        if (matched) return matched.id;
+
+        const anyFarmerBatch =
+          farmerBatches[0]?.id || (await tx.batch.findFirst({ where: { farmerId }, orderBy: { createdAt: "desc" } }))?.id;
+        if (anyFarmerBatch) return anyFarmerBatch;
       }
+
+      if (poolBatches.length > 0) return poolBatches[0].id;
     }
   }
 
-  // 兜底：若带规格，优先查找规格匹配的在养批次
-  const defaultMatchedBatch = await findBatchBySpec(undefined, spec?.gender, spec?.weightTier);
-  if (defaultMatchedBatch) return defaultMatchedBatch.id;
+  // 兜底 1：全库范围按规格匹配
+  if (spec?.gender && spec?.weightTier) {
+    const defaultMatched = await findBatchBySpec(undefined, spec.gender, spec.weightTier);
+    if (defaultMatched) return defaultMatched.id;
+  }
 
-  const defaultBatch = await tx.batch.findFirst({
-    where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-    orderBy: { createdAt: "desc" },
-  });
-  return defaultBatch?.id || "";
+  // 兜底 2：系统内最新批次（优先在养，次选最新完结批次）
+  const fallback =
+    (await tx.batch.findFirst({
+      where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+      orderBy: { createdAt: "desc" },
+    })) || (await tx.batch.findFirst({ orderBy: { createdAt: "desc" } }));
+  if (fallback) return fallback.id;
+
+  throw new Error("系统内未找到任何养殖批次，请先创建养殖批次以保障供应链履约溯源闭环");
 }
 
 /**
@@ -160,15 +193,18 @@ export async function createStoreOutboundAction(data: {
       if (!checkRes.valid) throw new Error(`冷库库存不足：${checkRes.reason}`);
     }
 
-    const dateStr = getBeijingDateStr();
-    const countToday = await tx.outboundOrder.count();
-    const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
+    const orderCode = await nextOutboundCode(tx);
 
     const chosenColdLogId =
       data.coldLogId ||
       (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
       null;
-    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, orders[0]);
+
+    // 按选中的冷库批次规格对齐对应订单，1行即可匹配
+    const matchedOrder =
+      orders.find((o) => data.specBatchMap?.[`${o.gender}_${o.weightTier}`] === chosenColdLogId) || orders[0];
+
+    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, matchedOrder);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
@@ -278,15 +314,17 @@ export async function createCardUnifiedOutboundAction(data: {
       if (!checkRes.valid) throw new Error(`冷库库存不足：${checkRes.reason}`);
     }
 
-    const dateStr = getBeijingDateStr();
-    const countToday = await tx.outboundOrder.count();
-    const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
+    const orderCode = await nextOutboundCode(tx);
 
     const chosenColdLogId =
       data.coldLogId ||
       (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
       null;
-    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, orders[0]);
+
+    const matchedOrder =
+      orders.find((o) => data.specBatchMap?.[`${o.gender}_${o.weightTier}`] === chosenColdLogId) || orders[0];
+
+    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, matchedOrder);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
@@ -492,9 +530,7 @@ export async function createOutboundOrderAction(data: {
       throw new Error(outboundCheck.reason);
     }
 
-    const dateStr = getBeijingDateStr();
-    const countToday = await tx.outboundOrder.count();
-    const orderCode = `CK-${dateStr}-${String(countToday + 1).padStart(3, "0")}`;
+    const orderCode = await nextOutboundCode(tx);
 
     const order = await tx.outboundOrder.create({
       data: {
