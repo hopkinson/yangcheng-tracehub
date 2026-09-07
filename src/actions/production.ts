@@ -403,10 +403,30 @@ export async function completeBundleBatchAction(
         where: { id: batch.groupId },
         data: { status: "COMPLETED" },
       });
+
+      // 同步绑扣与损耗至蟹扣台账并自动轧平
+      if (batch.tagClaimId) {
+        const claim = await tx.tagClaim.findUnique({ where: { id: batch.tagClaimId } });
+        if (claim) {
+          const newBound = claim.boundCount + totalQualified;
+          const newScrapped = claim.scrappedCount + lossRes.lossCount;
+          const isBalanced = claim.claimCount === (newBound + claim.returnedCount + newScrapped);
+          await tx.tagClaim.update({
+            where: { id: claim.id },
+            data: {
+              boundCount: newBound,
+              scrappedCount: newScrapped,
+              scrapReason: claim.scrapReason || (lossRes.lossCount > 0 ? "捆扎损耗" : null),
+              isBalanced,
+            },
+          });
+        }
+      }
     });
 
     revalidate("/bundling");
     revalidate("/sorting");
+    revalidate("/tags");
     revalidate("/");
     return {
       success: true,
@@ -491,6 +511,22 @@ export async function deleteBundleBatchAction(bundleId: string) {
               data: { outPoolCount: { decrement: restore }, status: "PARTIALLY_OUTBOUND" },
             });
           }
+        }
+      }
+
+      if (batch.status === "COMPLETED" && batch.tagClaimId) {
+        const claim = await tx.tagClaim.findUnique({ where: { id: batch.tagClaimId } });
+        if (claim) {
+          const newBound = Math.max(0, claim.boundCount - batch.qualifiedCount);
+          const newScrapped = Math.max(0, claim.scrappedCount - batch.lossCount);
+          await tx.tagClaim.update({
+            where: { id: claim.id },
+            data: {
+              boundCount: newBound,
+              scrappedCount: newScrapped,
+              isBalanced: claim.claimCount === (newBound + claim.returnedCount + newScrapped),
+            },
+          });
         }
       }
 
