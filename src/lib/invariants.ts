@@ -661,15 +661,15 @@ export const Invariants = {
     sortTasks = [],
     outboundLines = [],
     defaultSpecs = [
-      { gender: "MALE", weightTier: "4.0两", label: "4.0两 公蟹" },
-      { gender: "MALE", weightTier: "3.5两", label: "3.5两 公蟹" },
-      { gender: "FEMALE", weightTier: "3.5两", label: "3.5两 母蟹" },
-      { gender: "FEMALE", weightTier: "3.0两", label: "3.0两 母蟹" },
+      { gender: "MALE", weightTier: "4.0两" },
+      { gender: "MALE", weightTier: "3.5两" },
+      { gender: "FEMALE", weightTier: "3.5两" },
+      { gender: "FEMALE", weightTier: "3.0两" },
     ],
   }: {
     sortTasks: Array<{ gender: string; weightTier: string; qualifiedCount: number }>;
     outboundLines?: Array<{ gender: string; weightTier: string; count: number }>;
-    defaultSpecs?: Array<{ gender: string; weightTier: string; label: string }>;
+    defaultSpecs?: Array<{ gender: string; weightTier: string }>;
   }) {
     const stockMap = new Map<string, { qualified: number; used: number }>();
     for (const t of sortTasks) {
@@ -685,12 +685,14 @@ export const Invariants = {
       stockMap.set(k, e);
     }
 
-    const allKeys = new Set([
-      ...stockMap.keys(),
-      ...defaultSpecs.map((d) => `${d.gender}_${Invariants.normalizeWeightTier(d.weightTier)}`),
-    ]);
+    // 真实规格全部保留；不足 4 项时才拿 defaultSpecs 补足 4 项，不切片不顶替
+    const finalKeys = new Set<string>(stockMap.keys());
+    for (const d of defaultSpecs) {
+      if (finalKeys.size >= 4) break;
+      finalKeys.add(`${d.gender}_${Invariants.normalizeWeightTier(d.weightTier)}`);
+    }
 
-    return Array.from(allKeys)
+    return [...finalKeys]
       .map((k) => {
         const [gender, weightTier] = k.split("_");
         const { qualified = 0, used = 0 } = stockMap.get(k) || {};
@@ -711,8 +713,7 @@ export const Invariants = {
             ? -1
             : 1
           : parseFloat(b.weightTier) - parseFloat(a.weightTier)
-      )
-      .slice(0, Math.max(4, stockMap.size));
+      );
   },
 };
 
