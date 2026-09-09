@@ -21,7 +21,7 @@ export const ROLE_LABELS: Record<string, { label: string; desc: string }> = {
   CHANNEL_VIEWER: { label: "渠道审计员 (CHANNEL_VIEWER)", desc: "专属渠道追溯、四大台账只读查看" },
 };
 
-interface ChannelOption {
+export interface ChannelOption {
   id: string;
   name: string;
   code: string;
@@ -308,6 +308,7 @@ export function UserDialog({
                   )}
                 />
               )}
+
             </div>
 
             <DialogFooter>
