@@ -709,13 +709,13 @@ async function main() {
 
   // 10. 保鲜预冷 (BX & CR)
   const bx01 = await prisma.coldStore.create({
-    data: { code: "BX-01", name: "保鲜预冷A区", targetTemp: 4.2 },
+    data: { code: "BX-01", name: "保鲜预冷A区" },
   });
   const bx02 = await prisma.coldStore.create({
-    data: { code: "BX-02", name: "保鲜预冷B区", targetTemp: 4.5 },
+    data: { code: "BX-02", name: "保鲜预冷B区" },
   });
   const bx03 = await prisma.coldStore.create({
-    data: { code: "BX-03", name: "保鲜预冷C区", targetTemp: 4.0 },
+    data: { code: "BX-03", name: "保鲜预冷C区" },
   });
 
   await prisma.coldLog.createMany({

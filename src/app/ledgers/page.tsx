@@ -492,7 +492,7 @@ export default async function LedgersPage({
                 exportHeaders={[
                   "日期",
                   "YL 批次",
-                  "池编号",
+                  "暂养池",
                   "养殖户",
                   "围网",
                   "入池数",
@@ -506,7 +506,7 @@ export default async function LedgersPage({
                   return [
                     formatISODate(b.inPoolTime),
                     b.code,
-                    b.pool.code,
+                    b.pool.name ? `${b.pool.name} (${b.pool.code})` : b.pool.code,
                     b.farmer.name,
                     b.enclosure?.code || "—",
                     b.inPoolCount,
@@ -527,7 +527,7 @@ export default async function LedgersPage({
                     <TableRow>
                       <TableHead className="w-[100px]">日期</TableHead>
                       <TableHead className="w-[120px]">YL 批次</TableHead>
-                      <TableHead className="w-[90px]">池编号</TableHead>
+                      <TableHead className="w-[150px]">暂养池</TableHead>
                       <TableHead className="w-[100px]">养殖户</TableHead>
                       <TableHead className="w-[80px]">围网</TableHead>
                       <TableHead className="w-[90px]">入池数</TableHead>
@@ -551,10 +551,9 @@ export default async function LedgersPage({
                           <TableRow key={b.id} className="hover:bg-muted/40 transition-colors">
                             <TableCell className="font-mono text-xs">{formatDate(b.inPoolTime)}</TableCell>
                             <TableCell className="font-mono font-medium text-xs">{b.code}</TableCell>
-                            <TableCell className="font-mono text-xs">
-                              <Badge variant="outline" className="text-xs font-mono py-0">
-                                {b.pool.code}
-                              </Badge>
+                            <TableCell className="text-xs">
+                              <div className="font-medium">{b.pool.name || b.pool.code}</div>
+                              {b.pool.name && <div className="font-mono text-[10px] text-muted-foreground">{b.pool.code}</div>}
                             </TableCell>
                             <TableCell className="text-xs font-medium">{b.farmer.name}</TableCell>
                             <TableCell className="font-mono text-xs">{b.enclosure?.code || "—"}</TableCell>

@@ -914,7 +914,7 @@ export async function createColdIntakeAction(data: {
   }
 }
 
-export async function createColdStoreAction(data: { name: string; targetTemp: number }) {
+export async function createColdStoreAction(data: { name: string }) {
   try {
     const count = await prisma.coldStore.count();
     const code = `BX-${String(count + 1).padStart(2, "0")}`;
@@ -922,7 +922,6 @@ export async function createColdStoreAction(data: { name: string; targetTemp: nu
       data: {
         code,
         name: data.name.trim(),
-        targetTemp: Number(data.targetTemp) || 4.5,
       },
     });
     revalidate("/cold-storage");
@@ -932,14 +931,13 @@ export async function createColdStoreAction(data: { name: string; targetTemp: nu
   }
 }
 
-export async function updateColdStoreAction(storeId: string, data: { name: string; targetTemp: number }) {
+export async function updateColdStoreAction(storeId: string, data: { name: string }) {
   try {
     if (!data.name.trim()) return { success: false, message: "库位名称不能为空" };
     await prisma.coldStore.update({
       where: { id: storeId },
       data: {
         name: data.name.trim(),
-        targetTemp: Number(data.targetTemp) || 4.5,
       },
     });
     revalidate("/cold-storage");

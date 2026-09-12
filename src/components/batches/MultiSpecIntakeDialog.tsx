@@ -18,6 +18,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Layers, Plus, Trash2, Loader2, Camera, Upload, X } from "lucide-react";
 import { createMultiSpecBatchAction } from "@/actions/batches";
 import { uploadFileAction } from "@/actions/upload";
+import { Invariants } from "@/lib/invariants";
+
+const WEIGHT_TIERS: readonly string[] = ["2.5两", "3.0两", "3.5两", "4.0两", "4.5两", "5.0两", "5.5两", "6.0两"];
 
 export interface FarmerOption {
   id: string;
@@ -140,9 +143,15 @@ export function MultiSpecIntakeDialog({
       return;
     }
 
+    const normalizedItems = items.map((it) => ({ ...it, weightTier: Invariants.normalizeWeightTier(it.weightTier, "") }));
+
     // 前端严格校验：所有明细行必须选择空池
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
+    for (let i = 0; i < normalizedItems.length; i++) {
+      const it = normalizedItems[i];
+      if (!WEIGHT_TIERS.includes(it.weightTier)) {
+        toast.error(`第 ${i + 1} 行规格请选择 2.5两至 6.0两（每 0.5两一档）`);
+        return;
+      }
       if (!it.poolId) {
         toast.error(`第 ${i + 1} 行明细未选择暂养池，请选择空池`);
         return;
@@ -172,7 +181,7 @@ export function MultiSpecIntakeDialog({
         escort,
         slipUrl: slipUrl || undefined,
         slipName: `${formNo}_码单原件.jpg`,
-        items,
+        items: normalizedItems,
         createdById: userId,
       });
 
@@ -304,8 +313,10 @@ export function MultiSpecIntakeDialog({
                   <div className="col-span-2">
                     <Input
                       value={item.weightTier}
+                      list="multi-spec-weight-tiers"
                       onChange={(e) => handleItemChange(idx, "weightTier", e.target.value)}
-                      placeholder="如 4.0两"
+                      placeholder="选择或输入规格"
+                      autoComplete="off"
                       className="h-7 text-xs font-mono"
                     />
                   </div>
@@ -363,6 +374,12 @@ export function MultiSpecIntakeDialog({
                   </div>
                 </div>
               ))}
+
+              <datalist id="multi-spec-weight-tiers">
+                {WEIGHT_TIERS.map((tier) => (
+                  <option key={tier} value={tier} />
+                ))}
+              </datalist>
 
               <div className="flex justify-between items-center pt-2 text-xs font-mono border-t">
                 <span className="text-muted-foreground">

@@ -1,8 +1,30 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { findDuplicateEnclosureCodes, normalizeEnclosureCodes } from "@/lib/enclosures";
+
+export async function checkEnclosureCodesAction(data: {
+  enclosureCodes: string[];
+  excludeFarmerId?: string;
+}) {
+  await requireRole(["FARMER_ADMIN", "ADMIN"]);
+
+  const enclosureCodes = Array.from(new Set(normalizeEnclosureCodes(data.enclosureCodes)));
+  if (enclosureCodes.length === 0) return { conflicts: [] as string[] };
+
+  const conflicts = await prisma.enclosure.findMany({
+    where: {
+      code: { in: enclosureCodes },
+      ...(data.excludeFarmerId ? { farmerId: { not: data.excludeFarmerId } } : {}),
+    },
+    select: { code: true },
+  });
+
+  return { conflicts: conflicts.map((item) => item.code) };
+}
 
 export async function createFarmerAction(data: {
   name: string;
@@ -15,8 +37,18 @@ export async function createFarmerAction(data: {
   userId: string;
 }) {
   await requireRole(["FARMER_ADMIN", "ADMIN"]);
-  return await prisma.$transaction(async (tx) => {
+  try {
+    return await prisma.$transaction(async (tx) => {
     const currentYear = new Date().getFullYear();
+    const enclosureCodes = normalizeEnclosureCodes(data.enclosureCodes);
+    const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
+    if (duplicateCodes.length > 0) {
+      throw new Error(`围网编号重复：${duplicateCodes.join("、")}`);
+    }
+    if (enclosureCodes.length === 0) {
+      throw new Error("请至少填写一个有效的围网编号");
+    }
+
     const count = await tx.farmer.count({ where: { year: currentYear } });
     const code = `JD-${currentYear}-${String(count + 1).padStart(3, "0")}`;
     const quota = Math.round(data.area * 600);
@@ -35,7 +67,7 @@ export async function createFarmerAction(data: {
         contractName: data.contractName,
         contractUrl: data.contractUrl,
         enclosures: {
-          create: data.enclosureCodes.filter(c => c.trim()).map(code => ({ code: code.trim() })),
+          create: enclosureCodes.map((code) => ({ code })),
         },
       },
       include: { enclosures: true },
@@ -55,7 +87,13 @@ export async function createFarmerAction(data: {
     revalidatePath("/batches");
     revalidatePath("/ledgers");
     return farmer;
-  });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new Error("围网编号已被其他养殖户使用，请更换编号");
+    }
+    throw error;
+  }
 }
 
 export async function updateFarmerAction(data: {
@@ -71,20 +109,28 @@ export async function updateFarmerAction(data: {
   userId: string;
 }) {
   await requireRole(["FARMER_ADMIN", "ADMIN"]);
-  return await prisma.$transaction(async (tx) => {
+  try {
+    return await prisma.$transaction(async (tx) => {
     const quota = Math.round(data.area * 600);
+    const enclosureCodes = normalizeEnclosureCodes(data.enclosureCodes);
+    const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
+    if (duplicateCodes.length > 0) {
+      throw new Error(`围网编号重复：${duplicateCodes.join("、")}`);
+    }
+    if (enclosureCodes.length === 0) {
+      throw new Error("请至少填写一个有效的围网编号");
+    }
 
-    // 安全同步围网：保留已有且已被批次引用的围网，增加新围网
     const existingEnclosures = await tx.enclosure.findMany({
       where: { farmerId: data.id },
       include: { batches: true },
     });
 
-    const newCodes = Array.from(new Set(data.enclosureCodes.map((c) => c.trim()).filter(Boolean)));
+    const newCodes = enclosureCodes;
 
     // 找出可以安全删除的（未被任何批次引用的旧围网且不在新列表中）
     const toDelete = existingEnclosures.filter(
-      (e) => !newCodes.includes(e.code) && e.batches.length === 0
+      (e) => !newCodes.includes(e.code.trim().toUpperCase()) && e.batches.length === 0
     );
     if (toDelete.length > 0) {
       await tx.enclosure.deleteMany({
@@ -93,8 +139,8 @@ export async function updateFarmerAction(data: {
     }
 
     // 找出需要新增的围网
-    const existingCodes = existingEnclosures.map((e) => e.code);
-    const toCreate = newCodes.filter((code) => !existingCodes.includes(code));
+    const existingCodes = new Set(existingEnclosures.map((e) => e.code.trim().toUpperCase()));
+    const toCreate = newCodes.filter((code) => !existingCodes.has(code));
     if (toCreate.length > 0) {
       await tx.enclosure.createMany({
         data: toCreate.map((code) => ({
@@ -134,5 +180,11 @@ export async function updateFarmerAction(data: {
     revalidatePath("/batches");
     revalidatePath("/ledgers");
     return farmer;
-  });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new Error("围网编号已被其他养殖户使用，请更换编号");
+    }
+    throw error;
+  }
 }

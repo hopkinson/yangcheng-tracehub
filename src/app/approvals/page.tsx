@@ -125,6 +125,7 @@ export default async function ApprovalsPage({
           code: claim.code || "—",
           createdAt: new Date(claim.createdAt || claim.claimDate),
           summary: `${claim.farmer.name} · 领用蟹扣 ${claim.claimCount.toLocaleString()} 只`,
+          quantityLabel: undefined,
           subSummary: `${claim.farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}养殖户 · 户号 ${claim.farmer.code}`,
           checkDescription: `领扣校验：在池存活 ${activeInPool.toLocaleString()} 只，年度剩余额度 ${remainingQuota.toLocaleString()} 只 (硬约束 ≤ min(在池, 余量) = ${maxClaimable.toLocaleString()} 只)${!isSafe ? " ⚠️ 超额领扣预警" : ""}`,
           applicantName: claim.applicant.fullName,
@@ -138,15 +139,16 @@ export default async function ApprovalsPage({
   const pendingOutboundCards = (typeFilter === "ALL" || typeFilter === "OUTBOUND")
     ? pendingOutboundOrders.map((order) => {
         const liveInBatch = order.batch ? order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount : 0;
-        const typeLabel = order.type === "CRAB_CARD" ? "蟹卡提货 · 统一出库" : `${order.channel.name} · ${order.store.name}`;
+        const genderLabel = order.batch.gender === "MALE" ? "公蟹" : "母蟹";
         return {
           id: order.id,
           type: "OUTBOUND" as const,
           code: order.code,
           createdAt: new Date(order.createdAt),
-          summary: `${typeLabel} · 出库 ${order.outboundCount.toLocaleString()} 只`,
-          subSummary: `关联批次 ${order.batch.code} · ${order.batch.farmer.name} (${order.batch.gender === "MALE" ? "公" : "母"} ${order.batch.weightTier})`,
-          checkDescription: `冷库与在池校验：出库 ${order.outboundCount.toLocaleString()} 只 / 批次在池存活 ${liveInBatch.toLocaleString()} 只 · 物流方式: ${order.logisticsNo || "门店自配"}`,
+          summary: order.type === "CRAB_CARD" ? "蟹卡提货 · 统一出库" : order.channel.name,
+          quantityLabel: `出库 ${order.outboundCount.toLocaleString()} 只`,
+          subSummary: `${order.type === "CRAB_CARD" ? "" : `门店 ${order.store.name} · `}批次 ${order.batch.code} · ${order.batch.farmer.name} · ${genderLabel} ${order.batch.weightTier}`,
+          checkDescription: `冷库与在池校验 · 出库 ${order.outboundCount.toLocaleString()} 只 · 在池 ${liveInBatch.toLocaleString()} 只 · 物流 ${order.logisticsNo || "门店自配"}`,
           applicantName: order.applicant.fullName,
           applicantRole: order.applicant.role === "WAREHOUSE_ADMIN" ? "库管员" : "业务员",
           tagClaimData: undefined,
@@ -288,40 +290,37 @@ export default async function ApprovalsPage({
               {pendingItems.map((item) => {
                 const isTag = item.type === "TAG_CLAIM";
                 return (
-                  <Card
-                    key={`${item.type}_${item.id}`}
-                    className={cn(
-                      "transition-all border-l-4 hover:shadow-xs",
-                      isTag
-                        ? "border-l-amber-500 bg-amber-500/[0.015]"
-                        : "border-l-cyan-500 bg-cyan-500/[0.015]"
-                    )}
-                  >
-                    <CardContent className="p-3 sm:p-3.5 flex flex-col gap-2">
+                  <Card key={`${item.type}_${item.id}`} className="transition-all hover:shadow-xs">
+                    <CardContent className="p-3 sm:px-3.5 flex flex-col gap-1.5">
                       {/* 卡片主信息行：左侧类型单号与摘要，右侧操作按钮与时间 */}
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {isTag ? (
-                            <Badge
-                              variant="outline"
-                              className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5"
-                            >
-                              <Tag className="size-2.5" />
-                              蟹扣领用
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5"
-                            >
-                              <Truck className="size-2.5" />
-                              出库申请
-                            </Badge>
-                          )}
-                          <span className="font-mono text-xs font-bold text-foreground">{item.code}</span>
-                          <span className="text-xs font-semibold text-foreground">{item.summary}</span>
-                          <span className="text-[11px] text-muted-foreground font-mono">
-                            ({item.subSummary})
+                        <div className="min-w-0 flex-1 flex flex-col gap-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isTag ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5 shrink-0"
+                              >
+                                <Tag className="size-2.5" />
+                                蟹扣领用
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5 shrink-0"
+                              >
+                                <Truck className="size-2.5" />
+                                出库申请
+                              </Badge>
+                            )}
+                            <span className="font-mono text-[11px] font-medium text-muted-foreground shrink-0">{item.code}</span>
+                            <span className="text-sm font-semibold text-foreground truncate">{item.summary}</span>
+                            {item.quantityLabel && (
+                              <span className="text-xs font-semibold text-foreground tabular-nums shrink-0">{item.quantityLabel}</span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-muted-foreground truncate">
+                            {item.subSummary}
                           </span>
                         </div>
 
@@ -343,12 +342,11 @@ export default async function ApprovalsPage({
                         </div>
                       </div>
 
-                      {/* 底部信息条：校验口径 + 申请人 */}
+                      {/* 底部信息条：校验摘要 + 申请人 */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pt-1.5 border-t border-border/40 text-[11px]">
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <ShieldCheck className="size-3.5 text-primary shrink-0" />
-                          <span className="font-medium text-foreground shrink-0">校验口径:</span>
-                          <span className="font-mono text-muted-foreground leading-snug">
+                        <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                          <ShieldCheck className="size-3.5 shrink-0" />
+                          <span className="leading-snug truncate">
                             {item.checkDescription}
                           </span>
                         </div>
@@ -552,12 +550,13 @@ export default async function ApprovalsPage({
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex items-center gap-1.5 font-medium">
                                   <span className="text-sm font-semibold">{batch.farmer.name}</span>
-                                  <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 border-primary/40 text-primary bg-primary/5">
-                                    {batch.pool.code}
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-primary/40 text-primary bg-primary/5">
+                                    {batch.pool.name || batch.pool.code}
                                   </Badge>
                                 </div>
-                                <span className="text-[11px] font-mono text-muted-foreground">
-                                  {batch.farmer.code} · {batch.pool.name}
+                                <span className="text-[11px] text-muted-foreground">
+                                  <span className="font-mono">{batch.farmer.code}</span>
+                                  {batch.pool.name && <span className="font-mono"> · {batch.pool.code}</span>}
                                 </span>
                               </div>
                             </TableCell>

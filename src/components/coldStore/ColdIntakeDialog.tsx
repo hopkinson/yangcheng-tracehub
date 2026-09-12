@@ -21,7 +21,6 @@ export interface ColdStoreOption {
   id: string;
   code: string;
   name: string;
-  targetTemp: number;
 }
 
 export interface SortTaskOption {
@@ -139,7 +138,7 @@ export function ColdIntakeDialog({
               <SelectContent>
                 {stores.map((s) => (
                   <SelectItem key={s.id} value={s.id} className="text-xs">
-                    {s.name} ({s.code}) · 目标 {s.targetTemp}℃
+                    {s.name} ({s.code})
                   </SelectItem>
                 ))}
               </SelectContent>

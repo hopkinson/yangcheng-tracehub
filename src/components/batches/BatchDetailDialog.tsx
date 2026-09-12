@@ -231,7 +231,8 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
                   return (
                     <tr key={it.id}>
                       <td className="px-3 py-1.5 font-bold text-foreground">
-                        {it.pool.code} <span className="text-muted-foreground font-normal text-[11px]">({it.pool.name})</span>
+                        {it.pool.name || it.pool.code}
+                        {it.pool.name && <span className="text-muted-foreground font-mono font-normal text-[11px]"> ({it.pool.code})</span>}
                       </td>
                       <td className="px-3 py-1.5 font-medium text-primary">
                         {it.gender === "FEMALE" ? "母蟹" : "公蟹"} {it.weightTier}

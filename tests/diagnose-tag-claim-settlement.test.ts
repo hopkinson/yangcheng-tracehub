@@ -185,7 +185,7 @@ async function testTagClaimSettlementRepro() {
   });
 
   // Cold store & logs
-  const coldStore = await prisma.coldStore.create({ data: { code: `BX-${ts}`, name: "保鲜库", targetTemp: 4.0 } });
+  const coldStore = await prisma.coldStore.create({ data: { code: `BX-${ts}`, name: "保鲜库" } });
   const coldLogA = await prisma.coldLog.create({
     data: { code: `CR-A-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 320, refType: "SORT", refId: sortTaskA.code, operator: "仓管" },
   });
@@ -235,7 +235,8 @@ async function testTagClaimSettlementRepro() {
     orderIds: [orderA.id, orderB.id],
     specBatchMap,
     transportCompany: "冷链专车",
-    licensePlate: "苏E·88888",
+    contactName: "测试联系人",
+    contactPhone: "13800000000",
     applicantId: admin.id,
   });
 

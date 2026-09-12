@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { createFarmerAction, updateFarmerAction } from "@/actions/farmers";
+import { checkEnclosureCodesAction, createFarmerAction, updateFarmerAction } from "@/actions/farmers";
 import { uploadFileAction } from "@/actions/upload";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { farmerFormSchema, type FarmerFormValues } from "@/lib/validations/schemas";
+import { findDuplicateEnclosureCodes, normalizeEnclosureCodes } from "@/lib/enclosures";
 import { toast } from "sonner";
 import { Plus, Edit2, Scale, Upload, Loader2, Eye, Trash2, FileText } from "lucide-react";
 
@@ -119,16 +120,44 @@ export function FarmerDialog({
     }
   }
 
-  async function onSubmit(data: FarmerFormValues) {
-    const enclosureCodes = data.enclosuresStr
-      .split(/[,，\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+  async function handleEnclosureBlur(value: string) {
+    const enclosureCodes = normalizeEnclosureCodes(value.split(/[,，\s]+/));
+    const normalizedValue = enclosureCodes.join(", ");
 
-    if (enclosureCodes.length === 0) {
-      form.setError("enclosuresStr", { message: "请至少填写一个有效的围网编号" });
+    if (normalizedValue !== value) {
+      form.setValue("enclosuresStr", normalizedValue, { shouldDirty: true, shouldValidate: true });
+    }
+
+    if (enclosureCodes.length === 0) return;
+
+    const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
+    if (duplicateCodes.length > 0) {
+      form.setError("enclosuresStr", { message: `围网编号重复：${duplicateCodes.join("、")}` });
       return;
     }
+
+    try {
+      const result = await checkEnclosureCodesAction({
+        enclosureCodes,
+        excludeFarmerId: farmer?.id,
+      });
+
+      if (form.getValues("enclosuresStr") !== normalizedValue) return;
+
+      if (result.conflicts.length > 0) {
+        form.setError("enclosuresStr", {
+          message: `围网编号已被其他养殖户使用：${result.conflicts.join("、")}`,
+        });
+      } else {
+        form.clearErrors("enclosuresStr");
+      }
+    } catch {
+      toast.error("围网编号校验失败，保存时会再次检查");
+    }
+  }
+
+  async function onSubmit(data: FarmerFormValues) {
+    const enclosureCodes = normalizeEnclosureCodes(data.enclosuresStr.split(/[,，\s]+/));
 
     setLoading(true);
     try {
@@ -160,7 +189,11 @@ export function FarmerDialog({
       setOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "操作失败";
-      toast.error(msg);
+      if (msg.includes("围网编号")) {
+        form.setError("enclosuresStr", { message: msg });
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -272,7 +305,18 @@ export function FarmerDialog({
                   <FormItem>
                     <FormLabel>名下围网编号</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：W-01, W-02" {...field} />
+                      <Input
+                        placeholder="如：W-01, W-02"
+                        {...field}
+                        onChange={(event) => {
+                          field.onChange(event);
+                          form.clearErrors("enclosuresStr");
+                        }}
+                        onBlur={(event) => {
+                          field.onBlur();
+                          void handleEnclosureBlur(event.currentTarget.value);
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

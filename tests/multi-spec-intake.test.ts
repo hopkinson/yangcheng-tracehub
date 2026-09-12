@@ -113,10 +113,24 @@ async function runTests() {
   assert.notStrictEqual(resSuccess.data?.code, resSuccess2.data?.code, "Batch codes must be distinct");
   console.log("  ✔ 批次号不重复:", resSuccess2.data?.code);
 
-  console.log("▶ [Test 4] 校验超额入池拦截");
   const poolEmpty4 = await prisma.holdingPool.create({
     data: { code: `ZY-EMP4-${timestamp}`, name: `空池4-${timestamp}`, status: "ACTIVE" },
   });
+
+  console.log("▶ [Test 4] 校验规格只能选择 2.5两至 6.0两的 0.5 档位");
+  const resInvalidSpec = await createMultiSpecBatchAction({
+    farmerId: farmer.id,
+    enclosureId: farmer.enclosures[0].id,
+    items: [
+      { poolId: poolEmpty4.id, gender: "MALE", weightTier: "4.2两", weight: 30, inPoolCount: 100 },
+    ],
+    createdById: admin.id,
+  });
+  assert.strictEqual(resInvalidSpec.success, false, "Should reject non-standard weight tier");
+  assert.match(resInvalidSpec.error || "", /规格无效|2\.5两至 6\.0两/, "Must report invalid weight tier");
+  console.log("  ✔ 非标准规格拦截通过:", resInvalidSpec.error);
+
+  console.log("▶ [Test 5] 校验超额入池拦截");
   const resOverQuota = await createMultiSpecBatchAction({
     farmerId: farmer.id,
     enclosureId: farmer.enclosures[0].id,

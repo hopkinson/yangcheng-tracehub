@@ -284,7 +284,6 @@ async function runFullSystemTests() {
       data: {
         code: testColdStoreCode,
         name: `低温保鲜库 A 区-${uid}`,
-        targetTemp: 4.5,
       },
     });
 

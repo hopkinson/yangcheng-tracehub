@@ -102,8 +102,8 @@ async function runE2EWorkflowTests() {
         status: "ACTIVE",
         enclosures: {
           create: [
-            { code: "W-TEST-01", description: "东湖核心生态围网区1号" },
-            { code: "W-TEST-02", description: "东湖核心生态围网区2号" },
+            { code: `W-TEST-01-${uniqueSuffix}`, description: "东湖核心生态围网区1号" },
+            { code: `W-TEST-02-${uniqueSuffix}`, description: "东湖核心生态围网区2号" },
           ],
         },
       },

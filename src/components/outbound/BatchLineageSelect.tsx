@@ -11,7 +11,6 @@ export interface ColdBatchOption {
   code: string; // CR-XXXX
   storeName?: string; // 保鲜预冷A区
   storeCode?: string; // BX-01
-  targetTemp?: number; // 4.2
   gender?: string;
   weightTier?: string;
   specLabel?: string;
@@ -156,7 +155,8 @@ export function SpecColdBatchAllocation({
                           </span>
                         </span>
                         <span className="shrink-0 text-muted-foreground">
-                          库位: {currentBatch.storeCode || currentBatch.storeName}
+                          库位: {currentBatch.storeName || currentBatch.storeCode}
+                          {currentBatch.storeName && currentBatch.storeCode ? ` (${currentBatch.storeCode})` : ""}
                         </span>
                       </div>
                     )}

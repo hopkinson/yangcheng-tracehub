@@ -83,11 +83,25 @@ export type ChannelFormValues = z.infer<typeof channelFormSchema>;
  * 门店档案校验
  */
 export const storeFormSchema = z.object({
+  code: z.string().trim().max(30, "门店编号最多 30 个字符").optional(),
   name: z.string().trim().min(2, "门店全称至少 2 个字符").max(60, "门店名称最多 60 个字符"),
   channelId: z.string().min(1, "请选择所属渠道"),
   isActive: z.boolean().default(true),
 });
 export type StoreFormValues = z.infer<typeof storeFormSchema>;
+
+/**
+ * 检测报告档案校验
+ */
+export const inspectionReportFormSchema = z.object({
+  name: z.string().trim().min(2, "报告名称至少 2 个字符").max(100, "报告名称最多 100 个字符"),
+  inspectedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的检测时间")
+    .or(z.literal(""))
+    .default(""),
+});
+export type InspectionReportFormValues = z.infer<typeof inspectionReportFormSchema>;
 
 /**
  * 暂养池配置校验

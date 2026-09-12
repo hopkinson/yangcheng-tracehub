@@ -567,7 +567,7 @@ async function buildTraceFromOutbound(
       step: 5,
       stageName: "预冷",
       title: `${coldStoreName} (${coldStoreCode})`,
-      subtitle: `保鲜入库单: ${coldLogCode} · 目标温度 4-5℃ 锁鲜`,
+      subtitle: `保鲜入库单: ${coldLogCode} · 预冷锁鲜`,
       details: [
         { label: "保鲜库位", value: `${coldStoreName} (${coldStoreCode})` },
         { label: "入库单号", value: coldLogCode },
@@ -849,10 +849,9 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       step: 5,
       stageName: "预冷",
       title: "保鲜预冷库 (BX-01 / BX-02)",
-      subtitle: "目标温度 4-5℃ 物理休眠锁鲜",
+      subtitle: "保鲜预冷锁鲜",
       details: [
         { label: "预冷温区", value: "保鲜预冷A区 (BX-01)" },
-        { label: "目标温控", value: "4.2℃ 恒温循环" },
       ],
       qcBadges: [],
       status: "PREVIEW",

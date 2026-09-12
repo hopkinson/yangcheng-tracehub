@@ -496,7 +496,6 @@ async function runChaosStressAudit() {
     data: {
       code: `BX-CHAOS-${testId}`,
       name: "预冷保鲜A区-测试库",
-      targetTemp: 4.5,
     },
   });
 

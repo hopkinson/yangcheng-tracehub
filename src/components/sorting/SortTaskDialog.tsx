@@ -31,6 +31,7 @@ export interface CompletedBundleOption {
     totalCount?: number;
     availableCount?: number;
     poolCode: string;
+    poolName: string;
   }>;
 }
 
@@ -375,7 +376,7 @@ export function SortTaskDialog({
                           className="size-3.5 accent-primary cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span className="font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded text-[11px]">
-                          {line.poolCode} 来源
+                          {line.poolName || line.poolCode}{line.poolName ? ` (${line.poolCode})` : ""} 来源
                         </span>
                         <span
                           className={`font-semibold ${

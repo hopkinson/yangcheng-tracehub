@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Invariants } from "../src/lib/invariants";
+import { findDuplicateEnclosureCodes, normalizeEnclosureCodes } from "../src/lib/enclosures";
 
 console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环与卡控规则自动化单元测试...\n");
 
@@ -389,5 +390,14 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   console.log("  ✔ 捆扎批次创建分拣任务余量卡控测试通过\n");
 }
 
-console.log("🎉 全部 12 项 PRD V2.1 核心数学卡控规则测试 100% 通过！");
+// 13. 围网编号标准化与重复检测
+{
+  console.log("▶ [Test 13] 围网编号标准化与重复检测");
+  const codes = normalizeEnclosureCodes([" w-01 ", "W-02", "w-01", ""]);
+  assert.deepEqual(codes, ["W-01", "W-02", "W-01"]);
+  assert.deepEqual(findDuplicateEnclosureCodes(codes), ["W-01"]);
+  console.log("  ✔ 围网编号统一大写并可识别重复编号\n");
+}
+
+console.log("🎉 全部 13 项 PRD V2.1 核心卡控规则测试 100% 通过！");
 

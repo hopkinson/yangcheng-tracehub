@@ -24,6 +24,7 @@ interface StoreData {
 }
 
 const getStoreValues = (store?: StoreData, firstChannelId = ""): StoreFormValues => ({
+  code: store?.code || "",
   name: store?.name || "",
   channelId: store?.channelId || firstChannelId,
   isActive: store?.isActive ?? true,
@@ -58,6 +59,7 @@ export function StoreDialog({
       if (isEditing && store) {
         await updateStoreAction({
           id: store.id,
+          code: data.code ?? "",
           name: data.name.trim(),
           channelId: data.channelId,
           isActive: data.isActive,
@@ -123,6 +125,22 @@ export function StoreDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
+            {isEditing && (
+              <FormField
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>门店编号</FormLabel>
+                    <FormControl>
+                      <Input className="font-mono" placeholder="如：ST-02" required maxLength={30} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="name"

@@ -158,10 +158,17 @@ export async function createStoreOutboundAction(data: {
   specBatchMap?: Record<string, string>;
   batchId?: string;
   transportCompany?: string;
-  licensePlate?: string;
+  contactName: string;
+  contactPhone: string;
   applicantId: string;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+
+  const contactName = data.contactName.trim();
+  const contactPhone = data.contactPhone.trim();
+  if (!contactName) throw new Error("请填写联系人");
+  if (!/^[0-9+\-\s()]{6,20}$/.test(contactPhone)) throw new Error("请填写正确的联系方式");
+
   return await prisma.$transaction(async (tx) => {
     const store = await tx.store.findUniqueOrThrow({
       where: { id: data.storeId },
@@ -220,7 +227,10 @@ export async function createStoreOutboundAction(data: {
         channelId: store.channelId,
         outboundCount: totalCrabCount,
         channelOrderCount: totalCrabCount,
-        logisticsNo: data.licensePlate || "门店冷链专车自配",
+        logisticsNo: "门店冷链专车自配",
+        transportCompany: data.transportCompany?.trim() || null,
+        contactName,
+        contactPhone,
         status: "PENDING",
         applicantId: data.applicantId,
         lines: {

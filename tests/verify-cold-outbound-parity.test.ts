@@ -107,10 +107,10 @@ async function runParityVerification() {
 
     // 建立 2 个保鲜库：BX-01 (A区) 存公4.0和母3.0；BX-02 (B区) 存公3.5和母2.5
     const bx01 = await prisma.coldStore.create({
-      data: { code: `BX-01-${suffix}`, name: "保鲜预冷A区", targetTemp: 4.2 },
+      data: { code: `BX-01-${suffix}`, name: "保鲜预冷A区" },
     });
     const bx02 = await prisma.coldStore.create({
-      data: { code: `BX-02-${suffix}`, name: "保鲜预冷B区", targetTemp: 4.5 },
+      data: { code: `BX-02-${suffix}`, name: "保鲜预冷B区" },
     });
 
     const createdColdLogs = [];
@@ -235,6 +235,8 @@ async function runParityVerification() {
       storeId: store.id,
       orderIds: [orderFemale3.id],
       coldLogId: createdColdLogs[1].id, // 关联 CR-0902 (母蟹 3.0两)
+      contactName: "测试联系人",
+      contactPhone: "13800000000",
       applicantId: admin.id,
     });
 

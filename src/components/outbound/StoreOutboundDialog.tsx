@@ -52,12 +52,18 @@ export function StoreOutboundDialog({
   specStocks = [],
   coldBatches = [],
   userId,
+  defaults,
 }: {
   stores: StoreOption[];
   pendingOrders: PendingOrderOption[];
   specStocks?: SpecStockInfo[];
   coldBatches?: ColdBatchOption[];
   userId: string;
+  defaults?: {
+    transportCompany: string | null;
+    contactName: string | null;
+    contactPhone: string | null;
+  } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -72,8 +78,9 @@ export function StoreOutboundDialog({
   }, [stores, pendingOrders]);
 
   const [selectedStoreId, setSelectedStoreId] = useState(activeStores[0]?.id || stores[0]?.id || "");
-  const [transportCompany, setTransportCompany] = useState("苏州市冷链物流专车");
-  const [licensePlate, setLicensePlate] = useState("苏E·88888");
+  const [transportCompany, setTransportCompany] = useState(defaults?.transportCompany || "苏州市冷链物流专车");
+  const [contactName, setContactName] = useState(defaults?.contactName || "");
+  const [contactPhone, setContactPhone] = useState(defaults?.contactPhone || "");
 
   // 当前选中门店的待发订单
   const currentStoreOrders = useMemo(() => {
@@ -151,7 +158,8 @@ export function StoreOutboundDialog({
           orderIds: selectedOrderIds,
           specBatchMap: resolveDemandBatchMap(specDemands, coldBatches, selectedBatchMap),
           transportCompany,
-          licensePlate,
+          contactName,
+          contactPhone,
           applicantId: userId,
         });
 
@@ -191,7 +199,7 @@ export function StoreOutboundDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 overflow-y-auto px-1 py-1">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-lg border bg-muted/20">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-lg border bg-muted/20">
             <div className="space-y-1">
               <Label className="text-xs">发货目的门店 (仅有待发订单可选)</Label>
               <Select value={selectedStoreId} onValueChange={handleStoreChange}>
@@ -218,11 +226,23 @@ export function StoreOutboundDialog({
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">冷链车牌号</Label>
+              <Label className="text-xs">联系人</Label>
               <Input
-                value={licensePlate}
-                onChange={(e) => setLicensePlate(e.target.value)}
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                className="h-8 text-xs"
+                required
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">联系方式</Label>
+              <Input
+                type="tel"
+                value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value)}
                 className="h-8 text-xs font-mono"
+                required
               />
             </div>
           </div>

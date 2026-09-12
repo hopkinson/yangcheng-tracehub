@@ -38,3 +38,7 @@ Thumbs.db
 
 # Added by code-review-graph
 .code-review-graph/
+
+# Local AI agent workspace/config
+.agent/
+.agents/

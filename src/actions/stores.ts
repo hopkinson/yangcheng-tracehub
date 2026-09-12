@@ -33,11 +33,21 @@ export async function createStoreAction(data: { name: string; channelId: string;
   return store;
 }
 
-export async function updateStoreAction(data: { id: string; name: string; channelId: string; isActive: boolean; userId: string }) {
+export async function updateStoreAction(data: { id: string; code: string; name: string; channelId: string; isActive: boolean; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const code = data.code.trim().toUpperCase();
+  if (!code) throw new Error("请输入门店编号");
+
+  const duplicate = await prisma.store.findFirst({
+    where: { code, id: { not: data.id } },
+    select: { id: true },
+  });
+  if (duplicate) throw new Error(`门店编号「${code}」已存在，请更换`);
+
   const store = await prisma.store.update({
     where: { id: data.id },
     data: {
+      code,
       name: data.name,
       channelId: data.channelId,
       isActive: data.isActive,
@@ -50,7 +60,7 @@ export async function updateStoreAction(data: { id: string; name: string; channe
       action: "UPDATE_STORE",
       entityType: "STORE",
       entityId: store.id,
-      details: JSON.stringify({ name: store.name, channelId: store.channelId, isActive: store.isActive }),
+      details: JSON.stringify({ code: store.code, name: store.name, channelId: store.channelId, isActive: store.isActive }),
     },
   });
 

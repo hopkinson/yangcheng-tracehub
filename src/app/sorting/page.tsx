@@ -100,6 +100,7 @@ export default async function SortingPage() {
         availableCount,
         count: availableCount,
         poolCode: l.pool.code,
+        poolName: l.pool.name,
       };
     });
 

@@ -103,13 +103,6 @@ export default async function ColdStoragePage({
     remainingSpecOutbound.set(key, needed - usedForThisLog);
   }
 
-  const storeOptions = stores.map((s) => ({
-    id: s.id,
-    code: s.code,
-    name: s.name,
-    targetTemp: s.targetTemp,
-  }));
-
   // 获取今日日期字符串用于统计今日入库 (兼容仿真固定日期 2026-09-21 或真实当天)
   const todayStr = formatISODate();
 
@@ -133,7 +126,7 @@ export default async function ColdStoragePage({
         </div>
         <div className="flex items-center gap-2">
           <ColdStoreDialog stores={stores} />
-          <ColdIntakeDialog stores={storeOptions} sortTasks={sortTaskOptions} />
+          <ColdIntakeDialog stores={stores} sortTasks={sortTaskOptions} />
         </div>
       </div>
 
@@ -198,9 +191,6 @@ export default async function ColdStoragePage({
                       </CardTitle>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px] font-mono">
-                        {s.targetTemp}℃
-                      </Badge>
                       <Badge
                         variant="outline"
                         className={`text-[10px] ${
@@ -249,7 +239,7 @@ export default async function ColdStoragePage({
 
                     {/* 卡片入库登记按钮 */}
                     <ColdIntakeDialog
-                      stores={storeOptions}
+                      stores={stores}
                       sortTasks={sortTaskOptions}
                       defaultStoreId={s.id}
                       trigger={
@@ -306,12 +296,12 @@ export default async function ColdStoragePage({
                         {formatShortDateTime(log.createdAt)}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <Badge variant="outline" className="text-[10px] font-mono font-medium px-1.5 py-0 h-4">
-                          {log.store.code}
-                        </Badge>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[130px]" title={log.store.name}>
-                          {log.store.name}
+                        <div className="text-xs font-medium truncate max-w-[130px]" title={log.store.name || log.store.code}>
+                          {log.store.name || log.store.code}
                         </div>
+                        {log.store.name && (
+                          <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{log.store.code}</div>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 font-mono font-bold text-primary whitespace-nowrap">
                         +{log.count.toLocaleString()} 只

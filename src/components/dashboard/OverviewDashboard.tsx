@@ -192,7 +192,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             level: "SEVERE",
             category: "TEMPERATURE",
             catLabel: "水温监控",
-            target: `${pool.code} (${pool.name})`,
+            target: pool.name ? `${pool.name} (${pool.code})` : pool.code,
             title: `水温严重超阈 (${temp}℃ > 24℃)`,
             reason: "螃蟹异常风险高！温度偏高会导致螃蟹异常情况变多，请立即加强增氧与巡检",
             time: "实时监测",
@@ -203,7 +203,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             level: "WARNING",
             category: "TEMPERATURE",
             catLabel: "水温监控",
-            target: `${pool.code} (${pool.name})`,
+            target: pool.name ? `${pool.name} (${pool.code})` : pool.code,
             title: `水温偏高预警 (${temp}℃ ≥ 22℃)`,
             reason: "注意增氧！温度偏高会导致螃蟹异常情况变多，请加强增氧与巡检",
             time: "实时监测",
@@ -338,6 +338,9 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       hasException: (counts[cat]?.exceptions || 0) > 0,
     }));
   }, [qcRecords]);
+  const qcExceptionStageCount = qcDistribution.filter((item) => item.hasException).length;
+  const qcNormalStageCount = qcDistribution.filter((item) => item.total > 0 && !item.hasException).length;
+  const qcEmptyStageCount = qcDistribution.length - qcExceptionStageCount - qcNormalStageCount;
 
   // -------------------------------------------------------------
   // ⑤ 数量闭环漏斗四级数据
@@ -491,225 +494,221 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       </FadeIn>
 
       {/* ========================================================= */}
-      {/* ② 全链路一体化工序流（统一无缝大卡片，内分 8 格）          */}
+      {/* ② 全链路一体化工序流（8 张独立业务指标卡片）                */}
       {/* ========================================================= */}
       <FadeIn>
-        <div className="rounded-xl border bg-card shadow-2xs overflow-hidden">
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 divide-x-0 md:divide-x border-b border-border/70">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* 1. 订单 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-primary/10 text-primary font-mono text-[10px] font-bold group-hover:bg-primary group-hover:text-primary-foreground transition-colors">1</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">1</span>
                   订单需求
                 </span>
-                <ShoppingCart className="size-3.5 text-primary group-hover:scale-110 transition-transform" />
+                <ShoppingCart className="size-3.5 text-muted-foreground" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayOrdersCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   待发货：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.pendingDeliveryTotalCount} duration={700} /></span> 只
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>累计订单</span>
                 <span className="font-mono font-medium text-foreground">{metrics.totalOrdersCount} 单</span>
               </div>
             </div>
 
             {/* 2. 原料 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-sky-500/10 text-sky-600 font-mono text-[10px] font-bold group-hover:bg-sky-500 group-hover:text-white transition-colors">2</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">2</span>
                   原料到货
                 </span>
-                <Layers className="size-3.5 text-sky-500 group-hover:scale-110 transition-transform" />
+                <Layers className="size-3.5 text-muted-foreground" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayBatchesCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">批</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   今日到货：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayInPoolTotalCount} duration={700} /></span> 只
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>累计入池</span>
                 <span className="font-mono font-medium text-foreground">{metrics.totalBatchesCount} 批</span>
               </div>
             </div>
 
             {/* 3. 蟹扣申领 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group relative">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-amber-500/10 text-amber-600 font-mono text-[10px] font-bold group-hover:bg-amber-500 group-hover:text-white transition-colors">3</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">3</span>
                   蟹扣申领
                 </span>
                 {metrics.pendingTagClaimsCount > 0 ? (
-                  <span className="text-[10px] font-mono font-medium bg-[var(--brand-50,#eff5fe)] text-[var(--brand-700,#003c96)] dark:bg-blue-950/40 dark:text-blue-300 border border-[var(--brand-100,#d9e8fd)] px-1.5 py-0.5 rounded">
+                  <Badge variant="outline" className="h-6 bg-primary/10 px-2 text-[10px] font-medium text-primary border-primary/20">
                     待审批 {metrics.pendingTagClaimsCount}
-                  </span>
+                  </Badge>
                 ) : (
-                  <Tag className="size-3.5 text-amber-500 group-hover:scale-110 transition-transform" />
+                  <Tag className="size-3.5 text-muted-foreground" />
                 )}
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayTagClaimsCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   申领总数：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayTagClaimsTotalCount} duration={700} /></span> 只
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>累计已核发</span>
                 <span className="font-mono font-medium text-foreground">{metrics.totalTagClaimsCount.toLocaleString()} 只</span>
               </div>
             </div>
 
             {/* 4. 暂养 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-cyan-500/10 text-cyan-600 font-mono text-[10px] font-bold group-hover:bg-cyan-500 group-hover:text-white transition-colors">4</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">4</span>
                   暂养在池
                 </span>
-                <Waves className="size-3.5 text-cyan-500 group-hover:scale-110 transition-transform" />
+                <Waves className="size-3.5 text-muted-foreground" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayPoolInCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">只入池</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   在养池数：<span className="font-mono font-medium text-foreground">{metrics.activePoolsCount}</span> 个池在养
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>实时在池存活</span>
-                <span className="font-mono font-semibold text-cyan-600 dark:text-cyan-400">
+                <span className="font-mono font-medium text-foreground">
                   <AnimatedNumber value={metrics.totalLiveInPoolCount} duration={700} /> 只
                 </span>
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 divide-x-0 md:divide-x">
             {/* 5. 捆扎 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-indigo-500/10 text-indigo-600 font-mono text-[10px] font-bold group-hover:bg-indigo-500 group-hover:text-white transition-colors">5</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">5</span>
                   捆扎绑扣
                 </span>
-                <PackageCheck className="size-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                <PackageCheck className="size-3.5 text-muted-foreground" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayBundleBatchesCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">批</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   捆扎总数：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayBundleTotalCount} duration={700} /></span> 只 (完工 {metrics.todayBundleDoneCount} 批)
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>累计捆扎批次</span>
                 <span className="font-mono font-medium text-foreground">{metrics.totalBundleBatchesCount} 批</span>
               </div>
             </div>
 
             {/* 6. 分拣 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-purple-500/10 text-purple-600 font-mono text-[10px] font-bold group-hover:bg-purple-500 group-hover:text-white transition-colors">6</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">6</span>
                   动态分拣
                 </span>
-                <Cpu className="size-3.5 text-purple-500 group-hover:scale-110 transition-transform" />
+                <Cpu className="size-3.5 text-muted-foreground" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todaySortTasksCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">任务</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  合格 <span className="font-mono font-medium text-emerald-600"><AnimatedNumber value={metrics.todaySortQualifiedCount} duration={700} /></span> · 损耗{" "}
+                <div className="text-xs text-muted-foreground mt-2">
+                  合格 <span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todaySortQualifiedCount} duration={700} /></span> · 损耗{" "}
                   <span className="font-mono font-medium text-destructive"><AnimatedNumber value={metrics.todaySortLossCount} duration={700} /></span>
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>累计分拣任务</span>
                 <span className="font-mono font-medium text-foreground">{metrics.totalSortTasksCount} 个</span>
               </div>
             </div>
 
             {/* 7. 预冷 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-teal-500/10 text-teal-600 font-mono text-[10px] font-bold group-hover:bg-teal-500 group-hover:text-white transition-colors">7</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">7</span>
                   保鲜预冷
                 </span>
-                <ThermometerSnowflake className="size-3.5 text-teal-500 group-hover:scale-110 transition-transform" />
+                <ThermometerSnowflake className="size-3.5 text-muted-foreground" />
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayColdIntakeCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">只入库</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   保鲜库区：<span className="font-mono font-medium text-foreground">{metrics.activeColdStoresCount}</span> 个库运行中
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>当前锁鲜库存</span>
-                <span className="font-mono font-semibold text-teal-600 dark:text-teal-400">
+                <span className="font-mono font-medium text-foreground">
                   <AnimatedNumber value={metrics.totalColdStockCount} duration={700} /> 只
                 </span>
               </div>
             </div>
 
             {/* 8. 出库 */}
-            <div className="border-l-4 border-l-primary p-3.5 flex flex-col justify-between hover:bg-muted/20 active:scale-[0.99] transition-all duration-150 group relative">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="size-4.5 rounded flex items-center justify-center bg-emerald-500/10 text-emerald-600 font-mono text-[10px] font-bold group-hover:bg-emerald-500 group-hover:text-white transition-colors">8</span>
+            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+                  <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">8</span>
                   出库发运
                 </span>
                 {metrics.pendingOutboundOrdersCount > 0 ? (
-                  <span className="text-[10px] font-mono font-medium bg-[var(--brand-50,#eff5fe)] text-[var(--brand-700,#003c96)] dark:bg-blue-950/40 dark:text-blue-300 border border-[var(--brand-100,#d9e8fd)] px-1.5 py-0.5 rounded">
+                  <Badge variant="outline" className="h-6 bg-primary/10 px-2 text-[10px] font-medium text-primary border-primary/20">
                     待审核 {metrics.pendingOutboundOrdersCount}
-                  </span>
+                  </Badge>
                 ) : (
-                  <Truck className="size-3.5 text-emerald-500 group-hover:scale-110 transition-transform" />
+                  <Truck className="size-3.5 text-muted-foreground" />
                 )}
               </div>
               <div className="my-1">
-                <div className="text-2xl font-bold font-mono tracking-tight text-primary">
+                <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.todayOutboundOrdersCount} duration={700} />
                   <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-2">
                   今日发运：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayOutboundTotalCount} duration={700} /></span> 只
                 </div>
               </div>
-              <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
                 <span>累计合规出库</span>
-                <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="font-mono font-medium text-foreground">
                   <AnimatedNumber value={metrics.totalOutboundCount} duration={700} /> 只
                 </span>
               </div>
             </div>
           </div>
-        </div>
       </FadeIn>
 
       {/* ========================================================= */}
@@ -887,8 +886,9 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                           >
                             {/* 顶栏：池号 + 规格 + 状态指示灯 */}
                             <div className="flex items-center justify-between text-xs pb-1 border-b border-border/40">
-                              <div className="flex items-center gap-1.5 font-mono font-bold text-foreground">
-                                <span>{pool.code}</span>
+                              <div className="flex items-center gap-1.5 font-bold text-foreground min-w-0">
+                                <span className="truncate" title={pool.name || pool.code}>{pool.name || pool.code}</span>
+                                {pool.name && <span className="font-mono text-[10px] font-normal text-muted-foreground">{pool.code}</span>}
                                 <span className="text-[10px] font-normal text-muted-foreground">
                                   {pool.currentWeightTier ? `${pool.currentGender === "FEMALE" ? "母" : "公"}${pool.currentWeightTier}` : "空池"}
                                 </span>
@@ -1010,37 +1010,51 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                   </CardTitle>
                 </div>
                 <span className="text-[10px] text-muted-foreground font-mono">
-                  7 大品控环节
+                  {qcNormalStageCount} 正常 ·{" "}
+                  <span className={qcExceptionStageCount > 0 ? "text-destructive font-medium" : undefined}>
+                    {qcExceptionStageCount} 待复检
+                  </span>
+                  {qcEmptyStageCount > 0 ? ` · ${qcEmptyStageCount} 无记录` : ""}
                 </span>
               </CardHeader>
               <CardContent className="p-3.5 space-y-2">
                 <div className="space-y-2 text-xs">
                   {qcDistribution.map((item) => {
+                    const passRate = item.total === 0
+                      ? 0
+                      : Math.round(((item.total - item.exceptions) / item.total) * 100);
+
                     return (
                       <div key={item.key} className="space-y-1">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-[11px] font-medium text-foreground">{item.label}</span>
-                          <div className="font-mono text-[10px]">
-                            {item.hasException ? (
-                              <span className="text-destructive font-bold animate-pulse">
-                                {item.exceptions} 异常 / {item.total} 记录 (需复检)
-                              </span>
+                          <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                            {item.total === 0 ? (
+                              <span className="text-muted-foreground">暂无记录</span>
+                            ) : item.hasException ? (
+                              <>
+                                <span className="text-destructive font-medium">
+                                  {item.exceptions} / {item.total} 异常
+                                </span>
+                                <Badge variant="destructive" className="h-4 px-1.5 py-0 text-[9px] font-medium">
+                                  待复检
+                                </Badge>
+                              </>
                             ) : (
                               <span className="text-muted-foreground">
-                                100% 合格 ({item.total} 记录)
+                                {item.total} 条 · {passRate}% 合格
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
+                        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
                           <div
-                            className={cn(
-                              "h-full rounded-full transition-all duration-500",
-                              item.hasException ? "bg-destructive" : "bg-emerald-500/50"
-                            )}
-                            style={{
-                              width: funnelMounted ? (item.total === 0 ? "0%" : "100%") : "0%",
-                            }}
+                            className="h-full bg-primary/45 transition-all duration-500"
+                            style={{ width: funnelMounted ? `${passRate}%` : "0%" }}
+                          />
+                          <div
+                            className="h-full bg-destructive transition-all duration-500"
+                            style={{ width: funnelMounted ? `${100 - passRate}%` : "0%" }}
                           />
                         </div>
                       </div>

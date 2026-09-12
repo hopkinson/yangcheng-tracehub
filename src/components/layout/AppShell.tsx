@@ -23,6 +23,7 @@ import {
   Scale,
   ThermometerSnowflake,
   PackageCheck,
+  FileCheck2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -74,13 +75,14 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/farmers", label: "养殖档案", icon: Users },
       { href: "/tags", label: "蟹扣管理", icon: Tag },
       { href: "/stores", label: "门店档案", icon: Store },
+      { href: "/reports", label: "检测报告", icon: FileCheck2 },
       { href: "/ledgers", label: "合规台账", icon: BookOpen },
       { href: "/users", label: "角色与权限", icon: UserCog },
     ],
   },
 ];
 
-const PROD_ROUTES = ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/stores", "/tags", "/outbound", "/ledgers", "/trace"];
+const PROD_ROUTES = ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/stores", "/reports", "/tags", "/outbound", "/ledgers", "/trace"];
 const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
   QA_DIRECTOR: [...PROD_ROUTES, "/approvals"],
   WAREHOUSE_ADMIN: PROD_ROUTES,

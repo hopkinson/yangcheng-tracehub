@@ -124,7 +124,7 @@ async function runTest() {
   });
 
   // Cold store & logs
-  const coldStore = await prisma.coldStore.create({ data: { code: `BX-A-${ts}`, name: "保鲜库", targetTemp: 4.0 } });
+  const coldStore = await prisma.coldStore.create({ data: { code: `BX-A-${ts}`, name: "保鲜库" } });
   const coldLogA = await prisma.coldLog.create({
     data: { code: `CR-0902-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, refType: "SORT", refId: sortTaskA.code, operator: "仓管" },
   });
@@ -173,6 +173,8 @@ async function runTest() {
       "FEMALE_3.0两": coldLogB.id,
       "MALE_4.0两": coldLogA.id,
     },
+    contactName: "测试联系人",
+    contactPhone: "13800000000",
     applicantId: admin.id,
   });
 

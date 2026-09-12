@@ -110,6 +110,13 @@ export default async function OutboundPage({
 
   const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
+  const lastStoreOutbound = currentUserId
+    ? await prisma.outboundOrder.findFirst({
+        where: { applicantId: currentUserId, type: "STORE_ORDER" },
+        orderBy: { createdAt: "desc" },
+        select: { transportCompany: true, contactName: true, contactPhone: true },
+      })
+    : null;
 
   const sortTaskMap = new Map(sortTasks.map((t: any) => [t.code, t]));
 
@@ -139,7 +146,6 @@ export default async function OutboundPage({
       code: log.code,
       storeName: log.store.name,
       storeCode: log.store.code,
-      targetTemp: log.store.targetTemp,
       gender,
       weightTier,
       specLabel,
@@ -184,6 +190,7 @@ export default async function OutboundPage({
               specStocks={specStocks}
               coldBatches={coldBatchOptions}
               userId={currentUserId}
+              defaults={lastStoreOutbound}
             />
           </div>
         )}

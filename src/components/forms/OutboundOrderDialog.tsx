@@ -24,7 +24,7 @@ export function OutboundOrderDialog({
     gender: string;
     weightTier: string;
     farmer: { name: string };
-    pool: { code: string };
+    pool: { code: string; name?: string };
     liveInPool: number;
   }>;
   stores: Array<{
@@ -166,7 +166,10 @@ export function OutboundOrderDialog({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">暂养池仓位:</span>
-                  <span>{currentBatch.pool.code}</span>
+                  <span>
+                    {currentBatch.pool.name || currentBatch.pool.code}
+                    {currentBatch.pool.name && <span className="text-muted-foreground"> ({currentBatch.pool.code})</span>}
+                  </span>
                 </div>
                 <div className="flex justify-between border-t pt-1 font-bold text-emerald-600">
                   <span>该批次在池存活上限:</span>

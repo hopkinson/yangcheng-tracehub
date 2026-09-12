@@ -30,6 +30,7 @@ model User {
   approvedOrders  OutboundOrder[]  @relation("OutboundApprover")
   specialApprovals SpecialApproval[]
   auditLogs       AuditLog[]
+  inspectionReports InspectionReport[]
 }
 
 // -------------------------------------------------------------
@@ -58,7 +59,7 @@ model Farmer {
 
 model Enclosure {
   id          String   @id @default(cuid())
-  code        String   // 围网编号, 如 W-01
+  code        String   @unique // 围网编号, 如 W-01
   farmerId    String
   farmer      Farmer   @relation(fields: [farmerId], references: [id], onDelete: Cascade)
   description String?
@@ -326,7 +327,6 @@ model ColdStore {
   id              String          @id @default(cuid())
   code            String          @unique // BX-01, BX-02, BX-03
   name            String          // 预冷A区
-  targetTemp      Float           @default(4.5) // 目标温度 4-5℃
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -430,6 +430,9 @@ model OutboundOrder {
   channelOrderCount Int             @default(0) // 渠道订单数量
   
   logisticsNo       String?         // 统一单号或 "门店自配"
+  transportCompany  String?
+  contactName       String?
+  contactPhone      String?
   logisticsUpdatedAt DateTime?
   logisticsUpdatedBy String?
   
@@ -508,6 +511,18 @@ model SpecialApproval {
   approvedById String
   approvedBy  User     @relation(fields: [approvedById], references: [id])
   createdAt   DateTime @default(now())
+}
+
+model InspectionReport {
+  id           String   @id @default(cuid())
+  name         String
+  fileUrl      String
+  fileName     String
+  inspectedAt  DateTime?
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model AuditLog {

@@ -148,7 +148,6 @@ async function runColdOutboundFlowTest() {
       data: {
         code: `BX-${testSuffix}`,
         name: "保鲜预冷测试库",
-        targetTemp: 4.2,
       },
     });
 
@@ -190,13 +189,18 @@ async function runColdOutboundFlowTest() {
       orderIds: [order.id],
       coldLogId: coldLog.id,
       transportCompany: "苏州冷链专车",
-      licensePlate: "苏E·TEST",
+      contactName: "测试联系人",
+      contactPhone: "13800000000",
       applicantId: admin.id,
     });
 
     assert.ok(outboundOrder.id, "出库单创建成功");
     assert.equal(outboundOrder.coldLogId, coldLog.id, "出库单已正确关联保鲜库预冷批次");
     assert.equal(outboundOrder.outboundCount, 200, "出库总数为 200 只");
+    assert.equal(outboundOrder.transportCompany, "苏州冷链专车", "承运物流公司已保存");
+    assert.equal(outboundOrder.contactName, "测试联系人", "联系人已保存");
+    assert.equal(outboundOrder.contactPhone, "13800000000", "联系方式已保存");
+    assert.equal(outboundOrder.logisticsNo, "门店冷链专车自配", "门店出库不再使用车牌号作为物流单号");
     console.log(`  ✔ 基于保鲜批次 [${coldLog.code}] 创建出库申请成功: [${outboundOrder.code}]`);
 
     // 8. 品控审批出库申请 (调用 approveOutboundOrderAction)

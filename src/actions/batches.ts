@@ -6,6 +6,17 @@ import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
 
+const MULTI_SPEC_WEIGHT_TIERS = new Set<string>([
+  "2.5两",
+  "3.0两",
+  "3.5两",
+  "4.0两",
+  "4.5两",
+  "5.0两",
+  "5.5两",
+  "6.0两",
+]);
+
 export async function createBatchAction(data: {
   farmerId: string;
   enclosureId: string;
@@ -209,7 +220,10 @@ export async function createMultiSpecBatchAction(data: {
           },
         });
         const activeInPool = Invariants.calculatePoolLiveCount(pool);
-        const itNormWeightTier = Invariants.normalizeWeightTier(it.weightTier);
+        const itNormWeightTier = Invariants.normalizeWeightTier(it.weightTier, "");
+        if (!MULTI_SPEC_WEIGHT_TIERS.has(itNormWeightTier)) {
+          throw new Error(`第 ${i + 1} 行规格无效，请选择 2.5两至 6.0两（每 0.5两一档）`);
+        }
         const poolCheck = Invariants.checkPoolSpec(
           { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },
           { gender: it.gender, weightTier: itNormWeightTier }
