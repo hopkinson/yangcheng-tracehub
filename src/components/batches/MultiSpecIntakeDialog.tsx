@@ -143,21 +143,19 @@ export function MultiSpecIntakeDialog({
       return;
     }
 
-    const normalizedItems = items.map((it) => ({ ...it, weightTier: Invariants.normalizeWeightTier(it.weightTier, "") }));
-
     // 前端严格校验：所有明细行必须选择空池
-    for (let i = 0; i < normalizedItems.length; i++) {
-      const it = normalizedItems[i];
-      if (!WEIGHT_TIERS.includes(it.weightTier)) {
-        toast.error(`第 ${i + 1} 行规格请选择 2.5两至 6.0两（每 0.5两一档）`);
-        return;
-      }
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
       if (!it.poolId) {
         toast.error(`第 ${i + 1} 行明细未选择暂养池，请选择空池`);
         return;
       }
       if (!it.inPoolCount || it.inPoolCount <= 0) {
         toast.error(`第 ${i + 1} 行入池数量必须大于 0`);
+        return;
+      }
+      if (!Number.isFinite(it.weight) || it.weight <= 0) {
+        toast.error(`第 ${i + 1} 行重量必须大于 0`);
         return;
       }
       const p = pools.find((x) => x.id === it.poolId);
@@ -181,7 +179,7 @@ export function MultiSpecIntakeDialog({
         escort,
         slipUrl: slipUrl || undefined,
         slipName: `${formNo}_码单原件.jpg`,
-        items: normalizedItems,
+        items,
         createdById: userId,
       });
 
@@ -296,7 +294,15 @@ export function MultiSpecIntakeDialog({
             </div>
 
             <div className="space-y-2 pt-1">
-              {items.map((item, idx) => (
+              {items.map((item, idx) => {
+                const expectedCount = Invariants.estimateCrabCount(item.weight, item.weightTier);
+                const countDifference = expectedCount === null ? 0 : item.inPoolCount - expectedCount;
+                const deviationRate = expectedCount && item.inPoolCount > 0
+                  ? Math.abs(countDifference) / expectedCount
+                  : 0;
+                const hasLargeDeviation = deviationRate > 0.1;
+
+                return (
                 <div key={idx} className="grid grid-cols-12 gap-2 p-2 bg-background border rounded text-xs items-center">
                   <div className="col-span-2">
                     <Select value={item.gender} onValueChange={(v) => handleItemChange(idx, "gender", v)}>
@@ -311,20 +317,25 @@ export function MultiSpecIntakeDialog({
                   </div>
 
                   <div className="col-span-2">
-                    <Input
-                      value={item.weightTier}
-                      list="multi-spec-weight-tiers"
-                      onChange={(e) => handleItemChange(idx, "weightTier", e.target.value)}
-                      placeholder="选择或输入规格"
-                      autoComplete="off"
-                      className="h-7 text-xs font-mono"
-                    />
+                    <Select value={item.weightTier} onValueChange={(value) => handleItemChange(idx, "weightTier", value)}>
+                      <SelectTrigger className="h-7 text-xs font-mono">
+                        <SelectValue placeholder="选择规格" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WEIGHT_TIERS.map((tier) => (
+                          <SelectItem key={tier} value={tier} className="text-xs font-mono">
+                            {tier}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="col-span-2">
                     <Input
                       type="number"
                       step="0.1"
+                      min="0.1"
                       value={item.weight}
                       onChange={(e) => handleItemChange(idx, "weight", parseFloat(e.target.value) || 0)}
                       placeholder="重量(斤)"
@@ -335,6 +346,8 @@ export function MultiSpecIntakeDialog({
                   <div className="col-span-2">
                     <Input
                       type="number"
+                      min="1"
+                      step="1"
                       value={item.inPoolCount}
                       onChange={(e) => handleItemChange(idx, "inPoolCount", parseInt(e.target.value, 10) || 0)}
                       placeholder="只数"
@@ -372,14 +385,19 @@ export function MultiSpecIntakeDialog({
                       </Button>
                     )}
                   </div>
-                </div>
-              ))}
 
-              <datalist id="multi-spec-weight-tiers">
-                {WEIGHT_TIERS.map((tier) => (
-                  <option key={tier} value={tier} />
-                ))}
-              </datalist>
+                  {expectedCount !== null && (
+                    <div className={`col-span-12 text-right text-[11px] ${hasLargeDeviation ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                      理论参考：{item.weight.toLocaleString()} 斤按 {item.weightTier}/只约 {expectedCount.toLocaleString()} 只
+                      {item.inPoolCount > 0 && countDifference !== 0 && (
+                        <>；当前{countDifference > 0 ? "多" : "少"} {Math.abs(countDifference).toLocaleString()} 只（偏差 {(deviationRate * 100).toFixed(1)}%）</>
+                      )}
+                      {item.inPoolCount > 0 && countDifference === 0 && "；当前填写一致"}
+                    </div>
+                  )}
+                </div>
+                );
+              })}
 
               <div className="flex justify-between items-center pt-2 text-xs font-mono border-t">
                 <span className="text-muted-foreground">

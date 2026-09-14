@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
-import { getTenant } from "@/config/tenant";
+import { requireRole } from "@/lib/auth";
+import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 
 import { getBeijingDateStr } from "@/lib/utils";
 
@@ -21,8 +22,13 @@ import type { RawImportOrder } from "@/lib/invariants";
 
 export async function importOrdersAction(rawOrders: RawImportOrder[]) {
   try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+
     if (!rawOrders || rawOrders.length === 0) {
       return { success: false, message: "导入订单列表不能为空" };
+    }
+    if (rawOrders.length > 5000) {
+      return { success: false, message: "单次最多导入 5000 条发货需求" };
     }
 
     const dateStr = getBeijingDateStr();
@@ -46,26 +52,61 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
     }
 
     const ordersToCreate: any[] = [];
+    const incomingKeys = new Set<string>();
 
     for (const raw of rawOrders) {
-      const defaultStore = raw.type === "CRAB_CARD" ? "蟹卡提货 (顺丰速运直发)" : getTenant().storeLabel;
+      const orderNo = typeof raw.orderNo === "string" ? raw.orderNo.trim() : "";
+      const count = Number(raw.count);
+      const deliveryDate = Invariants.parseImportDate(raw.deliveryDate);
+      const gender = raw.gender === "母" || raw.gender === "FEMALE" ? "FEMALE" : raw.gender === "公" || raw.gender === "MALE" ? "MALE" : null;
+      const weightTier = typeof raw.weightTier === "string" && /\d/.test(raw.weightTier)
+        ? Invariants.normalizeWeightTier(raw.weightTier)
+        : null;
+
+      if (!orderNo) throw new Error("订单号不能为空");
+      if (raw.type !== "STORE_ORDER" && raw.type !== "CRAB_CARD") throw new Error(`订单 ${orderNo} 类型无效`);
+      if (!gender || !weightTier) throw new Error(`订单 ${orderNo} 规格无效`);
+      if (!Number.isInteger(count) || count <= 0) throw new Error(`订单 ${orderNo} 只数必须是正整数`);
+      if (!deliveryDate) throw new Error(`订单 ${orderNo} 发货日期无效`);
+
       const tag = raw.type !== "CRAB_CARD" ? raw.orderNo.match(/SO\d{8}-([A-Za-z0-9_-]+)-/)?.[1]?.toLowerCase() : null;
-      const matchedStore = (tag ? storeMap.get(tag) : undefined) || (raw.storeName ? storeMap.get(raw.storeName) : undefined);
+      const storeCode = raw.storeCode?.trim().toLowerCase();
+      const matchedStore =
+        (storeCode ? storeMap.get(storeCode) : undefined) ||
+        (tag ? storeMap.get(tag) : undefined) ||
+        (raw.storeName ? storeMap.get(raw.storeName.trim()) : undefined);
+
+      if (raw.type === "STORE_ORDER" && !matchedStore) {
+        throw new Error(`订单 ${orderNo} 的门店“${raw.storeName || raw.storeCode || "未填写"}”未在门店主档中登记`);
+      }
+
+      const key = [raw.type, matchedStore?.id || "", orderNo, gender, weightTier, deliveryDate].join("|");
+      if (incomingKeys.has(key)) throw new Error(`订单 ${orderNo} 存在重复规格 ${weightTier}`);
+      incomingKeys.add(key);
 
       ordersToCreate.push({
         importId,
         code: `SO${dateStr}${String(idx++).padStart(3, "0")}`,
-        orderNo: raw.orderNo,
+        orderNo,
         type: raw.type,
         storeId: matchedStore?.id || null,
-        storeName: raw.storeName || matchedStore?.name || defaultStore,
+        storeName: matchedStore?.name || raw.storeName || "蟹卡提货 (顺丰速运直发)",
         specModel: raw.specModel || null,
-        deliveryDate: Invariants.normalizeDate(raw.deliveryDate),
-        gender: raw.gender === "母" || raw.gender === "FEMALE" ? "FEMALE" : "MALE",
-        weightTier: Invariants.normalizeWeightTier(raw.weightTier),
-        count: Number(raw.count || 1),
+        deliveryDate: Invariants.normalizeDate(deliveryDate),
+        gender,
+        weightTier,
+        count,
         status: "PENDING" as const,
       });
+    }
+
+    const existingOrders = await prisma.order.findMany({
+      where: { orderNo: { in: [...new Set(ordersToCreate.map((order) => order.orderNo))] } },
+      select: { type: true, storeId: true, orderNo: true, gender: true, weightTier: true, deliveryDate: true },
+    });
+    for (const order of existingOrders) {
+      const key = [order.type, order.storeId || "", order.orderNo, order.gender, Invariants.normalizeWeightTier(order.weightTier), order.deliveryDate.toISOString().slice(0, 10)].join("|");
+      if (incomingKeys.has(key)) throw new Error(`订单 ${order.orderNo} 已导入，请勿重复上传`);
     }
 
     await prisma.order.createMany({
@@ -322,6 +363,11 @@ export async function createBundleBatchAction(data: {
         }
       }
 
+      // 最后一只蟹出池后自动解除暂养池规格锁定。
+      for (const poolId of poolIds) {
+        await releasePoolSpecLockIfEmpty(tx, poolId);
+      }
+
       return { code };
     });
 
@@ -511,6 +557,17 @@ export async function deleteBundleBatchAction(bundleId: string) {
               data: { outPoolCount: { decrement: restore }, status: "PARTIALLY_OUTBOUND" },
             });
           }
+        }
+
+        if (remaining < line.count) {
+          // 撤销捆扎会恢复在池库存，因此同步恢复该池的规格锁定。
+          await tx.holdingPool.update({
+            where: { id: line.poolId },
+            data: {
+              currentGender: line.gender,
+              currentWeightTier: Invariants.normalizeWeightTier(line.weightTier),
+            },
+          });
         }
       }
 

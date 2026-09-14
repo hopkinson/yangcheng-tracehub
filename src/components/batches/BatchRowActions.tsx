@@ -13,6 +13,7 @@ import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { BatchInspectionDialog } from "@/components/batches/BatchInspectionDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
+import { BatchEditDialog } from "@/components/batches/BatchEditDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   MoreHorizontal,
@@ -22,6 +23,7 @@ import {
   ClipboardCheck,
   History,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { deleteBatchAction } from "@/actions/batches";
 import { toast } from "sonner";
@@ -87,6 +89,18 @@ export function BatchRowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
+          {isWarehouseOrAdmin && (
+            <BatchEditDialog
+              batch={batch}
+              trigger={
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  <Pencil className="size-3.5 mr-2 text-primary" />
+                  <span>编辑批次</span>
+                </DropdownMenuItem>
+              }
+            />
+          )}
+
           {/* 品控检测报告录入/修改 */}
           {(isQaOrAdmin || isWarehouseOrAdmin) && (
             <BatchInspectionDialog
@@ -172,5 +186,4 @@ export function BatchRowActions({
     </div>
   );
 }
-
 

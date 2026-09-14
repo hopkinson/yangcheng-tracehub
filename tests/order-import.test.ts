@@ -227,9 +227,30 @@ SO20260921009\t山姆(上海店)\t母\t3.5两\t800\t2026-09-22`;
   console.log("  ✔ 矩阵式发货计划二维表整表自动拆单与确定性订单号测试通过\n");
 }
 
-// 8. 用户真实 Excel 导入报障场景回归测试 (Excel 常见美式短日期 9/8/26 与表头过滤)
+// 8. 门店矩阵模板紧凑规格表头回归测试
 {
-  console.log("▶ [Test 8] 用户真实场景：Excel 常见短日期 9/8/26 解析与提货单号表头过滤");
+  console.log("▶ [Test 8] 门店矩阵模板紧凑规格表头与逐行订单号解析");
+  const matrixText = `订单号\t门店名称\t门店编号\t25母\t35公\t3母\t4公\t35母\t45公\t4母\t5公\t合计\t发货日期
+B0001\t上海宝山店\t3131\t50\t100\t\t\t\t50\t\t60\t\t20261011
+B0002\t上海嘉定店\t3132\t\t50\t100\t\t50\t\t30\t20\t\t20261011
+B0003\t上海浦东店\t3133\t20\t\t\t80\t\t100\t\t50\t\t20261011`;
+
+  const parsed = Invariants.parseOrderImportText(matrixText, "STORE");
+
+  assert.equal(parsed.length, 13, "3 行门店订单应拆成 13 条规格明细");
+  assert.equal(parsed.reduce((sum, order) => sum + order.count, 0), 760, "模板总数必须完整解析为 760 只");
+  assert.equal(parsed[0].orderNo, "B0001", "必须保留模板原始订单号");
+  assert.equal(parsed[0].storeCode, "3131");
+  assert.equal(parsed[0].weightTier, "2.5两");
+  assert.equal(parsed[0].deliveryDate, "2026-10-11");
+  assert.equal(parsed.filter((order) => order.orderNo === "B0001").length, 4);
+
+  console.log("  ✔ 紧凑规格表头无漏单，订单号与逐行日期保留\n");
+}
+
+// 9. 用户真实 Excel 导入报障场景回归测试 (Excel 常见美式短日期 9/8/26 与表头过滤)
+{
+  console.log("▶ [Test 9] 用户真实场景：Excel 常见短日期 9/8/26 解析与提货单号表头过滤");
   const excelText = `提货单号\t提货规格型号\t要求发货日期
 20260901073\t8只装礼盒(3.0母蟹X4只, 4.0公蟹X4只)\t9/8/26
 20260901074\t8只装礼盒(3.0母蟹X4只, 4.0公蟹X4只)\t2026/9/8`;
@@ -258,9 +279,9 @@ SO20260921009\t山姆(上海店)\t母\t3.5两\t800\t2026-09-22`;
   console.log("  ✔ 用户真实场景 9/8/26 与表头过滤回归测试通过\n");
 }
 
-// 9. 用户 A0004 双规格礼盒导入与型号提取回归测试
+// 10. 用户 A0004 双规格礼盒导入与型号提取回归测试
 {
-  console.log("▶ [Test 9] 用户 A0004 双规格礼盒解析与型号名完整保留测试");
+  console.log("▶ [Test 10] 用户 A0004 双规格礼盒解析与型号名完整保留测试");
   const comboText = "A0004\t8只装礼盒(4.0公蟹X4只，3.0母蟹X4只)\t2026/9/8";
   const parsed = Invariants.parseOrderImportText(comboText, "CARD");
 
@@ -277,5 +298,3 @@ SO20260921009\t山姆(上海店)\t母\t3.5两\t800\t2026-09-22`;
 }
 
 console.log("🎉 订单导入智能拆分与日期防爆单元测试全部 100% 通过！");
-
-

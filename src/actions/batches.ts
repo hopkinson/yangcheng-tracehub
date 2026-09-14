@@ -5,6 +5,8 @@ import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
+import { batchEditFormSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
+import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 
 const MULTI_SPEC_WEIGHT_TIERS = new Set<string>([
   "2.5两",
@@ -207,6 +209,12 @@ export async function createMultiSpecBatchAction(data: {
       const usedPoolIds = new Set<string>();
       for (let i = 0; i < data.items.length; i++) {
         const it = data.items[i];
+        if (!Number.isFinite(it.weight) || it.weight <= 0) {
+          throw new Error(`第 ${i + 1} 行重量必须大于 0`);
+        }
+        if (!Number.isInteger(it.inPoolCount) || it.inPoolCount <= 0) {
+          throw new Error(`第 ${i + 1} 行入池数量必须为大于 0 的整数`);
+        }
         if (usedPoolIds.has(it.poolId)) {
           throw new Error(`码单明细分配冲突：同一码单不同规格行必须分别存入不同的空暂养池，暂养池不可重复选择！`);
         }
@@ -309,6 +317,146 @@ export async function createMultiSpecBatchAction(data: {
     return { success: true, data: batch, code: batch.code };
   } catch (err: any) {
     return { success: false, error: err.message || "创建批次失败" };
+  }
+}
+
+export async function updateBatchAction(data: BatchEditFormValues & { batchId: string }) {
+  try {
+    const operator = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+    const validation = batchEditFormSchema.safeParse(data);
+    if (!validation.success) {
+      throw new Error(validation.error.issues[0]?.message || "编辑数据格式错误");
+    }
+    const parsed = validation.data;
+
+    await prisma.$transaction(async (tx) => {
+      const batch = await tx.batch.findUniqueOrThrow({
+        where: { id: data.batchId },
+        include: { items: true, farmer: true },
+      });
+      const currentItems = batch.items.length > 0 ? batch.items : [{
+        id: batch.id,
+        inPoolCount: batch.inPoolCount,
+        outPoolCount: batch.outPoolCount,
+        lossCount: batch.lossCount,
+        weight: 0,
+      }];
+      const submittedItems = new Map(parsed.items.map((item) => [item.id, item]));
+
+      if (submittedItems.size !== currentItems.length || currentItems.some((item) => !submittedItems.has(item.id))) {
+        throw new Error("批次规格明细已发生变化，请刷新页面后重试");
+      }
+
+      for (const item of currentItems) {
+        const proposed = submittedItems.get(item.id)!;
+        if (batch.items.length > 0 && proposed.weight <= 0) {
+          throw new Error("规格明细重量必须大于 0");
+        }
+        const coverage = Invariants.checkBatchEditCoverage(
+          proposed.inPoolCount,
+          item.outPoolCount,
+          item.lossCount
+        );
+        if (!coverage.valid) throw new Error(coverage.reason);
+      }
+
+      const totalInPoolCount = parsed.items.reduce((sum, item) => sum + item.inPoolCount, 0);
+      if (totalInPoolCount > batch.inPoolCount) {
+        const otherBatches = await tx.batch.aggregate({
+          where: { farmerId: batch.farmerId, id: { not: batch.id } },
+          _sum: { inPoolCount: true },
+        });
+        const quotaCheck = Invariants.checkQuota({
+          annualQuota: batch.farmer.quota,
+          cumulativeInPool: otherBatches._sum.inPoolCount || 0,
+          newBatchCount: totalInPoolCount,
+        });
+        if (!quotaCheck.valid) {
+          throw new Error(`修改后超出养殖户额度 ${quotaCheck.excess} 只`);
+        }
+      }
+
+      if (batch.items.length > 0) {
+        for (const item of currentItems) {
+          const proposed = submittedItems.get(item.id)!;
+          const updated = await tx.batchItem.updateMany({
+            where: {
+              id: item.id,
+              outPoolCount: item.outPoolCount,
+              lossCount: item.lossCount,
+            },
+            data: { weight: proposed.weight, inPoolCount: proposed.inPoolCount },
+          });
+          if (updated.count !== 1) {
+            throw new Error("批次已发生新的绑扎或损耗记录，请刷新页面后重试");
+          }
+        }
+      }
+
+      const remaining = totalInPoolCount - batch.outPoolCount - batch.lossCount;
+      const status = batch.status === "FROZEN"
+        ? "FROZEN"
+        : remaining === 0
+          ? "COMPLETED"
+          : batch.outPoolCount > 0
+            ? "PARTIALLY_OUTBOUND"
+            : "TEMPORARY_HOLDING";
+
+      await tx.batch.update({
+        where: { id: batch.id },
+        data: {
+          formNo: parsed.formNo || null,
+          escort: parsed.escort || null,
+          temp: parsed.temp,
+          humidity: parsed.humidity,
+          inPoolCount: totalInPoolCount,
+          status,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          operatorId: operator.id,
+          action: "UPDATE_BATCH",
+          entityType: "BATCH",
+          entityId: batch.id,
+          details: JSON.stringify({
+            batchCode: batch.code,
+            before: {
+              formNo: batch.formNo,
+              escort: batch.escort,
+              temp: batch.temp,
+              humidity: batch.humidity,
+              inPoolCount: batch.inPoolCount,
+              items: currentItems.map((item) => ({
+                id: item.id,
+                weight: item.weight,
+                inPoolCount: item.inPoolCount,
+              })),
+            },
+            after: {
+              formNo: parsed.formNo,
+              escort: parsed.escort,
+              temp: parsed.temp,
+              humidity: parsed.humidity,
+              inPoolCount: totalInPoolCount,
+              items: parsed.items,
+            },
+          }),
+        },
+      });
+    });
+
+    revalidatePath("/batches");
+    revalidatePath("/pools");
+    revalidatePath("/farmers");
+    revalidatePath("/ledgers");
+    revalidatePath("/tags");
+    revalidatePath("/approvals");
+    revalidatePath("/");
+    return { success: true, message: "原料批次已更新" };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "更新批次失败" };
   }
 }
 
@@ -444,28 +592,9 @@ export async function deleteBatchAction(data: { batchId: string; userId?: string
       await tx.qCRecord.deleteMany({ where: { refType: "BATCH", refId: batch.code } });
       await tx.batch.delete({ where: { id: batch.id } });
 
-      // 检查并重置池状态（若已空池则解除公母与规格锁定）
+      // 删除批次后若池已空，统一解除公母与规格锁定。
       for (const poolId of poolIds) {
-        const pool = await tx.holdingPool.findUnique({
-          where: { id: poolId },
-          include: {
-            batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
-            batchItems: { where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } } },
-          },
-        });
-        if (pool) {
-          const targets = pool.batchItems.length > 0 ? pool.batchItems : pool.batches;
-          const activeCount = targets.reduce(
-            (sum, x) => sum + (x.inPoolCount - x.outPoolCount - x.lossCount),
-            0
-          );
-          if (activeCount === 0) {
-            await tx.holdingPool.update({
-              where: { id: poolId },
-              data: { currentGender: null, currentWeightTier: null },
-            });
-          }
-        }
+        await releasePoolSpecLockIfEmpty(tx, poolId);
       }
 
       // 审计留痕
@@ -496,5 +625,3 @@ export async function deleteBatchAction(data: { batchId: string; userId?: string
     return { success: false, error: err.message || "删除批次失败" };
   }
 }
-
-

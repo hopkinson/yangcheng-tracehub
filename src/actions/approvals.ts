@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 
 // 审批蟹扣领用
 export async function approveTagClaimAction(data: {
@@ -172,25 +173,7 @@ export async function approveOutboundOrderAction(data: {
           },
         });
 
-        // 检查池子是否全部清空，若清空则释放规格锁定
-        const activeBatchesInPool = await tx.batch.findMany({
-          where: {
-            poolId: order.batch.poolId,
-            status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] },
-          },
-        });
-
-        const poolRemaining = activeBatchesInPool.reduce(
-          (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
-          0
-        );
-
-        if (poolRemaining === 0) {
-          await tx.holdingPool.update({
-            where: { id: order.batch.poolId },
-            data: { currentGender: null, currentWeightTier: null },
-          });
-        }
+        await releasePoolSpecLockIfEmpty(tx, order.batch.poolId);
       }
 
       // 联动绑扣核销：按出库明细穿透养殖户与蟹扣批次，自动归集核销已审批蟹扣

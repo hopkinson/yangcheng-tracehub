@@ -38,8 +38,15 @@ export function OrderImportDialog() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseText = (text: string, type: "STORE" | "CARD") => {
-    const list = Invariants.parseOrderImportText(text, type, getTenant().storeLabel);
-    setParsedPreview(list);
+    try {
+      const list = Invariants.parseOrderImportText(text, type, getTenant().storeLabel);
+      setParsedPreview(list);
+      return true;
+    } catch (error) {
+      setParsedPreview([]);
+      toast.error(error instanceof Error ? error.message : "订单格式解析失败");
+      return false;
+    }
   };
 
   const handleFileUpload = async (file: File) => {
@@ -47,10 +54,9 @@ export function OrderImportDialog() {
       setFileName(file.name);
       const tsv = await readExcelFile(file);
       setInputText(tsv);
-      parseText(tsv, activeTab);
-      toast.success(`文件 ${file.name} 解析完成`);
-    } catch {
-      toast.error("Excel 文件解析失败，请检查文件格式");
+      if (parseText(tsv, activeTab)) toast.success(`文件 ${file.name} 解析完成`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Excel 文件解析失败，请检查文件格式");
     }
   };
 
@@ -73,10 +79,10 @@ export function OrderImportDialog() {
     } else {
       downloadExcelTemplate(
         `${getTenant().storeLabel}订单导入模板.xlsx`,
-        ["发货时间", "门店", "门店编号", "规格", "只数"],
+        ["订单号", "门店名称", "门店编号", "2.5母", "3.5公", "3.0母", "4.0公", "3.5母", "4.5公", "4.0母", "5.0公", "合计", "发货日期"],
         [
-          ["20260904", "浦东山姆店", "1", "4.0公蟹", 300],
-          ["20260904", "浦东山姆店", "1", "5.0公蟹", 300],
+          ["B0001", "上海宝山店", "3131", 50, 100, "", "", "", 50, "", 60, 260, "20261011"],
+          ["B0002", "上海嘉定店", "3132", "", 50, 100, "", 50, "", 30, 20, 250, "20261011"],
         ]
       );
     }

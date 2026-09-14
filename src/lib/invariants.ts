@@ -86,12 +86,25 @@ export interface RawImportOrder {
   orderNo: string;
   type: "STORE_ORDER" | "CRAB_CARD";
   storeName?: string;
+  storeCode?: string;
   specModel?: string;
   gender: string;
   weightTier: string;
   count: number;
   deliveryDate: string; // YYYY-MM-DD
   isPreSplit?: boolean;
+}
+
+function parseStoreSpecHeader(cell: string) {
+  const match = cell.replace(/\s|两|蟹/g, "").match(/^([1-9])(?:\.?([0-9]))?(公|母)$/);
+  if (!match) return null;
+
+  const weight = `${match[1]}.${match[2] || "0"}`;
+  return {
+    weightTier: `${Number(weight).toFixed(1)}两`,
+    gender: (match[3] === "母" ? "FEMALE" : "MALE") as "FEMALE" | "MALE",
+    specTag: `${Number(weight).toFixed(1)}${match[3]}`,
+  };
 }
 
 export const Invariants = {
@@ -112,6 +125,15 @@ export const Invariants = {
   calculatePoolLiveCount: (pool: { batches?: any[]; batchItems?: any[] }): number => {
     const list = pool.batchItems && pool.batchItems.length > 0 ? pool.batchItems : pool.batches || [];
     return list.reduce((sum: number, x: any) => sum + Math.max(0, x.inPoolCount - (x.outPoolCount || 0) - (x.lossCount || 0)), 0);
+  },
+
+  checkBatchEditCoverage: (newInPoolCount: number, outPoolCount: number, lossCount: number) => {
+    const minimumCount = outPoolCount + lossCount;
+    return {
+      valid: Number.isInteger(newInPoolCount) && newInPoolCount >= minimumCount,
+      minimumCount,
+      reason: `入池数量不能小于已绑扎/起池 ${outPoolCount} 只与已登记损耗 ${lossCount} 只之和（${minimumCount} 只）`,
+    };
   },
 
   // 2. 暂养池空池入池校验: 严禁混入已有在养存量，必须为空池方可入池并锁定规格
@@ -352,6 +374,13 @@ export const Invariants = {
     return m ? `${parseFloat(m[1]).toFixed(1)}两` : fallback;
   },
 
+  // 按码单净重和单只规格估算只数：1 斤 = 10 两
+  estimateCrabCount: (weightInJin: number, weightTier: string): number | null => {
+    const liangPerCrab = Number.parseFloat(weightTier);
+    if (!Number.isFinite(weightInJin) || weightInJin <= 0 || !Number.isFinite(liangPerCrab) || liangPerCrab <= 0) return null;
+    return Math.round((weightInJin * 10) / liangPerCrab);
+  },
+
   // 10. 日期安全解析与标准化 (严格锁定北京时间 Asia/Shanghai)
   normalizeDateStr: (val?: string | Date | null): string => {
     if (val instanceof Date && !isNaN(val.getTime())) {
@@ -381,6 +410,22 @@ export const Invariants = {
 
   normalizeDate: (val?: string | Date | null): Date =>
     new Date(`${Invariants.normalizeDateStr(val)}T00:00:00.000Z`),
+
+  parseImportDate: (val?: string | null): string | null => {
+    const raw = val?.trim();
+    if (
+      !raw ||
+      !/(?:20\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}|\b20\d{6}\b|(?:^|[^\d])\d{1,2}[-/]\d{1,2}[-/](?:\d{2}|\d{4})(?:$|[^\d]))/.test(raw)
+    ) {
+      return null;
+    }
+
+    const normalized = Invariants.normalizeDateStr(raw);
+    const date = new Date(`${normalized}T00:00:00.000Z`);
+    return !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === normalized
+      ? normalized
+      : null;
+  },
 
   // 11. 蟹卡导入单行智能识别 (支持 Excel 多列复制/格式自适应)
   parseCrabCardImportLine: (line: string): RawImportOrder[] => {
@@ -441,8 +486,7 @@ export const Invariants = {
   // 12. 门店订单单行智能识别 (支持图二：发货时间+门店+[门店编号]+4.0公蟹+只数，系统自动编排订单号)
   parseStoreOrderImportLine: (
     line: string,
-    defaultStoreName = "山姆会员店",
-    storeCounter: Record<string, number> = {}
+    defaultStoreName = "山姆会员店"
   ): RawImportOrder | null => {
     const trimmed = line.trim();
     if (!trimmed || (/(?:发货|日期|单号|序号|门店|提货)/.test(trimmed) && /(?:规格|只数|公母|时间|型号)/.test(trimmed))) return null;
@@ -453,12 +497,13 @@ export const Invariants = {
     // 1. 日期识别 (支持 20260904, 2026-09-04, 2026/9/4, 9/8/26)
     const isDate = (c: string) => /(?:20\d{2}[-/.]\d{1,2}|20\d{2}年|\b20\d{6}\b|^\d{1,2}[-/]\d{1,2}[-/](?:\d{2}|\d{4})$)/.test(c);
     const dateCell = cells.find(isDate);
-    const deliveryDate = Invariants.normalizeDateStr(dateCell || trimmed);
+    const deliveryDate = dateCell ? Invariants.parseImportDate(dateCell) : null;
+    if (!deliveryDate) throw new Error("缺少有效发货日期");
     const dateCompact = deliveryDate.replace(/-/g, "");
 
     // 2. 规格与公母识别 (支持单列合并规格如 "4.0公蟹" / "5.0公" / "3.5母蟹"，或传统分列 "公" + "4.0两")
-    let gender: "MALE" | "FEMALE" = "MALE";
-    let weightTier = "4.0两";
+    let gender: "MALE" | "FEMALE" | null = null;
+    let weightTier: string | null = null;
     let specCell: string | undefined;
     let genderCell: string | undefined;
     let weightCell: string | undefined;
@@ -478,15 +523,20 @@ export const Invariants = {
       }
     } else {
       genderCell = cells.find((c) => !isDate(c) && (/^(母|母蟹|female)$/i.test(c) || /^(公|公蟹|male)$/i.test(c)));
-      gender = genderCell && /母|female/i.test(genderCell) ? "FEMALE" : "MALE";
+      if (!genderCell) throw new Error("缺少有效公母规格");
+      gender = /母|female/i.test(genderCell) ? "FEMALE" : "MALE";
       weightCell = cells.find((c) => !isDate(c) && c !== genderCell && /^([1-9](?:\.[0-9])?)(?:两)?$/.test(c));
-      weightTier = weightCell ? Invariants.normalizeWeightTier(weightCell) : "4.0两";
+      if (!weightCell) throw new Error("缺少有效重量规格");
+      weightTier = Invariants.normalizeWeightTier(weightCell);
     }
+    if (!gender || !weightTier) throw new Error("缺少有效规格");
 
     // 3. 提取数量 (最后一个数字单元格) 与门店/订单信息
     const remaining = cells.filter((c) => c !== dateCell && c !== specCell && c !== genderCell && c !== weightCell);
     const numIdx = remaining.reduce((acc, c, idx) => (/^\d+只?$/.test(c) ? idx : acc), -1);
-    const count = numIdx !== -1 ? parseInt(remaining[numIdx], 10) : 100;
+    if (numIdx === -1) throw new Error("缺少有效只数");
+    const count = parseInt(remaining[numIdx], 10);
+    if (!Number.isInteger(count) || count <= 0) throw new Error("只数必须是正整数");
 
     let explicitOrderNo: string | undefined;
     let storeCodeCell: string | undefined;
@@ -528,51 +578,26 @@ export const Invariants = {
     const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
     if (lines.length < 2) return [];
 
-    // 1. 识别日期 (从标题或全文提取，如 "10月26日发货计划"、"2026-10-26"、"2026/10/26" 或 "20261026")
-    let deliveryDate: string | null = null;
-    const dateMatch =
-      text.match(/(?:(20\d{2})[-/.年])?(\d{1,2})月(\d{1,2})日/) ||
-      text.match(/(?:^|[^\d])(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/) ||
-      text.match(/\b(20\d{2})(\d{2})(\d{2})\b/) ||
-      text.match(/(?:^|[^\d])(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})(?:$|[^\d])/);
-    if (dateMatch) {
-      if (dateMatch[0].includes("月")) {
-        const y = dateMatch[1] || String(defaultYear);
-        const m = dateMatch[2].padStart(2, "0");
-        const d = dateMatch[3].padStart(2, "0");
-        deliveryDate = `${y}-${m}-${d}`;
-      } else if (dateMatch[1] && dateMatch[2] && dateMatch[3]) {
-        if (dateMatch[1].length === 4) {
-          deliveryDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[3].padStart(2, "0")}`;
-        } else {
-          const year = dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3];
-          deliveryDate = `${year}-${dateMatch[1].padStart(2, "0")}-${dateMatch[2].padStart(2, "0")}`;
-        }
-      }
-    }
-    const safeDate = Invariants.normalizeDateStr(deliveryDate || text);
-    const dateCompact = safeDate.replace(/-/g, "");
-
+    // 1. 识别整表默认日期；存在“发货日期”列时以每行日期为准
+    const titleDate = text.match(/(?:(20\d{2})年?)?(\d{1,2})月(\d{1,2})日/);
+    const deliveryDate = titleDate
+      ? `${titleDate[1] || defaultYear}-${titleDate[2].padStart(2, "0")}-${titleDate[3].padStart(2, "0")}`
+      : Invariants.parseImportDate(text);
     // 2. 查找规格列所在表头行 (含 2.5母, 3.5公, 3.0母, 4.0公 等)
     let specHeaderIndex = -1;
     let specColumns: Array<{ colIdx: number; weightTier: string; gender: "MALE" | "FEMALE"; specTag: string }> = [];
     let storeNameCol = 0;
     let storeCodeCol = 1;
+    let orderNoCol = -1;
+    let deliveryDateCol = -1;
 
     for (let i = 0; i < lines.length; i++) {
       const cells = lines[i].split(lines[i].includes("\t") ? "\t" : /\s+/).map((c) => c.trim());
       const foundSpecs: typeof specColumns = [];
 
       cells.forEach((cell, idx) => {
-        const m = cell.match(/^([1-9](?:\.[0-9])?)(?:两)?(公|母)(?:蟹)?$/);
-        if (m) {
-          const rawWeight = m[1];
-          const sex = m[2];
-          const weightTier = Invariants.normalizeWeightTier(rawWeight);
-          const gender = sex === "母" ? "FEMALE" : "MALE";
-          const specTag = `${rawWeight.includes(".") ? rawWeight : `${rawWeight}.0`}${sex}`;
-          foundSpecs.push({ colIdx: idx, weightTier, gender, specTag });
-        }
+        const spec = parseStoreSpecHeader(cell);
+        if (spec) foundSpecs.push({ colIdx: idx, ...spec });
       });
 
       if (foundSpecs.length >= 2) {
@@ -583,6 +608,8 @@ export const Invariants = {
         cells.forEach((cell, idx) => {
           if (/发货地点|门店名称|门店名/.test(cell)) storeNameCol = idx;
           if (/门店编号|门店代码|门店号/.test(cell) || (cell === "门店" && idx !== storeNameCol)) storeCodeCol = idx;
+          if (/^(订单号|原始单号)$/.test(cell)) orderNoCol = idx;
+          if (/^(发货日期|发货时间|日期)$/.test(cell)) deliveryDateCol = idx;
         });
         break;
       }
@@ -602,22 +629,33 @@ export const Invariants = {
       const storeCode = cells[storeCodeCol] || cells.find((c, idx) => idx !== storeNameCol && /^\d{3,6}$/.test(c)) || "";
       if (!storeName || /^(发货|业务|渠道|苏州|合计)/.test(storeName)) continue;
 
+      const explicitOrderNo = orderNoCol >= 0 ? cells[orderNoCol] : "";
+      if (orderNoCol >= 0 && !explicitOrderNo) throw new Error(`第 ${i + 1} 行缺少订单号`);
+
+      const rowDate = deliveryDateCol >= 0
+        ? Invariants.parseImportDate(cells[deliveryDateCol])
+        : Invariants.parseImportDate(deliveryDate);
+      if (!rowDate) throw new Error(`第 ${i + 1} 行缺少有效发货日期`);
+      const dateCompact = rowDate.replace(/-/g, "");
+
       const storeTag = storeCode || storeName.replace(/[()（）]/g, "").replace(/山姆会员店|山姆店|店/g, "").trim() || "MD";
 
       for (const col of specColumns) {
         const val = cells[col.colIdx];
         if (!val) continue;
-        const count = parseInt(val, 10);
-        if (!isNaN(count) && count > 0) {
-          const orderNo = `SO${dateCompact}-${storeTag}-${col.specTag}`;
+        if (!/^\d+$/.test(val)) throw new Error(`第 ${i + 1} 行 ${col.specTag} 只数必须是非负整数`);
+        const count = Number(val);
+        if (count > 0) {
+          const orderNo = explicitOrderNo || `SO${dateCompact}-${storeTag}-${col.specTag}`;
           orders.push({
             orderNo,
             type: "STORE_ORDER",
             storeName,
+            storeCode,
             gender: col.gender,
             weightTier: col.weightTier,
             count,
-            deliveryDate: safeDate,
+            deliveryDate: rowDate,
             isPreSplit: true,
           });
         }
@@ -637,21 +675,18 @@ export const Invariants = {
       return text.trim().split("\n").flatMap((line) => Invariants.parseCrabCardImportLine(line));
     }
 
-    // 检查是否为发货计划矩阵二维表 (单行包含 2 个以上规格列如 2.5母、3.5公、3.0母)
     const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
-    const hasMatrixHeader = lines.some(
-      (l) => (l.match(/([1-9](?:\.[0-9])?)(?:两)?(公|母)/g) || []).length >= 2
-    );
-    if (hasMatrixHeader) {
-      const matrixOrders = Invariants.parseStoreMatrixPlanText(text);
-      if (matrixOrders.length > 0) return matrixOrders;
-    }
+    const matrixOrders = Invariants.parseStoreMatrixPlanText(text);
+    if (matrixOrders.length > 0) return matrixOrders;
 
     // 默认平铺逐行解析
-    const storeCounter: Record<string, number> = {};
-    return lines.flatMap((line) => {
-      const item = Invariants.parseStoreOrderImportLine(line, defaultStoreName, storeCounter);
-      return item ? [item] : [];
+    return lines.flatMap((line, index) => {
+      try {
+        const item = Invariants.parseStoreOrderImportLine(line, defaultStoreName);
+        return item ? [item] : [];
+      } catch (error) {
+        throw new Error(`第 ${index + 1} 行：${error instanceof Error ? error.message : "格式错误"}`);
+      }
     });
   },
 
@@ -716,4 +751,3 @@ export const Invariants = {
       );
   },
 };
-

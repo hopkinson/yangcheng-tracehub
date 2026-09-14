@@ -128,6 +128,19 @@ export const batchIntakeFormSchema = z.object({
 });
 export type BatchIntakeFormValues = z.infer<typeof batchIntakeFormSchema>;
 
+export const batchEditFormSchema = z.object({
+  formNo: z.string().trim().max(100, "码单表号不能超过 100 个字符").optional(),
+  escort: z.string().trim().max(50, "跟车员不能超过 50 个字符").optional(),
+  temp: z.coerce.number().min(-50, "温度不能低于 -50℃").max(80, "温度不能高于 80℃"),
+  humidity: z.coerce.number().min(0, "湿度不能低于 0%").max(100, "湿度不能高于 100%"),
+  items: z.array(z.object({
+    id: z.string().min(1),
+    weight: z.coerce.number().min(0, "重量不能为负数"),
+    inPoolCount: positiveInt("入池数量"),
+  })).min(1, "批次至少需要一条规格明细"),
+});
+export type BatchEditFormValues = z.infer<typeof batchEditFormSchema>;
+
 /**
  * 出库单与重提校验
  */

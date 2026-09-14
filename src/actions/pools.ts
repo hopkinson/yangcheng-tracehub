@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Invariants } from "@/lib/invariants";
+import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 
 export async function createPoolAction(data: { name: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
@@ -258,6 +259,8 @@ export async function registerPoolLossAction(data: {
       },
     });
 
+    await releasePoolSpecLockIfEmpty(tx, pool.id);
+
     // 创建 LossRecord
     const record = await tx.lossRecord.create({
       data: {
@@ -298,5 +301,4 @@ export async function registerPoolLossAction(data: {
     return { success: true, record, updatedBatch, pool };
   });
 }
-
 

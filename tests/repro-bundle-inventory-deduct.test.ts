@@ -120,12 +120,14 @@ async function main() {
     const liveAfterBundle1 = Invariants.calculatePoolLiveCount(poolAfterBundle1);
     console.log(`Pool live count after creating bundling batch: ${liveAfterBundle1}`);
 
-    // BUG SYMPTOM: Currently this will FAIL because liveAfterBundle1 is still 320 instead of 0!
+    // 起池到 0 后，库存与暂养池规格锁定必须在同一事务内一起清空。
     assert.equal(
       liveAfterBundle1,
       0,
       `Expected pool live count to be 0 after bundling batch created, but got ${liveAfterBundle1}`
     );
+    assert.equal(poolAfterBundle1.currentGender, null, "空池后应自动解除公母规格锁定");
+    assert.equal(poolAfterBundle1.currentWeightTier, null, "空池后应自动解除重量档位锁定");
 
     // 5. Trying to create a second bundle batch should be blocked because inventory was already deducted
     console.log("Attempting to create bundle batch 2 from same pool for 320 crabs...");
@@ -164,6 +166,8 @@ async function main() {
     const liveAfterDelete = Invariants.calculatePoolLiveCount(poolAfterDelete);
     console.log(`Pool live count after cancellation: ${liveAfterDelete}`);
     assert.equal(liveAfterDelete, 320, "Inventory should be restored to 320 after cancelling bundling batch");
+    assert.equal(poolAfterDelete.currentGender, "MALE", "恢复库存后应恢复公母规格锁定");
+    assert.equal(poolAfterDelete.currentWeightTier, "4.0两", "恢复库存后应恢复重量档位锁定");
 
     console.log("🎉 All assertions passed!");
   } finally {

@@ -177,7 +177,8 @@ export default async function BatchesPage({
                     const hasMultiItems = batch.items && batch.items.length > 0;
                     const isPendingQc = batch.quickCheck !== "QUALIFIED" || batch.sampleCheck !== "QUALIFIED";
                     const firstItem = hasMultiItems ? batch.items[0] : batch;
-                    const primaryPoolCode = (hasMultiItems ? batch.items[0].pool?.code : batch.pool?.code) || "ZY-01";
+                    const primaryPool = hasMultiItems ? batch.items[0].pool : batch.pool;
+                    const primaryPoolName = primaryPool?.name || primaryPool?.code || "暂养池";
 
                     return (
                       <TableRow key={batch.id} className="hover:bg-muted/30 transition-colors">
@@ -230,10 +231,10 @@ export default async function BatchesPage({
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <Badge
                                 variant="outline"
-                                className="text-[10px] px-1.5 py-0 h-4 font-mono font-normal text-muted-foreground break-all"
-                                title={primaryPoolCode}
+                                className="max-w-[180px] truncate text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
+                                title={`${primaryPoolName}${primaryPool?.code ? ` (${primaryPool.code})` : ""}`}
                               >
-                                {primaryPoolCode}
+                                {primaryPoolName}
                               </Badge>
                               {hasMultiItems && batch.items.length > 1 && (
                                 <Popover>
@@ -253,8 +254,11 @@ export default async function BatchesPage({
                                     <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
                                       {batch.items.map((it: any) => (
                                         <div key={it.id} className="flex flex-col gap-0.5 py-1 border-b last:border-0 border-border/40 text-[11px]">
-                                          <span className="text-[10px] font-mono text-muted-foreground break-all">
-                                            {it.pool?.code || "ZY-01"}
+                                          <span
+                                            className="text-[10px] text-muted-foreground break-all"
+                                            title={`${it.pool?.name || it.pool?.code || "暂养池"}${it.pool?.name && it.pool?.code ? ` (${it.pool.code})` : ""}`}
+                                          >
+                                            {it.pool?.name || it.pool?.code || "暂养池"}
                                           </span>
                                           <div className="flex items-center justify-between font-mono">
                                             <span className="font-medium text-foreground">

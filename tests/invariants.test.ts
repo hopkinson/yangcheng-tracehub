@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Invariants } from "../src/lib/invariants";
 import { findDuplicateEnclosureCodes, normalizeEnclosureCodes } from "../src/lib/enclosures";
+import { releasePoolSpecLockIfEmpty } from "../src/lib/holding-pool";
 
 console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环与卡控规则自动化单元测试...\n");
 
@@ -399,5 +400,67 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   console.log("  ✔ 围网编号统一大写并可识别重复编号\n");
 }
 
-console.log("🎉 全部 13 项 PRD V2.1 核心卡控规则测试 100% 通过！");
+// 14. 码单重量与规格换算参考只数
+{
+  console.log("▶ [Test 14] 码单斤数与单只规格换算");
+  assert.equal(Invariants.estimateCrabCount(450, "4.0两"), 1125);
+  assert.equal(Invariants.estimateCrabCount(380, "3.5两"), 1086);
+  assert.equal(Invariants.estimateCrabCount(0, "4.0两"), null);
+  assert.equal(Invariants.estimateCrabCount(450, ""), null);
+  console.log("  ✔ 码单参考只数换算与无效输入处理通过\n");
+}
 
+// 15. 原料批次编辑不得覆盖已绑扎与损耗数量
+{
+  console.log("▶ [Test 15] 原料批次编辑覆盖校验");
+  assert.equal(Invariants.checkBatchEditCoverage(999, 900, 100).valid, false);
+  assert.equal(Invariants.checkBatchEditCoverage(1000, 900, 100).valid, true);
+  assert.equal(Invariants.checkBatchEditCoverage(1050, 900, 100).valid, true);
+  console.log("  ✔ 已绑扎与损耗数量底线校验通过\n");
+}
+
+// 16. 暂养池归零后自动解除规格锁定
+async function testPoolSpecLockRelease() {
+  console.log("▶ [Test 16] 暂养池归零自动解除规格锁定");
+
+  const createTx = (liveCount: number) => {
+    const updates: any[] = [];
+    return {
+      updates,
+      tx: {
+        holdingPool: {
+          findUniqueOrThrow: async () => ({
+            batches: liveCount > 0 ? [{ inPoolCount: liveCount, outPoolCount: 0, lossCount: 0 }] : [],
+            batchItems: [],
+          }),
+          update: async (args: any) => {
+            updates.push(args);
+            return args;
+          },
+        },
+      },
+    };
+  };
+
+  const occupied = createTx(1);
+  await releasePoolSpecLockIfEmpty(occupied.tx as any, "pool-occupied");
+  assert.equal(occupied.updates.length, 0, "池内仍有活蟹时不得解除规格锁定");
+
+  const empty = createTx(0);
+  await releasePoolSpecLockIfEmpty(empty.tx as any, "pool-empty");
+  assert.deepEqual(empty.updates, [
+    {
+      where: { id: "pool-empty" },
+      data: { currentGender: null, currentWeightTier: null },
+    },
+  ]);
+
+  console.log("  ✔ 在池归零解除锁定、仍有活蟹保持锁定测试通过\n");
+}
+
+testPoolSpecLockRelease()
+  .then(() => console.log("🎉 全部 16 项 PRD V2.1 核心卡控规则测试 100% 通过！"))
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
