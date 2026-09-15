@@ -64,6 +64,7 @@ export interface DashboardProps {
     todayColdIntakeCount: number;
     activeColdStoresCount: number;
     totalColdStockCount: number;
+    isClosingTime: boolean;
     // 8. 出库
     todayOutboundOrdersCount: number;
     todayOutboundTotalCount: number;
@@ -594,12 +595,29 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                   在养池数：<span className="font-mono font-medium text-foreground">{metrics.activePoolsCount}</span> 个池在养
                 </div>
               </div>
-              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
-                <span>实时在池存活</span>
-                <span className="font-mono font-medium text-foreground">
-                  <AnimatedNumber value={metrics.totalLiveInPoolCount} duration={700} /> 只
-                </span>
-              </div>
+              {metrics.isClosingTime ? (
+                metrics.totalLiveInPoolCount > 0 ? (
+                  <Link href="/pools" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
+                    <span>晚间待清池</span>
+                    <span className="font-mono flex items-center gap-1">
+                      <AnimatedNumber value={metrics.totalLiveInPoolCount} duration={700} /> 只
+                      <ArrowRight className="size-3" />
+                    </span>
+                  </Link>
+                ) : (
+                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
+                    <span>今日已清池</span>
+                    <CheckCircle2 className="size-3.5" />
+                  </div>
+                )
+              ) : (
+                <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
+                  <span>实时在池存活</span>
+                  <span className="font-mono font-medium text-foreground">
+                    <AnimatedNumber value={metrics.totalLiveInPoolCount} duration={700} /> 只
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* 5. 捆扎 */}
@@ -701,12 +719,29 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                   今日发运：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayOutboundTotalCount} duration={700} /></span> 只
                 </div>
               </div>
-              <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
-                <span>累计合规出库</span>
-                <span className="font-mono font-medium text-foreground">
-                  <AnimatedNumber value={metrics.totalOutboundCount} duration={700} /> 只
-                </span>
-              </div>
+              {metrics.isClosingTime ? (
+                metrics.totalColdStockCount > 0 ? (
+                  <Link href="/outbound#closing" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
+                    <span>晚间待清库</span>
+                    <span className="font-mono flex items-center gap-1">
+                      <AnimatedNumber value={metrics.totalColdStockCount} duration={700} /> 只
+                      <ArrowRight className="size-3" />
+                    </span>
+                  </Link>
+                ) : (
+                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
+                    <span>今日已清库</span>
+                    <CheckCircle2 className="size-3.5" />
+                  </div>
+                )
+              ) : (
+                <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
+                  <span>累计合规出库</span>
+                  <span className="font-mono font-medium text-foreground">
+                    <AnimatedNumber value={metrics.totalOutboundCount} duration={700} /> 只
+                  </span>
+                </div>
+              )}
             </div>
           </div>
       </FadeIn>

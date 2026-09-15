@@ -48,20 +48,20 @@ export function ColdIntakeDialog({
   const [isPending, startTransition] = useTransition();
 
   const [storeId, setStoreId] = useState(defaultStoreId || stores[0]?.id || "");
-  const [refId, setRefId] = useState(sortTasks.find((t) => t.availableCount > 0)?.code || sortTasks[0]?.code || "");
+  const [sortTaskId, setSortTaskId] = useState(sortTasks.find((t) => t.availableCount > 0)?.id || sortTasks[0]?.id || "");
   
   // 默认初始只数联动所选批次的可用余量
-  const initialTask = sortTasks.find((t) => t.code === refId || t.id === refId);
+  const initialTask = sortTasks.find((t) => t.id === sortTaskId);
   const [count, setCount] = useState<number>(initialTask ? Math.max(0, initialTask.availableCount) : 500);
   const [operator, setOperator] = useState("李仓管");
 
   const currentStoreId = defaultStoreId || storeId || stores[0]?.id || "";
-  const selectedTask = sortTasks.find((t) => t.code === refId || t.id === refId);
+  const selectedTask = sortTasks.find((t) => t.id === sortTaskId);
 
   // 切换分拣批次时联动更新余量
-  const handleSelectTask = (taskCode: string) => {
-    setRefId(taskCode);
-    const found = sortTasks.find((t) => t.code === taskCode || t.id === taskCode);
+  const handleSelectTask = (taskId: string) => {
+    setSortTaskId(taskId);
+    const found = sortTasks.find((t) => t.id === taskId);
     if (found) setCount(Math.max(0, found.availableCount));
   };
 
@@ -75,7 +75,7 @@ export function ColdIntakeDialog({
       toast.error("请选择目标保鲜库");
       return;
     }
-    if (!refId) {
+    if (!sortTaskId) {
       toast.error("请选择关联的分拣批次");
       return;
     }
@@ -92,8 +92,7 @@ export function ColdIntakeDialog({
       const res = await createColdIntakeAction({
         storeId: currentStoreId,
         count,
-        refType: "SORT",
-        refId: refId.trim(),
+        sortTaskId,
         operator,
       });
 
@@ -158,7 +157,7 @@ export function ColdIntakeDialog({
               )}
             </div>
 
-            <Select value={refId} onValueChange={handleSelectTask}>
+            <Select value={sortTaskId} onValueChange={handleSelectTask}>
               <SelectTrigger className="h-9 text-xs">
                 <SelectValue placeholder="请选择已完成分拣批次" />
               </SelectTrigger>
@@ -169,7 +168,7 @@ export function ColdIntakeDialog({
                   </div>
                 ) : (
                   sortTasks.map((t) => (
-                    <SelectItem key={t.id} value={t.code} disabled={t.availableCount <= 0} className="text-xs">
+                    <SelectItem key={t.id} value={t.id} disabled={t.availableCount <= 0} className="text-xs">
                       <div className="flex items-center justify-between gap-3 w-full">
                         <span className="font-mono font-medium">{t.code}</span>
                         <span className="text-muted-foreground">({t.gender === "FEMALE" ? "母蟹" : "公蟹"} {t.weightTier})</span>
@@ -274,7 +273,7 @@ export function ColdIntakeDialog({
             <Button
               type="submit"
               size="sm"
-              disabled={isPending || isZeroOrNegative || isOverLimit || !refId || isAvailableExhausted}
+              disabled={isPending || isZeroOrNegative || isOverLimit || !sortTaskId || isAvailableExhausted}
               className="gap-1.5 bg-primary text-primary-foreground font-medium"
             >
               {isPending && <Loader2 className="size-3.5 animate-spin" />}

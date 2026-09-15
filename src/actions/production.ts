@@ -1065,70 +1065,147 @@ export async function deleteSortMachineAction(machineId: string) {
 export async function createColdIntakeAction(data: {
   storeId: string;
   count: number;
-  refType?: string;
-  refId?: string;
+  sortTaskId: string;
   operator: string;
 }) {
   try {
     if (!data.storeId) return { success: false, message: "请选择目标保鲜库" };
     if (!data.count || data.count <= 0) return { success: false, message: "入库只数必须大于 0" };
+    if (!data.sortTaskId) return { success: false, message: "必须选择关联的分拣批次任务" };
 
-    const refCode = data.refId?.trim();
-    if (!refCode) {
-      return { success: false, message: "必须选择关联的分拣批次任务" };
-    }
+    const result = await prisma.$transaction(async (tx) => {
+      const sortTask = await tx.sortTask.findUnique({
+        where: { id: data.sortTaskId },
+        include: {
+          bundleBatch: {
+            select: {
+              sourceBatchId: true,
+              sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
+            },
+          },
+        },
+      });
 
-    // 查询关联的分拣任务 (支持 code 或 id)
-    const sortTask = await prisma.sortTask.findFirst({
-      where: {
-        OR: [
-          { code: refCode },
-          { id: refCode },
-        ],
-      },
-    });
+      if (!sortTask) {
+        throw new Error("未找到关联的分拣批次任务，请重新选择");
+      }
 
-    if (!sortTask) {
-      return { success: false, message: `未找到关联的分拣批次任务 [${refCode}]，请重新选择` };
-    }
+      const sourceBatch = sortTask.bundleBatch.sourceBatch;
+      if (!sortTask.bundleBatch.sourceBatchId || !sourceBatch) {
+        throw new Error("该分拣批次缺少原料批次来源，禁止进入预冷入库");
+      }
 
-    // 统计已入库数量 (直接在数据库做 SUM 聚合)
-    const logAgg = await prisma.coldLog.aggregate({
-      where: {
-        refId: { in: [sortTask.code, sortTask.id] },
-        type: "INTAKE",
-      },
-      _sum: { count: true },
-    });
-    const alreadyIntakeCount = logAgg._sum.count || 0;
+      // 保鲜预冷也按原料入池时间执行 FIFO：前序原料只要仍在捆扎、待分拣、待完成分拣或待入库，
+      // 后序原料都不能抢先进入冷库。
+      const pipelineBundles = await tx.bundleBatch.findMany({
+        where: { status: { in: ["BUNDLING", "COMPLETED"] } },
+        select: {
+          status: true,
+          qualifiedCount: true,
+          sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
+          sortTasks: {
+            select: {
+              id: true,
+              code: true,
+              status: true,
+              inputCount: true,
+              qualifiedCount: true,
+            },
+          },
+        },
+      });
 
-    // 纯函数守恒硬卡控：入库数量不得多于分拣合格余量
-    const checkRes = Invariants.checkColdIntake({
-      qualifiedCount: sortTask.qualifiedCount,
-      alreadyIntakeCount,
-      intakeCount: data.count,
-      taskStatus: sortTask.status,
-      taskCode: sortTask.code,
-    });
+      const allTasks = pipelineBundles.flatMap((bundle) => bundle.sortTasks);
+      const taskIds = allTasks.map((task) => task.id);
+      const taskRefs = allTasks.flatMap((task) => [task.id, task.code]);
+      const taskByRef = new Map(allTasks.flatMap((task) => [[task.id, task.id], [task.code, task.id]]));
+      const intakeLogs = taskIds.length > 0
+        ? await tx.coldLog.findMany({
+            where: {
+              type: "INTAKE",
+              OR: [
+                { sortTaskId: { in: taskIds } },
+                { sortTaskId: null, refId: { in: taskRefs } },
+              ],
+            },
+            select: { sortTaskId: true, refId: true, count: true },
+          })
+        : [];
+      const intakeByTask = new Map<string, number>();
+      for (const log of intakeLogs) {
+        const taskId = log.sortTaskId || (log.refId ? taskByRef.get(log.refId) : undefined);
+        if (!taskId) continue;
+        intakeByTask.set(taskId, (intakeByTask.get(taskId) || 0) + log.count);
+      }
 
-    if (!checkRes.valid) {
-      return { success: false, message: checkRes.reason };
-    }
+      const unfinishedSources = new Map<string, { id: string; code: string; inPoolTime: Date }>();
+      for (const bundle of pipelineBundles) {
+        const source = bundle.sourceBatch;
+        if (!source) continue;
 
-    const count = await prisma.coldLog.count();
-    const code = `CR-${String(count + 901).padStart(4, "0")}`;
+        let unfinished = bundle.status === "BUNDLING";
+        if (!unfinished) {
+          const assignedToSort = bundle.sortTasks.reduce((sum, task) => sum + task.inputCount, 0);
+          if (assignedToSort < bundle.qualifiedCount) unfinished = true;
+        }
+        if (!unfinished) {
+          unfinished = bundle.sortTasks.some((task) => {
+            if (task.status !== "COMPLETED") return true;
+            return (intakeByTask.get(task.id) || 0) < task.qualifiedCount;
+          });
+        }
+        if (unfinished) unfinishedSources.set(source.id, source);
+      }
 
-    await prisma.coldLog.create({
-      data: {
-        code,
-        storeId: data.storeId,
-        type: "INTAKE",
-        count: data.count,
-        refType: "SORT",
-        refId: sortTask.code,
-        operator: data.operator || "李仓管",
-      },
-    });
+      const oldestSource = [...unfinishedSources.values()].sort((a, b) => {
+        const timeDiff = a.inPoolTime.getTime() - b.inPoolTime.getTime();
+        return timeDiff || a.code.localeCompare(b.code);
+      })[0];
+      if (oldestSource?.id !== sourceBatch.id) {
+        throw new Error(
+          oldestSource
+            ? `请先处理更早入池的原料批次 ${oldestSource.code}，当前批次 ${sourceBatch.code} 暂不可预冷入库`
+            : "当前没有可预冷入库的原料批次"
+        );
+      }
+
+      // 同一事务内统计已入库数量，避免并发请求同时通过余量校验。
+      const logAgg = await tx.coldLog.aggregate({
+        where: {
+          type: "INTAKE",
+          OR: [
+            { sortTaskId: sortTask.id },
+            { sortTaskId: null, refId: { in: [sortTask.id, sortTask.code] } },
+          ],
+        },
+        _sum: { count: true },
+      });
+      const alreadyIntakeCount = logAgg._sum.count || 0;
+
+      const checkRes = Invariants.checkColdIntake({
+        qualifiedCount: sortTask.qualifiedCount,
+        alreadyIntakeCount,
+        intakeCount: data.count,
+        taskStatus: sortTask.status,
+        taskCode: sortTask.code,
+      });
+      if (!checkRes.valid) throw new Error(checkRes.reason);
+
+      const count = await tx.coldLog.count();
+      const code = `CR-${String(count + 901).padStart(4, "0")}`;
+      await tx.coldLog.create({
+        data: {
+          code,
+          storeId: data.storeId,
+          type: "INTAKE",
+          count: data.count,
+          sortTaskId: sortTask.id,
+          operator: data.operator || "李仓管",
+        },
+      });
+
+      return { code, taskCode: sortTask.code };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     revalidate("/cold-storage");
     revalidate("/sorting");
@@ -1136,8 +1213,8 @@ export async function createColdIntakeAction(data: {
     revalidate("/");
     return {
       success: true,
-      code,
-      message: `分拣批次 [${sortTask.code}] 预冷入库登记成功（入库 ${data.count} 只，生成单号 ${code}）`,
+      code: result.code,
+      message: `分拣批次 [${result.taskCode}] 预冷入库登记成功（入库 ${data.count} 只，生成单号 ${result.code}）`,
     };
   } catch (error: any) {
     console.error("createColdIntakeAction error:", error);

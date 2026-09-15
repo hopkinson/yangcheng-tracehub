@@ -17,12 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Loader2, Store as StoreIcon, AlertTriangle } from "lucide-react";
 import { createStoreOutboundAction } from "@/actions/outbound";
 import { Invariants } from "@/lib/invariants";
-import {
-  SpecColdBatchAllocation,
-  resolveDemandBatchMap,
-  type ColdBatchOption,
-  type SpecDemand,
-} from "./BatchLineageSelect";
+import { type ColdBatchOption, type SpecDemand } from "./BatchLineageSelect";
 
 export interface PendingOrderOption {
   id: string;
@@ -68,9 +63,6 @@ export function StoreOutboundDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  // 按规格保存选中的冷库预冷批次：{ "MALE_4.0两": "cr_id", ... }
-  const [selectedBatchMap, setSelectedBatchMap] = useState<Record<string, string>>({});
-
   // 仅保留有待发货订单的门店可选（14.3 规范）
   const activeStores = useMemo(() => {
     const filtered = stores.filter((s) => pendingOrders.some((o) => o.storeId === s.id));
@@ -113,10 +105,6 @@ export function StoreOutboundDialog({
     }
   };
 
-  const handleSelectBatch = (specKey: string, batchId: string) => {
-    setSelectedBatchMap((prev) => ({ ...prev, [specKey]: batchId }));
-  };
-
   const stockMap = useMemo(
     () => new Map(specStocks.map((s) => [`${s.gender}_${Invariants.normalizeWeightTier(s.weightTier)}`, s.available])),
     [specStocks]
@@ -156,7 +144,6 @@ export function StoreOutboundDialog({
         const res = await createStoreOutboundAction({
           storeId: selectedStoreId,
           orderIds: selectedOrderIds,
-          specBatchMap: resolveDemandBatchMap(specDemands, coldBatches, selectedBatchMap),
           transportCompany,
           contactName,
           contactPhone,
@@ -194,7 +181,7 @@ export function StoreOutboundDialog({
             新建门店出库（多单合单出库）
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            选定发货门店并勾选待发货订单，系统自动按规格汇总校验冷库可用库存（分拣合格累计 − 已出库占用）。
+            选定发货门店并勾选待发货订单，系统会按原料入池时间自动执行 FIFO 分配，不允许手动跳过更早批次。
           </DialogDescription>
         </DialogHeader>
 
@@ -323,13 +310,21 @@ export function StoreOutboundDialog({
             </div>
           </div>
 
-          {/* 第二步：按规格智能对齐保鲜库预冷批次 */}
-          <SpecColdBatchAllocation
-            demands={specDemands}
-            coldBatches={coldBatches}
-            selectedBatchMap={selectedBatchMap}
-            onSelectBatch={handleSelectBatch}
-          />
+          <div className="flex flex-col gap-2 rounded-lg border bg-muted/15 p-3 text-xs">
+            <div className="font-semibold">2. 系统自动按原料批次 FIFO 分配</div>
+            <div className="text-muted-foreground">
+              按原料入池时间从早到晚消耗冷库库存，不允许手动切换到后续批次。当前已绑定保鲜批次 {coldBatches.length} 个。
+            </div>
+            {specDemands.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {specDemands.map((demand) => (
+                  <span key={`${demand.gender}_${demand.weightTier}`} className="rounded border bg-background px-2 py-1 font-mono">
+                    {demand.gender === "FEMALE" ? "母蟹" : "公蟹"} {demand.weightTier} · {demand.count}只 · FIFO 自动分配
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>

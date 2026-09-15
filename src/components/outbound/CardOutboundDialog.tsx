@@ -16,12 +16,7 @@ import { Label } from "@/components/ui/label";
 import { ShoppingBag, Loader2, AlertTriangle } from "lucide-react";
 import { createCardUnifiedOutboundAction } from "@/actions/outbound";
 import { Invariants } from "@/lib/invariants";
-import {
-  SpecColdBatchAllocation,
-  resolveDemandBatchMap,
-  type ColdBatchOption,
-  type SpecDemand,
-} from "./BatchLineageSelect";
+import { type ColdBatchOption, type SpecDemand } from "./BatchLineageSelect";
 
 export interface SpecStockInfo {
   gender: string;
@@ -51,9 +46,6 @@ export function CardOutboundDialog({
   const [isPending, startTransition] = useTransition();
   const [transportCompany, setTransportCompany] = useState("顺丰冷运速递");
 
-  // 按规格保存选中的冷库预冷批次：{ "MALE_4.0两": "cr_id", ... }
-  const [selectedBatchMap, setSelectedBatchMap] = useState<Record<string, string>>({});
-
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
   const handleToggleOrder = (orderId: string) => {
@@ -70,10 +62,6 @@ export function CardOutboundDialog({
     } else {
       setSelectedOrderIds(pendingCardOrders.map((o) => o.id));
     }
-  };
-
-  const handleSelectBatch = (specKey: string, batchId: string) => {
-    setSelectedBatchMap((prev) => ({ ...prev, [specKey]: batchId }));
   };
 
   const stockMap = useMemo(
@@ -115,7 +103,6 @@ export function CardOutboundDialog({
       try {
         const res = await createCardUnifiedOutboundAction({
           orderIds: selectedOrderIds,
-          specBatchMap: resolveDemandBatchMap(specDemands, coldBatches, selectedBatchMap),
           transportCompany,
           applicantId: userId,
         });
@@ -151,7 +138,7 @@ export function CardOutboundDialog({
             提蟹订单统一出库申请
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            将待发货的蟹卡提蟹订单统一合并为一张出库单（逐单生成明细行），发货后支持批量回填物流单号。
+            将待发货提蟹订单统一合并为一张出库单，系统按原料入池时间自动 FIFO 分配冷库库存，发货后支持批量回填物流单号。
           </DialogDescription>
         </DialogHeader>
 
@@ -243,13 +230,21 @@ export function CardOutboundDialog({
             )}
           </div>
 
-          {/* 第二步：按规格智能对齐保鲜库预冷批次 */}
-          <SpecColdBatchAllocation
-            demands={specDemands}
-            coldBatches={coldBatches}
-            selectedBatchMap={selectedBatchMap}
-            onSelectBatch={handleSelectBatch}
-          />
+          <div className="flex flex-col gap-2 rounded-lg border bg-muted/15 p-3 text-xs">
+            <div className="font-semibold">2. 系统自动按原料批次 FIFO 分配</div>
+            <div className="text-muted-foreground">
+              系统优先消耗最早入池原料对应的保鲜库存，前序批次未耗尽前不会切换到后续批次。当前已绑定保鲜批次 {coldBatches.length} 个。
+            </div>
+            {specDemands.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {specDemands.map((demand) => (
+                  <span key={`${demand.gender}_${demand.weightTier}`} className="rounded border bg-background px-2 py-1 font-mono">
+                    {demand.gender === "FEMALE" ? "母蟹" : "公蟹"} {demand.weightTier} · {demand.count}只 · FIFO 自动分配
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>

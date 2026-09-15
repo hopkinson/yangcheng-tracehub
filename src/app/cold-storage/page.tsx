@@ -47,10 +47,14 @@ export default async function ColdStoragePage({
     },
   });
 
-  // 2.5 查询已生效的出库明细，精确按规格核销预冷在库余量
+  // 2.5 查询已生效的出库与损耗明细，库存核减只认 coldLogId。
   const activeOutboundLines = await prisma.outboundLine.findMany({
     where: { outboundOrder: { status: { not: "REJECTED" } } },
-    select: { gender: true, weightTier: true, count: true },
+    select: { coldLogId: true, gender: true, weightTier: true, count: true },
+  });
+
+  const outboundLosses = await prisma.outboundLossRecord.findMany({
+    select: { coldLogId: true, gender: true, weightTier: true, count: true },
   });
 
   // 3. 查询保鲜库温湿度质检监控记录 (13.4)
@@ -62,11 +66,19 @@ export default async function ColdStoragePage({
   // 4. 查询已完成分拣任务并统计预冷入库余量 (基于分拣批次入库与数量卡控)
   const completedSortTasks = await prisma.sortTask.findMany({
     where: { status: "COMPLETED" },
+    include: {
+      bundleBatch: {
+        select: {
+          sourceBatchId: true,
+          sourceBatch: { select: { inPoolTime: true } },
+        },
+      },
+    },
     orderBy: [{ date: "desc" }, { code: "asc" }, { createdAt: "asc" }],
   });
 
   const sortTaskOptions = completedSortTasks.map((t) => {
-    const taskLogs = logs.filter((l) => l.refId === t.code || l.refId === t.id);
+    const taskLogs = logs.filter((l) => l.sortTaskId === t.id);
     const alreadyIntakeCount = taskLogs.reduce((acc, l) => acc + l.count, 0);
     const availableCount = Math.max(0, t.qualifiedCount - alreadyIntakeCount);
     return {
@@ -77,38 +89,26 @@ export default async function ColdStoragePage({
       qualifiedCount: t.qualifiedCount,
       alreadyIntakeCount,
       availableCount,
+      sourceBatchId: t.bundleBatch?.sourceBatchId || null,
+      sourceInPoolTime: t.bundleBatch?.sourceBatch?.inPoolTime || null,
     };
   });
 
-  const taskMap = new Map(sortTaskOptions.flatMap((t) => [[t.code, t], [t.id, t]]));
-
-  // 按规格聚合总出库消耗
-  const specOutboundMap = activeOutboundLines.reduce((map, line) => {
-    const key = `${line.gender}_${line.weightTier}`;
-    return map.set(key, (map.get(key) || 0) + line.count);
-  }, new Map<string, number>());
-
-  // 为每个 ColdLog 计算 FIFO 核销出库量 (从最早的入库批次开始消耗)
-  const sortedLogs = [...logs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const taskMap = new Map(sortTaskOptions.map((t) => [t.id, t]));
+  const logById = new Map(logs.map((log) => [log.id, log]));
   const logUsedMap = new Map<string, number>();
-  const remainingSpecOutbound = new Map(specOutboundMap);
 
-  for (const l of sortedLogs) {
-    const task = taskMap.get(l.refId || "");
-    if (!task) continue;
-    const key = `${task.gender}_${task.weightTier}`;
-    const needed = remainingSpecOutbound.get(key) || 0;
-    const usedForThisLog = Math.min(l.count, needed);
-    logUsedMap.set(l.id, usedForThisLog);
-    remainingSpecOutbound.set(key, needed - usedForThisLog);
+  for (const row of [...activeOutboundLines, ...outboundLosses]) {
+    if (!row.coldLogId || !logById.has(row.coldLogId)) continue;
+    logUsedMap.set(row.coldLogId, (logUsedMap.get(row.coldLogId) || 0) + row.count);
   }
 
   // 获取今日日期字符串用于统计今日入库 (兼容仿真固定日期 2026-09-21 或真实当天)
   const todayStr = formatISODate();
 
   const totalStoredCount = logs.reduce((a, b) => a + b.count, 0);
-  const totalOutboundUsed = Array.from(logUsedMap.values()).reduce((a, b) => a + b, 0);
-  const totalInStockCount = Math.max(0, totalStoredCount - totalOutboundUsed);
+  const totalConsumed = Array.from(logUsedMap.values()).reduce((a, b) => a + b, 0);
+  const totalInStockCount = Math.max(0, totalStoredCount - totalConsumed);
   const paginatedLogs = logs.slice((page - 1) * pageSize, page * pageSize);
 
   return (
@@ -173,8 +173,8 @@ export default async function ColdStoragePage({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {stores.map((s) => {
               const totalStored = s.logs.reduce((a, b) => a + b.count, 0);
-              const totalOutbound = s.logs.reduce((acc, l) => acc + (logUsedMap.get(l.id) || 0), 0);
-              const currentStock = Math.max(0, totalStored - totalOutbound);
+              const totalConsumed = s.logs.reduce((acc, l) => acc + (logUsedMap.get(l.id) || 0), 0);
+              const currentStock = Math.max(0, totalStored - totalConsumed);
               // 今日入库计算 (当天的入库量，若无则取最近一天数据呈现)
               const todayStored = s.logs
                 .filter((l) => formatISODate(l.createdAt) === todayStr || formatISODate(l.createdAt) === "2026-09-21")
@@ -232,8 +232,8 @@ export default async function ColdStoragePage({
                         <span className="font-medium text-foreground">{totalStored.toLocaleString()}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-muted-foreground block">已出库核销</span>
-                        <span className="font-medium text-muted-foreground">{totalOutbound.toLocaleString()}</span>
+                        <span className="text-[10px] text-muted-foreground block">已核减</span>
+                        <span className="font-medium text-muted-foreground">{totalConsumed.toLocaleString()}</span>
                       </div>
                     </div>
 
@@ -287,6 +287,7 @@ export default async function ColdStoragePage({
               ) : (
                 paginatedLogs.map((log) => {
                   const logUsed = logUsedMap.get(log.id) || 0;
+                  const task = log.sortTaskId ? taskMap.get(log.sortTaskId) : undefined;
                   return (
                     <tr key={log.id} className="hover:bg-muted/40 transition-colors">
                       <td className="px-3 py-2.5 font-mono font-bold text-foreground whitespace-nowrap">
@@ -307,24 +308,22 @@ export default async function ColdStoragePage({
                         +{log.count.toLocaleString()} 只
                         {logUsed > 0 && (
                           <span className="block text-[10px] font-normal text-muted-foreground">
-                            在库 {Math.max(0, log.count - logUsed).toLocaleString()} 只 · 出库 {logUsed.toLocaleString()} 只
+                            在库 {Math.max(0, log.count - logUsed).toLocaleString()} 只 · 已核减 {logUsed.toLocaleString()} 只
                           </span>
                         )}
                       </td>
                     <td className="px-3 py-2.5">
-                      {log.refId ? (
+                      {task ? (
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <Badge variant="outline" className="text-[10px] bg-muted/40 font-mono">
-                            {log.refId}
+                            {task.code}
                           </Badge>
-                          {taskMap.get(log.refId) && (
-                            <span className="text-[11px] text-muted-foreground">
-                              ({taskMap.get(log.refId)!.gender === "FEMALE" ? "母蟹" : "公蟹"} {taskMap.get(log.refId)!.weightTier})
-                            </span>
-                          )}
+                          <span className="text-[11px] text-muted-foreground">
+                            ({task.gender === "FEMALE" ? "母蟹" : "公蟹"} {task.weightTier})
+                          </span>
                         </div>
                       ) : (
-                        <span className="text-muted-foreground font-mono">—</span>
+                        <span className="text-destructive text-xs">链路异常</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">

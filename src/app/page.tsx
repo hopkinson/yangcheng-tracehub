@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { OverviewDashboard } from "@/components/dashboard/OverviewDashboard";
 import { formatISODate } from "@/lib/utils";
+import { aggregateTraceableColdStocks } from "@/lib/cold-stock";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function DashboardPage() {
     coldLogs,
     orders,
     outboundOrders,
+    outboundLosses,
     qcRecords,
   ] = await Promise.all([
     prisma.farmer.findMany(),
@@ -31,12 +33,15 @@ export default async function DashboardPage() {
     prisma.holdingPool.findMany({ include: { batches: true, batchItems: true }, orderBy: { code: "asc" } }),
     prisma.tagClaim.findMany({ orderBy: { claimDate: "desc" } }),
     prisma.bundleBatch.findMany({ include: { lines: true, group: true } }),
-    prisma.sortTask.findMany({ include: { machine: true } }),
+    prisma.sortTask.findMany({
+      include: { machine: true, bundleBatch: { select: { sourceBatchId: true } } },
+    }),
     prisma.sortMachine.findMany(),
     prisma.coldStore.findMany({ include: { logs: true } }),
     prisma.coldLog.findMany(),
     prisma.order.findMany(),
     prisma.outboundOrder.findMany({ include: { store: true, lines: true } }),
+    prisma.outboundLossRecord.findMany(),
     prisma.qCRecord.findMany({ orderBy: { checkTime: "desc" } }),
   ]);
 
@@ -115,10 +120,17 @@ export default async function DashboardPage() {
   // 7. 预冷
   const todayColdLogs = coldLogs.filter((l) => isTodayOrDemo(l.createdAt) && l.type === "INTAKE");
   const todayColdIntakeCount = todayColdLogs.reduce((s, l) => s + l.count, 0);
-  const totalQualifiedSorted = sortTasks
-    .filter((t) => t.status === "COMPLETED")
-    .reduce((s, t) => s + t.qualifiedCount, 0);
-  const totalColdStockCount = Math.max(0, totalQualifiedSorted - totalOutboundApproved);
+  const totalColdStockCount = aggregateTraceableColdStocks({
+    sortTasks,
+    coldLogs,
+    outboundLines: outboundOrders.filter((order) => order.status !== "REJECTED").flatMap((order) => order.lines),
+    outboundLosses,
+    defaultSpecs: [],
+  }).reduce((sum, stock) => sum + stock.available, 0);
+  const beijingHour = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" }).format(new Date())
+  );
+  const isClosingTime = beijingHour >= 18;
 
   // 8. 出库
   const todayOutboundOrders = outboundOrders.filter((o) => isTodayOrDemo(o.createdAt));
@@ -212,6 +224,7 @@ export default async function DashboardPage() {
         todayColdIntakeCount,
         activeColdStoresCount: coldStores.length,
         totalColdStockCount,
+        isClosingTime,
         todayOutboundOrdersCount: todayOutboundOrders.length,
         todayOutboundTotalCount,
         pendingOutboundOrdersCount,

@@ -24,6 +24,7 @@ model User {
 
   createdBatches  Batch[]          @relation("BatchCreator")
   lossRecords     LossRecord[]     @relation("LossInspector")
+  outboundLossRecords OutboundLossRecord[] @relation("OutboundLossOperator")
   tagClaims       TagClaim[]       @relation("TagApplicant")
   approvedClaims  TagClaim[]       @relation("TagApprover")
   outboundOrders  OutboundOrder[]  @relation("OutboundApplicant")
@@ -319,6 +320,8 @@ model SortTask {
   doneAt          DateTime?
   createdById     String?
   
+  coldLogs        ColdLog[]
+
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -344,12 +347,16 @@ model ColdLog {
   
   type            String          @default("INTAKE") // INTAKE (入库)
   count           Int             // 入库只数
-  refType         String?         // BUNDLE, SORT
-  refId           String?         // 关联 KZD/FJR 编号
+  refType         String?         // 历史兼容：BUNDLE, SORT
+  refId           String?         // 历史兼容：KZD/FJR 编号
+  sortTaskId      String?
+  sortTask        SortTask?       @relation(fields: [sortTaskId], references: [id], onDelete: SetNull)
   operator        String          // 经手人
   createdAt       DateTime        @default(now())
 
   outboundOrders  OutboundOrder[]
+  outboundLines   OutboundLine[]
+  outboundLosses  OutboundLossRecord[]
 }
 
 // -------------------------------------------------------------
@@ -468,10 +475,29 @@ model OutboundLine {
   weightTier        String          // 4.0两, 3.5两
   count             Int             // 出库只数
   
+  coldLogId         String?
+  coldLog           ColdLog?        @relation(fields: [coldLogId], references: [id], onDelete: SetNull)
+
   expressCompany    String?         // 顺丰速运 等
   waybillNo         String?         // 快递运单号
   
   createdAt         DateTime        @default(now())
+}
+
+model OutboundLossRecord {
+  id          String   @id @default(cuid())
+  gender      String   // MALE, FEMALE
+  weightTier  String   // 标准化规格，如 4.0两
+  count       Int      // 本次损耗只数
+  reason      String
+  coldLogId   String
+  coldLog     ColdLog  @relation(fields: [coldLogId], references: [id], onDelete: Restrict)
+  operatorId  String
+  operator    User     @relation("OutboundLossOperator", fields: [operatorId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([gender, weightTier, createdAt])
+  @@index([coldLogId])
 }
 
 // -------------------------------------------------------------

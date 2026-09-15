@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
+import { aggregateTraceableColdStocks } from "@/lib/cold-stock";
 import { getCurrentUser } from "@/lib/auth";
 import { getTenant } from "@/config/tenant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { StoreOutboundDialog } from "@/components/outbound/StoreOutboundDialog";
 import { CardOutboundDialog } from "@/components/outbound/CardOutboundDialog";
 import { LogisticsBatchImportDialog } from "@/components/outbound/LogisticsBatchImportDialog";
 import { OutboundDetailDialog } from "@/components/outbound/OutboundDetailDialog";
+import { OutboundLossDialog } from "@/components/outbound/OutboundLossDialog";
 import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
@@ -44,9 +46,9 @@ export default async function OutboundPage({
     pendingOrders,
     sortTasks,
     outboundLines,
+    outboundLosses,
     qcRecords,
     coldLogs,
-    bundleBatches,
   ] = await Promise.all([
     getCurrentUser(),
     prisma.outboundOrder.count(),
@@ -86,6 +88,9 @@ export default async function OutboundPage({
     prisma.outboundLine.findMany({
       where: { outboundOrder: { status: { not: "REJECTED" } } },
     }),
+    prisma.outboundLossRecord.findMany({
+      select: { gender: true, weightTier: true, count: true, coldLogId: true },
+    }),
     prisma.qCRecord.findMany({
       where: {
         cat: { in: ["PACK_INSPECT", "VEHICLE_INSPECT", "SHIP_LOG"] },
@@ -100,12 +105,6 @@ export default async function OutboundPage({
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.bundleBatch.findMany({
-      include: {
-        tagClaim: { include: { farmer: true } },
-        lines: true,
-      },
-    }),
   ]);
 
   const currentUserId = currentUser?.id || "";
@@ -118,30 +117,30 @@ export default async function OutboundPage({
       })
     : null;
 
-  const sortTaskMap = new Map(sortTasks.map((t: any) => [t.code, t]));
+  const sortTaskMap = new Map(sortTasks.map((t: any) => [t.id, t]));
 
-  // 动态聚合规格：提取分拣任务中的规格，同等规格（如 3两 与 3.0两）彻底合并归一化，不足4项用基准规格补足四列栅格
-  const specStocks = Invariants.aggregateSpecStocks({
+  const specStocks = aggregateTraceableColdStocks({
     sortTasks,
+    coldLogs,
     outboundLines,
+    outboundLosses,
   });
 
   const specStockMap = new Map(specStocks.map((s) => [`${s.gender}_${s.weightTier}`, s]));
 
   // 格式化保鲜库在库批次信息（供出库调拨核对，与规格库存精确同步）
-  const bundleBatchMap = new Map(bundleBatches.map((b: any) => [b.code, b]));
-  const coldBatchOptions = coldLogs.map((log: any) => {
-    const task = sortTaskMap.get(log.refId) || sortTasks.find((t: any) => t.id === log.refId || t.code === log.refId);
-    const bundle = !task ? (bundleBatchMap.get(log.refId) || bundleBatches.find((b: any) => b.id === log.refId || b.code === log.refId)) : null;
-    const gender = task?.gender || bundle?.lines?.[0]?.gender || "MALE";
-    const rawWeightTier = task?.weightTier || bundle?.lines?.[0]?.weightTier || "4.0两";
-    const weightTier = Invariants.normalizeWeightTier(rawWeightTier);
+  const coldBatchOptions = coldLogs.flatMap((log: any) => {
+    if (!log.sortTaskId) return [];
+    const task = sortTaskMap.get(log.sortTaskId);
+    if (!task?.bundleBatch?.sourceBatchId) return [];
+    const gender = task.gender;
+    const weightTier = Invariants.normalizeWeightTier(task.weightTier);
     const specLabel = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}`;
     const stock = specStockMap.get(`${gender}_${weightTier}`);
     const availableCount = stock ? Math.min(log.count, stock.available) : log.count;
-    const farmer = task?.bundleBatch?.tagClaim?.farmer || bundle?.tagClaim?.farmer;
+    const farmer = task.bundleBatch.tagClaim?.farmer;
 
-    return {
+    return [{
       id: log.id,
       code: log.code,
       storeName: log.store.name,
@@ -151,9 +150,9 @@ export default async function OutboundPage({
       specLabel,
       intakeCount: log.count,
       availableCount,
-      refTaskCode: task?.code || log.refId || undefined,
+      refTaskCode: task.code,
       farmerSummary: farmer ? `${farmer.name} (${farmer.code})` : undefined,
-    };
+    }];
   });
 
   const pendingStoreOrders = pendingOrders.filter((o: any) => o.type !== "CRAB_CARD");
@@ -198,7 +197,7 @@ export default async function OutboundPage({
 
       {/* 14.2 页首：冷库规格库存紧凑指标条 */}
       <FadeIn>
-        <div className="flex items-center gap-2 overflow-x-auto p-2 bg-muted/20 rounded-lg border border-border/70 text-xs no-scrollbar">
+        <div id="closing" className="flex items-center gap-2 overflow-x-auto p-2 bg-muted/20 rounded-lg border border-border/70 text-xs no-scrollbar scroll-mt-20">
           <div className="flex items-center gap-1.5 text-muted-foreground font-medium shrink-0 px-1">
             <ThermometerSnowflake className="size-3.5 text-primary" />
             <span>规格库存:</span>
@@ -206,7 +205,7 @@ export default async function OutboundPage({
           {specStocks.map((stock, idx) => (
             <div
               key={idx}
-              title={`分拣合格: ${stock.qualified} | 出库已占: ${stock.used}`}
+              title={`分拣合格: ${stock.qualified} | 出库已占: ${stock.used} | 出库损耗: ${stock.loss}`}
               className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-background border border-border/80 shrink-0 hover:border-primary/50 transition-colors"
             >
               <span className="font-medium text-foreground">{stock.label}</span>
@@ -230,6 +229,11 @@ export default async function OutboundPage({
               )}
             </div>
           ))}
+          {isWarehouseOrAdmin && (
+            <div className="ml-auto shrink-0 pl-2">
+              <OutboundLossDialog specStocks={specStocks} />
+            </div>
+          )}
         </div>
       </FadeIn>
 

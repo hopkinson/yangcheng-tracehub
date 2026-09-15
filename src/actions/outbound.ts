@@ -6,38 +6,298 @@ import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
 
-// 辅助：获取冷库某规格实时可用库存 (基于保鲜预冷入库 ColdLog)
-async function getColdStorageStock(gender: string, rawWeightTier: string) {
-  const tiers = [rawWeightTier, Invariants.normalizeWeightTier(rawWeightTier)];
+type FifoColdLot = {
+  coldLogId: string;
+  sourceBatchId: string;
+  sourceBatchCode: string;
+  intakeCount: number;
+  availableCount: number;
+  inPoolTime: Date;
+  createdAt: Date;
+};
 
-  const tasks = await prisma.sortTask.findMany({
-    where: { gender, weightTier: { in: tiers } },
-    select: { code: true },
+function tierVariants(rawWeightTier: string) {
+  const normalizedTier = Invariants.normalizeWeightTier(rawWeightTier);
+  const legacyTier = normalizedTier.endsWith(".0两") ? normalizedTier.replace(".0两", "两") : normalizedTier;
+  return Array.from(new Set([rawWeightTier, normalizedTier, legacyTier]));
+}
+
+// 唯一库存来源：ColdLog -> SortTask -> BundleBatch -> Batch。
+// 历史 ColdLog 允许仅通过 refId 关联分拣任务；新记录始终写 sortTaskId。
+async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = prisma): Promise<FifoColdLot[]> {
+  const tiers = tierVariants(rawWeightTier);
+  const tasks = await db.sortTask.findMany({
+    where: {
+      status: "COMPLETED",
+      gender,
+      weightTier: { in: tiers },
+      bundleBatch: { sourceBatchId: { not: null } },
+    },
+    include: {
+      bundleBatch: {
+        include: {
+          sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
+        },
+      },
+    },
+  });
+  if (tasks.length === 0) return [];
+
+  const taskIds = tasks.map((task: any) => task.id);
+  const taskRefs = tasks.flatMap((task: any) => [task.id, task.code]);
+  const taskByRef = new Map<string, any>();
+  for (const task of tasks) {
+    taskByRef.set(task.id, task);
+    taskByRef.set(task.code, task);
+  }
+
+  const logs = await db.coldLog.findMany({
+    where: {
+      type: "INTAKE",
+      OR: [
+        { sortTaskId: { in: taskIds } },
+        { sortTaskId: null, refId: { in: taskRefs } },
+      ],
+    },
+    select: { id: true, sortTaskId: true, refId: true, count: true, createdAt: true },
   });
 
-  const [coldAgg, outboundAgg] = await Promise.all([
-    prisma.coldLog.aggregate({
-      where: { type: "INTAKE", refId: { in: tasks.map((t) => t.code) } },
-      _sum: { count: true },
+  const traceableLogs = logs.flatMap((log: any) => {
+    const task = log.sortTaskId
+      ? taskByRef.get(log.sortTaskId)
+      : log.refId
+        ? taskByRef.get(log.refId)
+        : null;
+    const sourceBatch = task?.bundleBatch?.sourceBatch;
+    return sourceBatch ? [{ log, sourceBatch }] : [];
+  });
+  if (traceableLogs.length === 0) return [];
+
+  const logIds = traceableLogs.map(({ log }: any) => log.id);
+  const [boundOutbound, legacyOutbound, boundLoss] = await Promise.all([
+    db.outboundLine.findMany({
+      where: { coldLogId: { in: logIds }, outboundOrder: { status: { not: "REJECTED" } } },
+      select: { coldLogId: true, count: true },
     }),
-    prisma.outboundLine.aggregate({
+    db.outboundLine.findMany({
       where: {
+        coldLogId: null,
         gender,
         weightTier: { in: tiers },
         outboundOrder: { status: { not: "REJECTED" } },
       },
-      _sum: { count: true },
+      select: { count: true },
+    }),
+    db.outboundLossRecord.findMany({
+      where: { coldLogId: { in: logIds } },
+      select: { coldLogId: true, count: true },
     }),
   ]);
 
-  const totalStored = coldAgg._sum.count || 0;
-  const totalUsed = outboundAgg._sum.count || 0;
+  const usedByLog = new Map<string, number>();
+  for (const row of boundOutbound) {
+    if (!row.coldLogId) continue;
+    usedByLog.set(row.coldLogId, (usedByLog.get(row.coldLogId) || 0) + row.count);
+  }
+  const lossByLog = new Map<string, number>();
+  for (const row of boundLoss) lossByLog.set(row.coldLogId, (lossByLog.get(row.coldLogId) || 0) + row.count);
 
+  const lots = traceableLogs
+    .map(({ log, sourceBatch }: any) => ({
+      coldLogId: log.id,
+      sourceBatchId: sourceBatch.id,
+      sourceBatchCode: sourceBatch.code,
+      intakeCount: log.count,
+      availableCount: Math.max(0, log.count - (usedByLog.get(log.id) || 0) - (lossByLog.get(log.id) || 0)),
+      inPoolTime: sourceBatch.inPoolTime,
+      createdAt: log.createdAt,
+    } satisfies FifoColdLot))
+    .sort((a: FifoColdLot, b: FifoColdLot) =>
+      a.inPoolTime.getTime() - b.inPoolTime.getTime() || a.createdAt.getTime() - b.createdAt.getTime()
+    );
+
+  // 旧出库明细没有 coldLogId，只能确定规格。按同一 FIFO 顺序消耗历史库存，
+  // 避免旧发货量在升级后重新变成“可发库存”。
+  let legacyUsed = legacyOutbound.reduce((sum: number, row: any) => sum + row.count, 0);
+  for (const lot of lots) {
+    if (legacyUsed <= 0) break;
+    const used = Math.min(lot.availableCount, legacyUsed);
+    lot.availableCount -= used;
+    legacyUsed -= used;
+  }
+
+  return lots;
+}
+
+async function getColdStorageStock(gender: string, rawWeightTier: string, db: any = prisma) {
+  const tiers = tierVariants(rawWeightTier);
+  const lots = await getFifoColdLots(gender, rawWeightTier, db);
+  const lossAgg = await db.outboundLossRecord.aggregate({
+    where: { gender, weightTier: { in: tiers } },
+    _sum: { count: true },
+  });
   return {
-    totalQualified: totalStored,
-    totalUsed,
-    availableCount: Math.max(0, totalStored - totalUsed),
+    totalQualified: lots.reduce((sum, lot) => sum + lot.intakeCount, 0),
+    totalLoss: lossAgg._sum.count || 0,
+    availableCount: lots.reduce((sum, lot) => sum + lot.availableCount, 0),
   };
+}
+
+async function allocateColdStockFIFO(gender: string, weightTier: string, count: number, db: any) {
+  const lots = await getFifoColdLots(gender, weightTier, db);
+  const available = lots.reduce((sum, lot) => sum + lot.availableCount, 0);
+  if (available < count) {
+    const label = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${Invariants.normalizeWeightTier(weightTier)}`;
+    throw new Error(`冷库库存不足：${label} 仅剩可用 ${available} 只，本次需要 ${count} 只`);
+  }
+
+  let remaining = count;
+  const allocations: Array<{ coldLogId: string; sourceBatchId: string; sourceBatchCode: string; count: number }> = [];
+  for (const lot of lots) {
+    if (remaining <= 0) break;
+    if (lot.availableCount <= 0) continue;
+    const allocated = Math.min(remaining, lot.availableCount);
+    allocations.push({
+      coldLogId: lot.coldLogId,
+      sourceBatchId: lot.sourceBatchId,
+      sourceBatchCode: lot.sourceBatchCode,
+      count: allocated,
+    });
+    remaining -= allocated;
+  }
+  return allocations;
+}
+
+async function buildFifoOutboundLines(orders: any[], db: any, lineExtra?: (order: any) => Record<string, unknown>) {
+  const demands = new Map<string, { gender: string; weightTier: string; count: number }>();
+  for (const order of orders) {
+    const weightTier = Invariants.normalizeWeightTier(order.weightTier);
+    const key = `${order.gender}_${weightTier}`;
+    const current = demands.get(key) || { gender: order.gender, weightTier, count: 0 };
+    current.count += order.count;
+    demands.set(key, current);
+  }
+
+  const allocationQueues = new Map<string, Array<{ coldLogId: string; sourceBatchId: string; sourceBatchCode: string; remaining: number }>>();
+  for (const [key, demand] of demands) {
+    const allocations = await allocateColdStockFIFO(demand.gender, demand.weightTier, demand.count, db);
+    allocationQueues.set(key, allocations.map((item) => ({ ...item, remaining: item.count })));
+  }
+
+  const lines: any[] = [];
+  for (const order of orders) {
+    const weightTier = Invariants.normalizeWeightTier(order.weightTier);
+    const key = `${order.gender}_${weightTier}`;
+    const queue = allocationQueues.get(key) || [];
+    let remaining = order.count;
+    for (const allocation of queue) {
+      if (remaining <= 0) break;
+      if (allocation.remaining <= 0) continue;
+      const count = Math.min(remaining, allocation.remaining);
+      lines.push({
+        orderId: order.id,
+        orderNo: order.orderNo,
+        gender: order.gender,
+        weightTier,
+        count,
+        coldLogId: allocation.coldLogId,
+        ...(lineExtra?.(order) || {}),
+      });
+      allocation.remaining -= count;
+      remaining -= count;
+    }
+    if (remaining > 0) throw new Error(`FIFO 分配失败：订单 ${order.orderNo} 尚有 ${remaining} 只未分配`);
+  }
+
+  const firstLine = lines[0];
+  const firstAllocation = firstLine
+    ? Array.from(allocationQueues.values()).flat().find((item) => item.coldLogId === firstLine.coldLogId)
+    : null;
+  if (!firstLine || !firstAllocation) throw new Error("没有可用于出库的已绑定冷库批次");
+  return { lines, firstAllocation };
+}
+
+export async function registerOutboundLossAction(data: {
+  gender: string;
+  weightTier: string;
+  lossCount: number;
+  reason?: string;
+}) {
+  const user = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const gender = data.gender === "FEMALE" ? "FEMALE" : data.gender === "MALE" ? "MALE" : "";
+  const weightTier = Invariants.normalizeWeightTier(data.weightTier);
+  const lossCount = Math.floor(Number(data.lossCount));
+
+  if (!gender) throw new Error("请选择有效的公母规格");
+  if (!weightTier) throw new Error("请选择有效的重量规格");
+  if (!Number.isFinite(lossCount) || lossCount <= 0) throw new Error("损耗数量必须大于 0");
+
+  const transactionResult = await prisma.$transaction(async (tx) => {
+    const stock = await getColdStorageStock(gender, weightTier, tx);
+    if (lossCount > stock.availableCount) {
+      throw new Error(`损耗数量 (${lossCount} 只) 不能超过当前可发库存 (${stock.availableCount} 只)`);
+    }
+
+    const result = Invariants.calculateLoss({
+      bookInPool: stock.availableCount,
+      physicalCount: stock.availableCount - lossCount,
+      inPoolCount: stock.totalQualified,
+      historicalLoss: stock.totalLoss,
+    });
+    if (!result.valid) throw new Error(result.reason);
+
+    const reason = data.reason?.trim() || "发货环节损耗盘点";
+    if (result.isException && !data.reason?.trim()) {
+      throw new Error("累计出库损耗率超 5%，请详细填写损耗原因");
+    }
+
+    const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx);
+    for (const allocation of allocations) {
+      await tx.outboundLossRecord.create({
+        data: {
+          gender,
+          weightTier,
+          count: allocation.count,
+          reason,
+          coldLogId: allocation.coldLogId,
+          operatorId: user.id,
+        },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: user.id,
+        action: "OUTBOUND_LOSS_REGISTER",
+        entityType: "OUTBOUND_STOCK",
+        entityId: `${gender}_${weightTier}`,
+        details: JSON.stringify({
+          gender,
+          weightTier,
+          bookCount: stock.availableCount,
+          physicalCount: stock.availableCount - lossCount,
+          lossCount,
+          cumulativeLoss: result.totalLoss,
+          lossRate: result.lossRate,
+          reason,
+          fifoAllocations: allocations,
+        }),
+      },
+    });
+
+    return { availableAfter: stock.availableCount - lossCount };
+  }, { isolationLevel: "Serializable" });
+
+  // 库存扣减已经提交后，不让页面缓存刷新失败把本次业务结果伪装成“登记失败”，
+  // 否则用户重试可能造成同一笔损耗重复登记。
+  try {
+    revalidatePath("/outbound");
+    revalidatePath("/cold-storage");
+    revalidatePath("/ledgers");
+    revalidatePath("/");
+  } catch {}
+
+  return transactionResult;
 }
 
 // 辅助：生成当日唯一的出库单号
@@ -47,116 +307,12 @@ async function nextOutboundCode(tx: any): Promise<string> {
   return `${prefix}${String(count + 1).padStart(3, "0")}`;
 }
 
-// 辅助：从保鲜入库批次穿透追溯原始批次
-async function resolveBatchFromColdLog(
-  tx: any,
-  coldLogId?: string | null,
-  explicitBatchId?: string | null,
-  spec?: { gender?: string; weightTier?: string } | null
-): Promise<string> {
-  if (explicitBatchId) return explicitBatchId;
-
-  const findBatchBySpec = async (farmerId?: string, gender?: string, weightTier?: string) => {
-    if (!gender || !weightTier) return null;
-    const tiers = [weightTier, Invariants.normalizeWeightTier(weightTier)];
-    const filter = {
-      ...(farmerId ? { farmerId } : {}),
-      OR: [
-        { gender, weightTier: { in: tiers } },
-        { items: { some: { gender, weightTier: { in: tiers } } } },
-      ],
-    };
-    // 优先在养/部分出库批次，次选已全量出池的完结批次 (COMPLETED)
-    return (
-      (await tx.batch.findFirst({
-        where: { ...filter, status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-        orderBy: { createdAt: "desc" },
-      })) || (await tx.batch.findFirst({ where: filter, orderBy: { createdAt: "desc" } }))
-    );
-  };
-
-  if (coldLogId) {
-    const coldLog = await tx.coldLog.findUnique({
-      where: { id: coldLogId },
-    });
-    if (coldLog?.refId) {
-      // 1. 优先从分拣任务或捆扎批次穿透来源养殖户与批次
-      const sortTask = await tx.sortTask.findFirst({
-        where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
-        include: {
-          bundleBatch: {
-            include: {
-              lines: { include: { pool: { include: { batches: true } } } },
-              tagClaim: { include: { farmer: { include: { batches: true } } } },
-            },
-          },
-        },
-      });
-
-      const bundleBatch = !sortTask
-        ? await tx.bundleBatch.findFirst({
-            where: { OR: [{ code: coldLog.refId }, { id: coldLog.refId }] },
-            include: {
-              lines: { include: { pool: { include: { batches: true } } } },
-              tagClaim: { include: { farmer: { include: { batches: true } } } },
-            },
-          })
-        : sortTask.bundleBatch;
-
-      const farmerId = bundleBatch?.tagClaim?.farmerId;
-      const farmerBatches = bundleBatch?.tagClaim?.farmer?.batches || [];
-      const poolBatches = bundleBatch?.lines?.flatMap((l: any) => l.pool?.batches || []) || [];
-
-      // 该冷库批次真实规格
-      const targetGender = sortTask?.gender || bundleBatch?.lines?.[0]?.gender || spec?.gender;
-      const targetWeight = sortTask?.weightTier || bundleBatch?.lines?.[0]?.weightTier || spec?.weightTier;
-
-      if (farmerId) {
-        const matched =
-          (await findBatchBySpec(farmerId, targetGender, targetWeight)) ||
-          (spec?.gender && spec?.weightTier ? await findBatchBySpec(farmerId, spec.gender, spec.weightTier) : null);
-        if (matched) return matched.id;
-
-        const anyFarmerBatch =
-          farmerBatches[0]?.id || (await tx.batch.findFirst({ where: { farmerId }, orderBy: { createdAt: "desc" } }))?.id;
-        if (anyFarmerBatch) return anyFarmerBatch;
-      }
-
-      if (poolBatches.length > 0) return poolBatches[0].id;
-    }
-  }
-
-  // 兜底 1：全库范围按规格匹配
-  if (spec?.gender && spec?.weightTier) {
-    const defaultMatched = await findBatchBySpec(undefined, spec.gender, spec.weightTier);
-    if (defaultMatched) return defaultMatched.id;
-  }
-
-  // 兜底 2：系统内最新批次（优先在养，次选最新完结批次）
-  const fallback =
-    (await tx.batch.findFirst({
-      where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-      orderBy: { createdAt: "desc" },
-    })) || (await tx.batch.findFirst({ orderBy: { createdAt: "desc" } }));
-  if (fallback) return fallback.id;
-
-  throw new Error("系统内未找到任何养殖批次，请先创建养殖批次以保障供应链履约溯源闭环");
-}
-
-function findOrderForColdLog(orders: any[], coldLogId?: string | null, map?: Record<string, string>) {
-  if (!coldLogId || !map) return orders[0];
-  return orders.find((o) => map[`${o.gender}_${Invariants.normalizeWeightTier(o.weightTier)}`] === coldLogId) || orders[0];
-}
-
 /**
  * 门店订单出库申请 (合单)
  */
 export async function createStoreOutboundAction(data: {
   storeId: string;
   orderIds: string[];
-  coldLogId?: string;
-  specBatchMap?: Record<string, string>;
-  batchId?: string;
   transportCompany?: string;
   contactName: string;
   contactPhone: string;
@@ -177,52 +333,22 @@ export async function createStoreOutboundAction(data: {
 
     const orders = await tx.order.findMany({
       where: { id: { in: data.orderIds }, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
     });
 
     if (orders.length === 0) {
       throw new Error("请至少选择一个待发货的门店订单");
     }
 
-    // 聚合各规格数量校验库存 (规格自动标准化合并，如 3两 统一为 3.0两)
-    const specDemandMap: Record<string, { gender: string; weightTier: string; count: number }> = {};
-    let totalCrabCount = 0;
-
-    for (const ord of orders) {
-      const normTier = Invariants.normalizeWeightTier(ord.weightTier);
-      const key = `${ord.gender}_${normTier}`;
-      if (!specDemandMap[key]) specDemandMap[key] = { gender: ord.gender, weightTier: normTier, count: 0 };
-      specDemandMap[key].count += ord.count;
-      totalCrabCount += ord.count;
-    }
-
-    // 针对每个规格校验冷库可用库存
-    for (const demand of Object.values(specDemandMap)) {
-      const stock = await getColdStorageStock(demand.gender, demand.weightTier);
-      const checkRes = Invariants.checkColdStorageOutbound({
-        spec: demand.weightTier,
-        gender: demand.gender,
-        availableCount: stock.availableCount,
-        requestedCount: demand.count,
-      });
-      if (!checkRes.valid) throw new Error(`冷库库存不足：${checkRes.reason}`);
-    }
-
+    const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
+    const { lines, firstAllocation } = await buildFifoOutboundLines(orders, tx);
     const orderCode = await nextOutboundCode(tx);
-
-    const chosenColdLogId =
-      data.coldLogId ||
-      (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
-      null;
-
-    const matchedOrder = findOrderForColdLog(orders, chosenColdLogId, data.specBatchMap);
-
-    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, matchedOrder);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
         code: orderCode,
-        coldLogId: chosenColdLogId,
-        batchId: chosenBatchId,
+        coldLogId: firstAllocation.coldLogId,
+        batchId: firstAllocation.sourceBatchId,
         storeId: data.storeId,
         channelId: store.channelId,
         outboundCount: totalCrabCount,
@@ -233,15 +359,7 @@ export async function createStoreOutboundAction(data: {
         contactPhone,
         status: "PENDING",
         applicantId: data.applicantId,
-        lines: {
-          create: orders.map((o) => ({
-            orderId: o.id,
-            orderNo: o.orderNo,
-            gender: o.gender,
-            weightTier: Invariants.normalizeWeightTier(o.weightTier),
-            count: o.count,
-          })),
-        },
+        lines: { create: lines },
       },
     });
 
@@ -264,7 +382,8 @@ export async function createStoreOutboundAction(data: {
           storeName: store.name,
           totalCrabCount,
           ordersCount: orders.length,
-          specBatchMap: data.specBatchMap,
+          allocationMode: "FIFO_BY_SOURCE_BATCH",
+          fifoAllocations: lines.map((line) => ({ orderNo: line.orderNo, coldLogId: line.coldLogId, count: line.count })),
         }),
       },
     });
@@ -276,7 +395,7 @@ export async function createStoreOutboundAction(data: {
     } catch {}
 
     return outboundOrder;
-  });
+  }, { isolationLevel: "Serializable" });
 }
 
 /**
@@ -284,9 +403,6 @@ export async function createStoreOutboundAction(data: {
  */
 export async function createCardUnifiedOutboundAction(data: {
   orderIds: string[];
-  coldLogId?: string;
-  specBatchMap?: Record<string, string>;
-  batchId?: string;
   transportCompany?: string;
   applicantId: string;
 }) {
@@ -294,6 +410,7 @@ export async function createCardUnifiedOutboundAction(data: {
   return await prisma.$transaction(async (tx) => {
     const orders = await tx.order.findMany({
       where: { id: { in: data.orderIds }, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
     });
 
     if (orders.length === 0) {
@@ -306,46 +423,19 @@ export async function createCardUnifiedOutboundAction(data: {
     });
     if (!defaultStore) throw new Error("未找到默认渠道门店");
 
-    // 聚合各规格数量校验库存 (规格自动标准化合并，如 3两 统一为 3.0两)
-    const specDemandMap: Record<string, { gender: string; weightTier: string; count: number }> = {};
-    let totalCrabCount = 0;
-
-    for (const ord of orders) {
-      const normTier = Invariants.normalizeWeightTier(ord.weightTier);
-      const key = `${ord.gender}_${normTier}`;
-      if (!specDemandMap[key]) specDemandMap[key] = { gender: ord.gender, weightTier: normTier, count: 0 };
-      specDemandMap[key].count += ord.count;
-      totalCrabCount += ord.count;
-    }
-
-    // 校验各规格冷库可用库存
-    for (const demand of Object.values(specDemandMap)) {
-      const stock = await getColdStorageStock(demand.gender, demand.weightTier);
-      const checkRes = Invariants.checkColdStorageOutbound({
-        spec: demand.weightTier,
-        gender: demand.gender,
-        availableCount: stock.availableCount,
-        requestedCount: demand.count,
-      });
-      if (!checkRes.valid) throw new Error(`冷库库存不足：${checkRes.reason}`);
-    }
-
+    const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
+    const { lines, firstAllocation } = await buildFifoOutboundLines(
+      orders,
+      tx,
+      () => ({ expressCompany: data.transportCompany || "顺丰速运" })
+    );
     const orderCode = await nextOutboundCode(tx);
-
-    const chosenColdLogId =
-      data.coldLogId ||
-      (data.specBatchMap ? Object.values(data.specBatchMap).find(Boolean) : null) ||
-      null;
-
-    const matchedOrder = findOrderForColdLog(orders, chosenColdLogId, data.specBatchMap);
-
-    const chosenBatchId = await resolveBatchFromColdLog(tx, chosenColdLogId, data.batchId, matchedOrder);
 
     const outboundOrder = await tx.outboundOrder.create({
       data: {
         code: orderCode,
-        coldLogId: chosenColdLogId,
-        batchId: chosenBatchId,
+        coldLogId: firstAllocation.coldLogId,
+        batchId: firstAllocation.sourceBatchId,
         type: "CRAB_CARD",
         storeId: defaultStore.id,
         channelId: defaultStore.channelId,
@@ -354,16 +444,7 @@ export async function createCardUnifiedOutboundAction(data: {
         logisticsNo: "发货后回填",
         status: "PENDING",
         applicantId: data.applicantId,
-        lines: {
-          create: orders.map((o) => ({
-            orderId: o.id,
-            orderNo: o.orderNo,
-            gender: o.gender,
-            weightTier: Invariants.normalizeWeightTier(o.weightTier),
-            count: o.count,
-            expressCompany: data.transportCompany || "顺丰速运",
-          })),
-        },
+        lines: { create: lines },
       },
     });
 
@@ -384,7 +465,8 @@ export async function createCardUnifiedOutboundAction(data: {
           orderCode,
           totalCrabCount,
           ordersCount: orders.length,
-          specBatchMap: data.specBatchMap,
+          allocationMode: "FIFO_BY_SOURCE_BATCH",
+          fifoAllocations: lines.map((line) => ({ orderNo: line.orderNo, coldLogId: line.coldLogId, count: line.count })),
         }),
       },
     });
@@ -394,7 +476,7 @@ export async function createCardUnifiedOutboundAction(data: {
     revalidatePath("/approvals");
 
     return outboundOrder;
-  });
+  }, { isolationLevel: "Serializable" });
 }
 
 /**
@@ -579,11 +661,21 @@ export async function resubmitOutboundOrderAction(data: {
   return await prisma.$transaction(async (tx) => {
     const order = await tx.outboundOrder.findUniqueOrThrow({
       where: { id: data.orderId },
-      include: { batch: true },
+      include: { batch: true, lines: { select: { count: true } } },
     });
 
+    if (order.status !== "REJECTED") {
+      throw new Error("只有已驳回的出库单可以重新提交");
+    }
     if (order.batch.status === "FROZEN") {
       throw new Error("批次已冻结，无法重新提交");
+    }
+
+    if (order.lines.length > 0) {
+      const boundCount = order.lines.reduce((sum, line) => sum + line.count, 0);
+      if (data.storeId !== order.storeId || data.outboundCount !== boundCount) {
+        throw new Error("该出库单已绑定订单与冷库明细，重新提报时不可修改门店或数量；如需调整，请重新创建出库单");
+      }
     }
 
     const store = await tx.store.findUniqueOrThrow({
