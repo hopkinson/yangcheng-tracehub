@@ -57,7 +57,6 @@ export default async function ApprovalsPage({
           include: {
             farmer: {
               include: {
-                batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
                 tagClaims: { where: { status: "APPROVED" } },
               },
             },
@@ -137,14 +136,9 @@ export default async function ApprovalsPage({
   // 待办卡片统一聚合流
   const pendingTagCards = (typeFilter === "ALL" || typeFilter === "TAG")
     ? visiblePendingTagClaims.map((claim) => {
-        const activeInPool = claim.farmer.batches.reduce(
-          (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
-          0
-        );
-        const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
-        const remainingQuota = Math.max(0, claim.farmer.quota - cumulativeClaimed);
-        const maxClaimable = Math.min(activeInPool, remainingQuota);
-        const isSafe = claim.claimCount <= maxClaimable && claim.claimCount > 0;
+        const cumulativeBoundCount = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+        const remainingQuota = Math.max(0, claim.farmer.quota - cumulativeBoundCount);
+        const isSafe = claim.claimCount <= remainingQuota && claim.claimCount > 0;
 
         return {
           id: claim.id,
@@ -154,7 +148,7 @@ export default async function ApprovalsPage({
           summary: `${claim.farmer.name} · 领用蟹扣 ${claim.claimCount.toLocaleString()} 只`,
           quantityLabel: undefined,
           subSummary: `${claim.farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}养殖户 · 户号 ${claim.farmer.code}`,
-          checkDescription: `领扣校验：在池存活 ${activeInPool.toLocaleString()} 只，年度剩余额度 ${remainingQuota.toLocaleString()} 只 (硬约束 ≤ min(在池, 余量) = ${maxClaimable.toLocaleString()} 只)${!isSafe ? " ⚠️ 超额领扣预警" : ""}`,
+          checkDescription: `领扣校验：累计已完成绑扎 ${cumulativeBoundCount.toLocaleString()} 只，年度额度余量 ${remainingQuota.toLocaleString()} 只${!isSafe ? " ⚠️ 超额领扣预警" : ""}`,
           applicantName: claim.applicant.fullName,
           applicantRole: claim.applicant.role === "WAREHOUSE_ADMIN" ? "库管员" : "业务员",
           tagClaimData: claim,

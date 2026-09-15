@@ -56,9 +56,15 @@ export default async function BundlingPage({
     where: { status: "APPROVED" },
     include: {
       farmer: true,
-      bundleBatches: { include: { lines: true } },
     },
     orderBy: { claimDate: "desc" },
+  });
+
+  // 2.1 取最近一次成功创建捆扎批次时填写的蟹绳批次，作为新建表单默认值。
+  // 单独查询，避免受当前页面日期/班组筛选影响。
+  const latestBundle = await prisma.bundleBatch.findFirst({
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { ropeBatch: true },
   });
 
   // 3. 查询待捆扎原料批次，按入池时间 FIFO 排队；池库存只取对应原料批次的 BatchItem。
@@ -175,17 +181,15 @@ export default async function BundlingPage({
           <BundleBatchDialog
             groups={groups.map((g: any) => ({ id: g.id, code: g.code, name: g.name }))}
             materialBatches={materialBatches}
-            tagClaims={approvedTagClaims.map((t: any) => {
-              const used = t.bundleBatches?.flatMap((b: any) => b.lines || []).reduce((s: number, l: any) => s + l.count, 0) || 0;
-              return {
-                id: t.id,
-                code: t.code,
-                farmerId: t.farmerId,
-                farmerName: t.farmer.name,
-                claimCount: t.claimCount,
-                availableCount: Math.max(0, t.claimCount - Math.max(used, t.boundCount || 0) - (t.returnedCount || 0) - (t.scrappedCount || 0)),
-              };
-            })}
+            tagClaims={approvedTagClaims.map((t: any) => ({
+              id: t.id,
+              code: t.code,
+              farmerId: t.farmerId,
+              farmerName: t.farmer.name,
+              claimCount: t.claimCount,
+              availableCount: Math.max(0, t.claimCount - (t.boundCount || 0) - (t.returnedCount || 0) - (t.scrappedCount || 0)),
+            }))}
+            defaultRopeBatch={latestBundle?.ropeBatch ?? ""}
             pools={poolOptions}
           />
         </div>

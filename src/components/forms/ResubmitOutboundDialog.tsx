@@ -24,6 +24,7 @@ export function ResubmitOutboundDialog({
     outboundCount: number;
     storeId: string;
     rejectReason?: string | null;
+    lines?: Array<{ count: number }>;
     batch: { code: string; inPoolCount: number; outPoolCount: number; lossCount: number };
   };
   stores: Array<{ id: string; name: string; code: string; channel: { name: string } }>;
@@ -33,6 +34,7 @@ export function ResubmitOutboundDialog({
   const [loading, setLoading] = useState(false);
 
   const liveInBatch = order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount;
+  const hasBoundLines = (order.lines?.length || 0) > 0;
 
   const form = useForm<ResubmitOutboundFormValues>({
     resolver: zodResolver(resubmitOutboundFormSchema),
@@ -53,7 +55,7 @@ export function ResubmitOutboundDialog({
 
   async function onSubmit(data: ResubmitOutboundFormValues) {
     const count = Number(data.outboundCount);
-    if (count > liveInBatch) {
+    if (!hasBoundLines && count > liveInBatch) {
       form.setError("outboundCount", {
         message: `在池存活不足: 当前批次仅剩 ${liveInBatch} 只`,
       });
@@ -90,7 +92,9 @@ export function ResubmitOutboundDialog({
         <DialogHeader>
           <DialogTitle>修改并重新提报出库单 ({order.code})</DialogTitle>
           <DialogDescription>
-            关联批次：{order.batch.code} (当前在池存活 {liveInBatch} 只)
+            {hasBoundLines
+              ? "该出库单已绑定订单与冷库 FIFO 明细，保持原门店和原数量重新提报。"
+              : `关联批次：${order.batch.code} (当前在池存活 ${liveInBatch} 只)`}
           </DialogDescription>
         </DialogHeader>
 
@@ -108,7 +112,7 @@ export function ResubmitOutboundDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>目标销售门店</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={hasBoundLines}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="选择目标门店" />
@@ -134,9 +138,12 @@ export function ResubmitOutboundDialog({
                 <FormItem>
                   <FormLabel>修正出库数量 (只)</FormLabel>
                   <FormControl>
-                    <Input type="number" min="1" max={liveInBatch || undefined} {...field} />
+                    <Input type="number" min="1" max={hasBoundLines ? undefined : liveInBatch || undefined} disabled={hasBoundLines} {...field} />
                   </FormControl>
                   <FormMessage />
+                  {hasBoundLines && (
+                    <p className="text-xs text-muted-foreground">已锁定为原出库数量；如需调整门店或数量，请重新创建出库单。</p>
+                  )}
                 </FormItem>
               )}
             />

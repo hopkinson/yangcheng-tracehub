@@ -37,7 +37,6 @@ export default async function TagsPage({
     }),
     prisma.farmer.findMany({
       include: {
-        batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
         tagClaims: { where: { status: "APPROVED" } },
       },
       where: { status: "ACTIVE" },
@@ -56,21 +55,13 @@ export default async function TagsPage({
   const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
 
-  const farmerOptions = farmers.map((f) => {
-    const activeInPool = f.batches.reduce(
-      (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
-      0
-    );
-    const claimedSoFar = f.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
-    return {
-      id: f.id,
-      name: f.name,
-      code: f.code,
-      quota: f.quota,
-      activeInPool,
-      claimedSoFar,
-    };
-  });
+  const farmerOptions = farmers.map((f) => ({
+    id: f.id,
+    name: f.name,
+    code: f.code,
+    quota: f.quota,
+    boundSoFar: f.tagClaims.reduce((sum, c) => sum + c.boundCount, 0),
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,7 +69,7 @@ export default async function TagsPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">蟹扣管理</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            蟹扣领用审批与日清日结轧平（领用数 = 绑扣出库 + 当日退回 + 当日作废）
+            蟹扣领用审批与日清日结轧平（领用数 = 完成绑扎 + 当日退回 + 当日作废）
           </p>
         </div>
         {isWarehouseOrAdmin && <TagClaimDialog farmers={farmerOptions} userId={currentUserId} />}
