@@ -22,15 +22,16 @@
 
 ---
 
-### 卡口 2：蟹扣领用余量动态计算与申请校验
-- **触发时机**：仓库管理员发起蟹扣领用申请。
-- **界面与服务端可领余量计算公式**：
-  $$\text{Farmer.activeInPoolTotal} = \sum_{\text{batches}} (\text{inPoolCount} - \text{outPoolCount} - \text{lossCount})$$
-  $$\text{Farmer.remainingQuota} = \text{Farmer.quota} - \sum_{\text{year}} \text{Batch.inPoolCount}$$
-  $$\text{MaxClaimable} = \min\left(\text{Farmer.activeInPoolTotal}, \text{Farmer.quota} - \sum_{\text{year}} \text{TagClaim.boundCount}\right)$$
+### 卡口 2：蟹扣领用额度与完成绑扎扣减
+- **触发时机**：仓库管理员发起蟹扣领用申请；捆扎批次完成时核销实际使用数。
+- **领用额度公式**：
+  $$\text{CumulativeBound} = \sum \text{TagClaim.boundCount}$$
+  $$\text{MaxClaimable} = \max(0, \text{Farmer.quota} - \text{CumulativeBound})$$
 - **校验规则**：
-  1. 领扣数量 $\le \text{MaxClaimable}$。
-  2. 当日领用的蟹扣必须当日完成绑扣出库，未用完的当日退回或登记作废，严禁跨日滞留。
+  1. 领扣申请不与暂养池在池数、已入生产流转数量绑定，只校验年度额度余量。
+  2. 创建 `BUNDLING` 捆扎批次不扣减蟹扣；仅当批次切换为 `COMPLETED` 时，执行 `boundCount += qualifiedCount`。
+  3. 捆扎损耗不自动等同于蟹扣作废；实际坏扣由仓库在日结时登记 `scrappedCount`。
+  4. 当日未使用的蟹扣需退回或登记作废，严禁跨日滞留。
 
 ---
 
@@ -62,10 +63,11 @@
 ### 卡口 5：蟹扣日清日结与逐日轧平机制
 - **触发时机**：每日运营结束时，仓库管理员与品控主管执行日结对账。
 - **按养殖户轧平公式**：
-  $$\text{当日领扣数} = \text{当日绑扣出库数} + \text{当日退回数} + \text{当日作废数}$$
+  $$\text{当日领扣数} = \text{当日完成绑扎数} + \text{当日退回数} + \text{当日作废数}$$
 - **对账规则**：
   1. 若等式两边完全相等，该养殖户当日台账标记为 `isBalanced = true`（已轧平），允许结单。
   2. 若出现不平衡差额，系统**阻止结单并标红告警**，前台界面降噪后直接在台账二集中归集展示。
+  3. `boundCount` 由完成捆扎自动归集，日结页面与服务端均不允许人工修改。
 
 ---
 

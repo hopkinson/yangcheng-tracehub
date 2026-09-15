@@ -6,7 +6,7 @@
 本系统**不是防伪溯源系统**，而是一套**数量闭环管控与合规证明系统**。
 - **不追踪单只蟹**：蟹扣无唯一序列号（一户一码），不扫码、不追踪单扣轨迹。
 - **核心业务价值**：通过对 **“额度核定、活蟹入池、蟹扣领用、出库发运”** 四个关键数量节点的严密校验、事务级约束与逐日轧平对账，以不可篡改的数字化台账证明：**“公司向市场/渠道发出的带扣阳澄湖大闸蟹总量，严格小于等于签约养殖户的理论核定产量”**。
-- **对外部审查支撑**：为山姆会员店（Sam's Club）等大型零售渠道的供应商溯源与品控审核提供严密、完整的批次级反向追溯链条与四本合规台账。
+- **对外部审查支撑**：为山姆会员店（Sam's Club）等大型零售渠道的供应商溯源与品控审核提供严密、完整的批次级反向追溯链条与八本合规台账。
 
 ---
 
@@ -42,9 +42,9 @@ erDiagram
    - 编号规范：`PC-YYYYMMDD-XXX`（如 `PC-20260901-001`）。
    - 状态流转：`TEMPORARY_HOLDING` (暂养中) -> `PARTIALLY_OUTBOUND` (部分出库) -> `COMPLETED` (已完成) / `FROZEN` (异常冻结)。
 5. **蟹扣 (Crab Tag)**：
-   - 养殖户身份标识物，扣面印养殖户编码（JD号），仅标记来源养殖户。按数量进行日清日结管控。
+   - 养殖户身份标识物，扣面印养殖户编码（JD号），仅标记来源养殖户。领用不绑定暂养池数量，实际使用数在捆扎完成时按合格只数自动核销。
 6. **出库单 (Outbound Order)**：
-   - 货物流向记录。绑扣在出库打包时进行，边绑边核。
+   - 货物流向记录。出库只消费后续可发库存，不再修改蟹扣已使用数。
    - 编号规范：`CK-YYYYMMDD-XXX`（如 `CK-20260901-001`）。
    - 状态流转：`PENDING_REVIEW` (待审核) -> `APPROVED` (已出库) / `REJECTED` (已驳回)。
 7. **渠道与门店 (Channel & Store)**：
@@ -58,14 +58,14 @@ erDiagram
 
 $$\begin{aligned}
 \text{1. 年度源头上限:} &\quad \sum \text{Batch.inPoolCount}_{\text{year}} \le \text{Farmer.annualQuota} \\
-\text{2. 蟹扣领用余量:} &\quad \text{TagClaim.count} \le \min\left(\text{Farmer.activeInPoolTotal}, \text{Farmer.remainingQuota}\right) \\
+\text{2. 蟹扣领用额度:} &\quad \text{TagClaim.claimCount} \le \text{Farmer.quota} - \sum \text{TagClaim.boundCount} \\
 \text{3. 批次账面存活:} &\quad \text{BookInPool} = \text{inPoolCount} - \text{outPoolCount} - \text{registeredLoss} \\
 \text{4. 单票出库校验:} &\quad \text{Outbound.count} \le \text{Batch.BookInPool} \quad \land \quad \text{Outbound.count} = \text{Order.count} \\
-\text{5. 当日领扣轧平:} &\quad \text{DailyClaimCount} = \text{DailyBoundCount} + \text{DailyReturnCount} + \text{DailyScrapCount}
+\text{5. 当日领扣轧平:} &\quad \text{DailyClaimCount} = \text{DailyCompletedBundleCount} + \text{DailyReturnCount} + \text{DailyScrapCount}
 \end{aligned}$$
 
 ### 综合不等式链：
-$$\text{累计出库数} \le \text{累计已核销蟹扣数} \le \text{累计领扣数} \le \text{累计入池数} \le \text{年度核定总额度}$$
+$$\text{累计出库数} \le \text{累计完成绑扎数} \le \text{年度核定总额度}$$
 
 ---
 
@@ -82,12 +82,13 @@ sequenceDiagram
 
     FarmerAdmin->>System: 1. 录入养殖户档案及面积 (自动核定额度 600只/亩)
     Warehouse->>System: 2. 活蟹到厂入池登记 (创建批次, 校验年度额度 & 池子规格)
-    Warehouse->>System: 3. 提交蟹扣领用申请 (系统计算可领余量, 校验在池存活)
+    Warehouse->>System: 3. 提交蟹扣领用申请 (仅校验年度额度余量)
     QA->>System: 4. 审批蟹扣领用申请
-    Warehouse->>System: 5. 领扣并出库打包 (按批次打包绑扣, 提交出库申请)
-    QA->>System: 6. 审批出库单 (强校验批次在池存活与单票一致)
-    Warehouse->>System: 7. 回填物流单号 & 当日蟹扣日结轧平 (领扣 = 绑扣 + 退回 + 作废)
-    ChannelUser->>System: 8. 渠道端反向追溯查询 (出库单 -> 批次 -> 暂养池 -> 养殖户 -> 围网)
+    Warehouse->>System: 5. 创建捆扎批次 (不扣减蟹扣)
+    Warehouse->>System: 6. 完成捆扎 (boundCount += 合格只数)
+    QA->>System: 7. 审批后续出库单
+    Warehouse->>System: 8. 回填物流单号 & 当日蟹扣日结轧平 (领扣 = 完成绑扎 + 退回 + 作废)
+    ChannelUser->>System: 9. 渠道端反向追溯查询 (出库单 -> 批次 -> 暂养池 -> 养殖户 -> 围网)
 ```
 
 ### 4.2 损耗管理（盘点登记制）
@@ -110,12 +111,16 @@ sequenceDiagram
 
 ---
 
-## 6. 四大合规台账与追溯矩阵 (PRD V1.4 标准)
+## 6. 八本合规台账与追溯矩阵
 
 1. **台账一 · 养殖户与围网台账**：全量静态主档，展示编号、养殖面积、核定额度（600只/亩）、当年累计入池、剩余额度、信用等级。
-2. **台账二 · 蟹扣领用台账**：支持按日筛选，展示养殖户、当日领用、绑扣出库、退回、作废及轧平状态（已轧平 / 未轧平告警）。
+2. **台账二 · 蟹扣领用台账**：支持按日筛选，展示养殖户、当日领用、已完成绑扎、退回、作废及轧平状态（已轧平 / 未轧平告警）。
 3. **台账三 · 暂养池出入库台账**：支持按日筛选，记录各池批次流动（入池数、出池数、损耗数、实时在池存活）及**批次监测报告在线查验**。
-4. **台账四 · 出库与订单台账**：支持按日筛选，按日记录发货单、对应批次、门店全称、所属渠道、订单数、出库数、物流单号与审批状态。
+4. **台账四 · 捆扎作业台账**：记录捆扎批次、原料批次、蟹扣批次、班组、蟹绳批次、投入数、合格数、损耗数与完成状态。
+5. **台账五 · 分拣作业台账**：记录分拣任务、来源捆扎批次、设备、规格、投入数、合格数、损耗数与损耗率。
+6. **台账六 · 保鲜预冷台账**：记录预冷入库批次、库位、规格、入库数、已发货数、发货损耗数与当前余量。
+7. **台账七 · 出库与订单台账**：记录发货单、完整 CR/FJR/KZD/YL 生产链、门店、渠道、出库数、物流单号与审批状态。
+8. **台账八 · 品控记录表**：集中归集十二类纸质品控记录、结论、附件与上传人。
 
 ---
 
@@ -125,4 +130,3 @@ sequenceDiagram
 - **前台界面降噪**：移除前台手工日结轧平交互，日清日结由后台系统守恒规则自动核对并在台账二集中归集，前台仅保留申请与审批。
 - **主档配置闭环**：补齐暂养池（ZY-XX）、销售门店（ST-XX）、签约养殖户的维护功能，严格实施在养活蟹防删与出库订单防删拦截。
 - **异常闭环机制**：品控主管支持对争议批次一键“冻结/解冻”；出库单与蟹扣申请被驳回后支持申请人“修改重提”。
-

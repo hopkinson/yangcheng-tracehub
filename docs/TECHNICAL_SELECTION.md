@@ -13,7 +13,7 @@
 | **样式体系** | **Tailwind CSS v4** | 基于 CSS 变量的语义化设计令牌（`bg-primary`、`text-muted-foreground`），内置深浅色主题适配 |
 | **图标库** | **lucide-react** | 符合 shadcn/ui 规范，严格使用 `data-icon` 属性与标准尺寸控制 |
 | **表单与校验** | **React Hook Form + Zod + FormField** | 客户端即时联动校验（如输入面积实时计算额度）+ 服务端 Server Actions 双重校验 |
-| **高级数据表格** | **TanStack Table v8 + nuqs** | 四大合规台账的按日筛选、列排序、条件过滤与 URL 状态持久化（URL SearchParams 同步） |
+| **高级数据表格** | **TanStack Table v8 + nuqs** | 八本合规台账的按日筛选、列排序、条件过滤与 URL 状态持久化（URL SearchParams 同步） |
 | **可视化图表** | **shadcn/ui Charts (基于 Recharts)** | 额度使用率环形图、在池存活与损耗趋势图、四大数量流转漏斗图 |
 | **消息通知** | **Sonner (shadcn/ui Toast)** | 优雅的操作反馈与品控拦截告警通知 |
 | **鉴权与 RBAC** | **NextAuth.js v5 / JWT Session + Middleware** | 细粒度角色权限控制（超级管理员、养殖户管理员、仓库管理员、品控主管、渠道审计） |
@@ -42,7 +42,7 @@ yangcheng-tracehub/
 │   │   │   ├── tags/            # 蟹扣领用、核销与日结
 │   │   │   ├── outbound/        # 出库申请、打包绑扣、物流回填
 │   │   │   ├── approvals/       # 品控审批中心 (领扣/出库/损耗/特批)
-│   │   │   ├── ledgers/         # 四大合规台账查询 (支持按日筛选与导出)
+│   │   │   ├── ledgers/         # 八本合规台账查询 (支持按日筛选与导出)
 │   │   │   ├── trace/           # 批次级全链路反向追溯查询 (渠道隔离)
 │   │   │   └── settings/        # 门店档案与系统配置
 │   │   └── api/                 # 导出/外部渠道 API

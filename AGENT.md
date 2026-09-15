@@ -21,19 +21,21 @@
 ```mermaid
 graph LR
     A[养殖户核定额度<br/>面积 × 600只/亩] -->|≤ 额度| B[原料批次入池<br/>一批一公母一规格]
-    B -->|≤ 在池存活| C[蟹扣领用申请<br/>动态计算可领余量]
-    C -->|出库打包绑扣| D[出库单发运<br/>单票核对 + 在池校验]
-    D -->|逐日轧平对账| E[日结闭环<br/>领扣 = 绑扣 + 退回 + 作废]
+    B -->|领用不绑定在池数量| C[蟹扣领用申请<br/>仅校验年度额度]
+    C -->|创建捆扎不扣减| D[捆扎作业]
+    D -->|完成捆扎时按合格只数扣减| E[已完成绑扎]
+    E -->|后续流转| F[分拣 / 保鲜 / 出库]
+    F -->|逐日轧平对账| G[日结闭环<br/>领扣 = 完成绑扎 + 退回 + 作废]
 ```
 
 1. **源头额度卡控**：$\sum \text{Batch.inPoolCount}_{\text{year}} \le \text{Farmer.area} \times 600$。超额直接拦截，确需放行必须 `ADMIN` 特批留痕。
-2. **蟹扣领用余量**：$\text{TagClaim.count} \le \min\left(\text{Farmer.activeInPoolTotal}, \text{Farmer.remainingQuota}\right)$。
+2. **蟹扣领用额度**：领用申请不与暂养池在池数或生产流转数量绑定；$\text{TagClaim.claimCount} \le \text{Farmer.quota} - \sum \text{TagClaim.boundCount}$，且 `boundCount` 只在捆扎完成时按合格只数增加。
 3. **批次在池存活**：$\text{BookInPool} = \text{inPoolCount} - \text{outPoolCount} - \text{lossCount} \ge 0$。出库数量严禁大于此值。
 4. **单票出库核对**：$\text{OutboundCount} = \text{ChannelOrderCount}$（出库数量严格等于渠道订单数量）。
-5. **蟹扣日清日结轧平**：$\text{当日领扣数} = \text{当日绑扣出库数} + \text{当日退回数} + \text{当日作废数}$（必须逐日轧平）。
+5. **蟹扣日清日结轧平**：$\text{当日领扣数} = \text{当日完成绑扎数} + \text{当日退回数} + \text{当日作废数}$（必须逐日轧平，完成绑扎数不可手工修改）。
 
 ### 核心不等式链：
-$$\text{累计出库数} \le \text{累计已核销蟹扣数} \le \text{累计领扣数} \le \text{累计入池数} \le \text{年度核定总额度}$$
+$$\text{累计出库数} \le \text{累计完成绑扎数} \le \text{年度核定总额度}$$
 
 ---
 

@@ -241,7 +241,7 @@ model TagClaim {
   farmer          Farmer          @relation(fields: [farmerId], references: [id])
   
   claimCount      Int             // 本次申请领扣数量
-  boundCount      Int             @default(0) // 当日已绑扣出库数量
+  boundCount      Int             @default(0) // 已完成捆扎合格数量（完成捆扎时自动归集）
   returnedCount   Int             @default(0) // 当日退回数量
   returnReason    String?
   scrappedCount   Int             @default(0) // 当日作废数量

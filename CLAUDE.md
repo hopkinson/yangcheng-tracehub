@@ -39,10 +39,10 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 本系统是**数量闭环管控与供应链合规证明系统**（非防伪防串货系统），证明：**发出的带扣蟹总量 $\le$ 签约养殖户的理论核定产量**。
 
 1. **源头额度卡控**：$\sum \text{Batch.inPoolCount}_{\text{year}} \le \text{Farmer.area} \times 600$（超额须 `ADMIN` 特批并在 `SpecialApproval` 表留痕）。
-2. **蟹扣领用余量**：$\text{TagClaim.count} \le \min\left(\text{Farmer.activeInPool}, \text{Farmer.remainingQuota}\right)$。
+2. **蟹扣领用额度**：领用申请不与暂养池在池数或生产流转数量绑定；$\text{TagClaim.claimCount} \le \text{Farmer.quota} - \sum \text{TagClaim.boundCount}$，其中 `boundCount` 仅在捆扎完成时按合格只数增加。
 3. **批次在池存活**：$\text{BookInPool} = \text{inPool} - \text{outPool} - \text{lossCount} \ge 0$。
 4. **单票出库校验**：$\text{OutboundCount} = \text{ChannelOrderCount} \le \text{Batch.BookInPool}$。
-5. **蟹扣日结轧平**：$\text{当日领扣数} = \text{当日绑扣出库数} + \text{当日退回数} + \text{当日作废数}$。
+5. **蟹扣日结轧平**：$\text{当日领扣数} = \text{当日完成绑扎数} + \text{当日退回数} + \text{当日作废数}$；已完成绑扎数由系统自动归集，日结不可手工修改。
 6. **暂养池防混池**：同公母且同重量档位方可复用入池；异规格绝对禁止混池；池内有活蟹禁止物理删除。
 7. **损耗盘点制**：$\text{本次损耗} = \text{账面在池} - \text{实盘数量}$，禁止负损耗；损耗率 $> 5\%$ 强制必填原因并标红告警。
 
