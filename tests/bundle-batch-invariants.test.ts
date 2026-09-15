@@ -8,12 +8,10 @@ async function main() {
   // Find an approved tag claim with available quota
   const allClaims = await prisma.tagClaim.findMany({
     where: { status: "APPROVED" },
-    include: { bundleBatches: { include: { lines: true } } },
   });
 
   let availableClaim = allClaims.find((c) => {
-    const used = c.bundleBatches.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + l.count, 0), 0);
-    const avail = c.claimCount - Math.max(used, c.boundCount || 0) - (c.returnedCount || 0) - (c.scrappedCount || 0);
+    const avail = c.claimCount - (c.boundCount || 0) - (c.returnedCount || 0) - (c.scrappedCount || 0);
     return avail > 500;
   });
 
@@ -29,12 +27,10 @@ async function main() {
         status: "APPROVED",
         applicantId: admin.id,
       },
-      include: { bundleBatches: { include: { lines: true } } },
     });
   }
 
-  const alreadyUsed = availableClaim.bundleBatches.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + l.count, 0), 0);
-  const availableTags = availableClaim.claimCount - Math.max(alreadyUsed, availableClaim.boundCount || 0) - (availableClaim.returnedCount || 0) - (availableClaim.scrappedCount || 0);
+  const availableTags = availableClaim.claimCount - (availableClaim.boundCount || 0) - (availableClaim.returnedCount || 0) - (availableClaim.scrappedCount || 0);
 
   const bundleGroup = await prisma.bundleGroup.findFirst();
   if (!bundleGroup) {

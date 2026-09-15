@@ -116,6 +116,7 @@ async function runColdOutboundFlowTest() {
       data: {
         code: `KZD-${testSuffix}`,
         groupId: bundleGroup.id,
+        sourceBatchId: rawBatch.id,
         tagClaimId: tagClaim.id,
         ropeBatch: `XS-${testSuffix}`,
         status: "COMPLETED",
@@ -157,8 +158,7 @@ async function runColdOutboundFlowTest() {
         storeId: coldStore.id,
         type: "INTAKE",
         count: 500,
-        refType: "SORT",
-        refId: sortTask.code,
+        sortTaskId: sortTask.id,
         operator: "测试仓管",
       },
     });
@@ -187,7 +187,6 @@ async function runColdOutboundFlowTest() {
     const outboundOrder = await createStoreOutboundAction({
       storeId: store.id,
       orderIds: [order.id],
-      coldLogId: coldLog.id,
       transportCompany: "苏州冷链专车",
       contactName: "测试联系人",
       contactPhone: "13800000000",

@@ -247,6 +247,7 @@ async function runFullSystemTests() {
       data: {
         code: testBundleBatchCode,
         groupId: bundleGroup.id,
+        sourceBatchId: batch1.id,
         tagClaimId: preTagClaim.id,
         ropeBatch: `XS-2026-${uid}`,
         status: "BUNDLING",
@@ -294,8 +295,7 @@ async function runFullSystemTests() {
         storeId: coldStore.id,
         type: "INTAKE",
         count: sortQualified, // 5,880 只
-        refType: "SORT",
-        refId: sortTask.code,
+        sortTaskId: sortTask.id,
         operator: "李仓管",
       },
     });
@@ -333,27 +333,23 @@ async function runFullSystemTests() {
     console.log(`  ✔ 渠道订单导入完成 (订单号: ${order1.orderNo}, 需求: ${order1.gender} ${order1.weightTier} ${order1.count} 只)\n`);
 
     // -------------------------------------------------------------------------
-    // 模块 8: 蟹扣领用申请与双重卡控 (Tag Claim Invariants)
+    // 模块 8: 蟹扣领用申请与年度额度卡控 (Tag Claim Invariants)
     // -------------------------------------------------------------------------
-    console.log("▶ [模块 8] 蟹扣可领余量动态卡控 min(在池存活, 剩余额度) 检验");
-    // 当前在池存活 = 11,760 只; 养殖户剩余额度 = 36,000 - 12,000 = 24,000
-    // 可领余量 = min(11760, 24000) = 11,760
+    console.log("▶ [模块 8] 蟹扣领用仅按年度额度检验");
     const tagClaimCheck = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeClaimed: 0,
-      activeInPoolCount: 11760,
-      requestedCount: 4000,
+      cumulativeBoundCount: 0,
+      requestedCount: 15000,
     });
-    assert.equal(tagClaimCheck.valid, true);
+    assert.equal(tagClaimCheck.valid, true, "领扣不再受在池存活数量限制");
 
     const overTagClaimCheck = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeClaimed: 0,
-      activeInPoolCount: 11760,
-      requestedCount: 15000, // 超过在池存活
+      cumulativeBoundCount: 24000,
+      requestedCount: 15000,
     });
-    assert.equal(overTagClaimCheck.valid, false, "超在池存活必须拦截");
-    console.log("  ✔ 蟹扣领用双重卡控规则核验 100% 通过\n");
+    assert.equal(overTagClaimCheck.valid, false, "超年度剩余额度必须拦截");
+    console.log("  ✔ 蟹扣领用年度额度规则核验 100% 通过\n");
 
     // -------------------------------------------------------------------------
     // 模块 9: 捆扎包装流水线作业 (Bundling Lines & Packing)
@@ -448,8 +444,8 @@ async function runFullSystemTests() {
     // -------------------------------------------------------------------------
     // 模块 11: 蟹扣日清日结数量对账 (Daily Tag Balancing)
     // -------------------------------------------------------------------------
-    console.log("▶ [模块 11] 蟹扣日清日结轧平核销 (领扣 = 绑扣出库 + 当日退回 + 当日作废)");
-    // 领用 8,000 只，出库绑扣 4,000 只，打包退回 3,800 只，断裂作废 200 只
+    console.log("▶ [模块 11] 蟹扣日清日结轧平核销 (领扣 = 完成绑扎 + 当日退回 + 当日作废)");
+    // 领用 8,000 只，完成绑扎 4,000 只，退回 3,800 只，断裂作废 200 只
     const tagBalance = Invariants.checkDailyBalance({
       claimedCount: preTagClaim.claimCount, // 8000
       boundCount: 4000,
@@ -488,9 +484,9 @@ async function runFullSystemTests() {
     console.log(`  ✔ 品控特批记录留痕归档成功 (特批流水号: ${specialApproval.id})\n`);
 
     // -------------------------------------------------------------------------
-    // 模块 13: 四本核心台账数据守恒穿透 (Four Master Ledgers)
+    // 模块 13: 八本核心台账数据守恒穿透 (Eight Master Ledgers)
     // -------------------------------------------------------------------------
-    console.log("▶ [模块 13] 数量守恒硬约束与四本核心台账数据穿透核对");
+    console.log("▶ [模块 13] 数量守恒硬约束与八本核心台账数据穿透核对");
     // 13.1 养殖户台账
     const fLedger = await prisma.farmer.findUniqueOrThrow({
       where: { id: farmer.id },
@@ -518,7 +514,7 @@ async function runFullSystemTests() {
       where: { id: outboundOrder.id },
     });
     assert.equal(oLedger.outboundCount, oLedger.channelOrderCount, "出库数必须等于渠道订单数");
-    console.log(`  ✔ 四本台账守恒硬约束穿透核对 100% 成立！(当前批次在池存活: ${bookInPool} 只)\n`);
+    console.log(`  ✔ 八本台账守恒硬约束穿透核对 100% 成立！(当前批次在池存活: ${bookInPool} 只)\n`);
 
     // -------------------------------------------------------------------------
     // 模块 14: 山姆渠道反向溯源与可信穿透 (Reverse Traceability)
@@ -600,7 +596,7 @@ async function runFullSystemTests() {
       { path: "/tags", name: "蟹扣领用与日清日结", auth: true, expected: 200 },
       { path: "/outbound", name: "出库审批与物流回填", auth: true, expected: 200 },
       { path: "/approvals", name: "品控审批与特批中心", auth: true, expected: 200 },
-      { path: "/ledgers", name: "四本核心台账审计", auth: true, expected: 200 },
+      { path: "/ledgers", name: "八本核心台账审计", auth: true, expected: 200 },
       { path: "/trace", name: "山姆渠道反向溯源", auth: true, expected: 200 },
       { path: "/stores", name: "渠道与门店档案配置", auth: true, expected: 200 },
       { path: "/users", name: "组织架构与权限管理", auth: true, expected: 200 },

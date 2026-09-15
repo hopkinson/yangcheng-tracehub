@@ -55,33 +55,24 @@ console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环
   console.log("  ✔ 暂养池仅限空池入池与防混池拦截测试通过");
 }
 
-// 3. 卡口二：蟹扣领用余量动态卡控
+// 3. 卡口二：蟹扣领用仅按年度额度卡控，不与暂养池/生产流转数量绑定
 {
-  console.log("▶ [Test 3] 蟹扣可领余量与在池存活校验");
+  console.log("▶ [Test 3] 蟹扣领用年度额度校验");
   const validClaim = Invariants.checkTagClaim({
     farmerQuota: 60000,
-    cumulativeClaimed: 10000,
-    activeInPoolCount: 5000,
+    cumulativeBoundCount: 10000,
     requestedCount: 3000,
   });
   assert.equal(validClaim.valid, true);
-
-  const overPool = Invariants.checkTagClaim({
-    farmerQuota: 60000,
-    cumulativeClaimed: 10000,
-    activeInPoolCount: 2000,
-    requestedCount: 3000,
-  });
-  assert.equal(overPool.valid, false, "领扣数超过名下在池存活应被拦截");
+  assert.equal(validClaim.maxClaimable, 50000);
 
   const overQuota = Invariants.checkTagClaim({
     farmerQuota: 12000,
-    cumulativeClaimed: 10000,
-    activeInPoolCount: 5000,
+    cumulativeBoundCount: 10000,
     requestedCount: 3000,
   });
   assert.equal(overQuota.valid, false, "领扣数超过年度剩余额度应被拦截");
-  console.log("  ✔ 蟹扣余量双重约束测试通过");
+  console.log("  ✔ 蟹扣领用仅受年度额度约束测试通过");
 }
 
 // 4. 卡口三：盘点损耗与 5% 红线告警

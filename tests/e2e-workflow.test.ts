@@ -286,29 +286,24 @@ async function runE2EWorkflowTests() {
     console.log("  ✔ 高危损耗风控测试通过 (损耗率 9.0% 强制标红并触发品控介入)\n");
 
     // -------------------------------------------------------------------------
-    // 闭环 6：蟹扣领用申请、余量双重卡控与审批
+    // 闭环 6：蟹扣领用申请、年度额度卡控与审批
     // -------------------------------------------------------------------------
-    console.log("▶ [闭环 6] 蟹扣可领余量动态计算 min(在池存活, 剩余额度) 与申领审批");
-    
-    // 批次1账面在池: 10000 - 0 - 200 = 9800; 批次2账面在池: 5000; 合计在池存活 = 14800
-    // 养殖户剩余额度 = 30000 - 15000 = 15000; 可领余量 = min(14800, 15000) = 14800
+    console.log("▶ [闭环 6] 蟹扣领用仅按年度额度校验并进入审批");
+
     const claimCheck = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeClaimed: 0,
-      activeInPoolCount: 14800,
-      requestedCount: 6000,
-    });
-    assert.equal(claimCheck.valid, true);
-
-    // 尝试超额申请 20,000 只 (大于在池存活 14,800)
-    const overClaimCheck = Invariants.checkTagClaim({
-      farmerQuota: farmer.quota,
-      cumulativeClaimed: 0,
-      activeInPoolCount: 14800,
+      cumulativeBoundCount: 0,
       requestedCount: 20000,
     });
-    assert.equal(overClaimCheck.valid, false, "申请数量超过在池存活应被拦截");
-    console.log("  ✔ 蟹扣超领拦截测试通过 (申请数不得超过在池存活)");
+    assert.equal(claimCheck.valid, true, "领扣不再受在池存活数量限制");
+
+    const overClaimCheck = Invariants.checkTagClaim({
+      farmerQuota: farmer.quota,
+      cumulativeBoundCount: 15000,
+      requestedCount: 20000,
+    });
+    assert.equal(overClaimCheck.valid, false, "申请数量超过年度额度余量应被拦截");
+    console.log("  ✔ 蟹扣年度额度超领拦截测试通过");
 
     // 正常发起蟹扣领用 6,000 只
     const tagClaim = await prisma.tagClaim.create({
@@ -397,9 +392,9 @@ async function runE2EWorkflowTests() {
     // -------------------------------------------------------------------------
     // 闭环 8：蟹扣日清日结轧平核销与台账对账
     // -------------------------------------------------------------------------
-    console.log("▶ [闭环 8] 蟹扣日清日结数量对账 (领扣 = 绑扣出库 + 当日退回 + 当日作废)");
+    console.log("▶ [闭环 8] 蟹扣日清日结数量对账 (领扣 = 完成绑扎 + 当日退回 + 当日作废)");
     
-    // 领用 6,000 只，出库绑扣 4,000 只，退回 1,500 只，破损作废 500 只
+    // 领用 6,000 只，完成绑扎 4,000 只，退回 1,500 只，破损作废 500 只
     const bound = 4000;
     const returned = 1500;
     const scrapped = 500;

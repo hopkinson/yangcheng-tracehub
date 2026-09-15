@@ -34,8 +34,7 @@ async function testColdIntakeValidation() {
   const overActionRes = await createColdIntakeAction({
     storeId: store.id,
     count: 999999,
-    refType: "SORT",
-    refId: task.code,
+    sortTaskId: task.id,
     operator: "测试仓管",
   });
 
@@ -50,7 +49,7 @@ async function testColdIntakeValidation() {
   const emptyTaskRes = await createColdIntakeAction({
     storeId: store.id,
     count: 100,
-    refId: "",
+    sortTaskId: "",
     operator: "测试仓管",
   });
   assert.equal(emptyTaskRes.success, false, "未选分拣批次必须被拦截");
@@ -60,7 +59,7 @@ async function testColdIntakeValidation() {
   const fakeTaskRes = await createColdIntakeAction({
     storeId: store.id,
     count: 100,
-    refId: "FJR_NON_EXISTENT_999",
+    sortTaskId: "FJR_NON_EXISTENT_999",
     operator: "测试仓管",
   });
   assert.equal(fakeTaskRes.success, false, "不存在的分拣批次必须被拦截");
