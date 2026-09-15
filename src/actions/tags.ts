@@ -16,18 +16,15 @@ export async function requestTagClaimAction(data: {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
       include: {
-        batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
         tagClaims: { where: { status: "APPROVED" } },
       },
     });
 
-    const activeInPool = farmer.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
-    const cumulativeClaimed = farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+    const cumulativeBoundCount = farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
 
     const tagCheck = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeClaimed,
-      activeInPoolCount: activeInPool,
+      cumulativeBoundCount,
       requestedCount: data.claimCount,
     });
 
@@ -96,20 +93,17 @@ export async function resubmitTagClaimAction(data: {
       include: {
         farmer: {
           include: {
-            batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
             tagClaims: { where: { status: "APPROVED" } },
           },
         },
       },
     });
 
-    const activeInPool = claim.farmer.batches.reduce((sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount), 0);
-    const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+    const cumulativeBoundCount = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
 
     const tagCheck = Invariants.checkTagClaim({
       farmerQuota: claim.farmer.quota,
-      cumulativeClaimed,
-      activeInPoolCount: activeInPool,
+      cumulativeBoundCount,
       requestedCount: data.claimCount,
     });
 
@@ -146,7 +140,6 @@ export async function resubmitTagClaimAction(data: {
 
 export async function settleDailyTagClaimAction(data: {
   tagClaimId: string;
-  boundCount?: number;
   returnedCount: number;
   returnReason?: string;
   scrappedCount: number;
@@ -159,11 +152,9 @@ export async function settleDailyTagClaimAction(data: {
       where: { id: data.tagClaimId },
     });
 
-    const boundCount = data.boundCount ?? claim.boundCount;
-
     const balanceCheck = Invariants.checkDailyBalance({
       claimedCount: claim.claimCount,
-      boundCount,
+      boundCount: claim.boundCount,
       returnedCount: data.returnedCount,
       scrappedCount: data.scrappedCount,
     });
@@ -172,10 +163,14 @@ export async function settleDailyTagClaimAction(data: {
       throw new Error(balanceCheck.reason);
     }
 
-    const updatedClaim = await tx.tagClaim.update({
-      where: { id: claim.id },
+    const updateResult = await tx.tagClaim.updateMany({
+      where: {
+        id: claim.id,
+        boundCount: claim.boundCount,
+        returnedCount: claim.returnedCount,
+        scrappedCount: claim.scrappedCount,
+      },
       data: {
-        boundCount,
         returnedCount: data.returnedCount,
         returnReason: data.returnReason,
         scrappedCount: data.scrappedCount,
@@ -183,6 +178,10 @@ export async function settleDailyTagClaimAction(data: {
         isBalanced: true,
       },
     });
+    if (updateResult.count !== 1) {
+      throw new Error("蟹扣台账已变化，请刷新后重试");
+    }
+    const updatedClaim = await tx.tagClaim.findUniqueOrThrow({ where: { id: claim.id } });
 
     await tx.auditLog.create({
       data: {
@@ -192,7 +191,7 @@ export async function settleDailyTagClaimAction(data: {
         entityId: claim.id,
         details: JSON.stringify({
           claimCount: claim.claimCount,
-          boundCount: data.boundCount,
+          boundCount: claim.boundCount,
           returnedCount: data.returnedCount,
           scrappedCount: data.scrappedCount,
         }),

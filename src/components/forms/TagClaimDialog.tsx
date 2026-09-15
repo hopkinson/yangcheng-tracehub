@@ -22,8 +22,7 @@ export function TagClaimDialog({
     name: string;
     code: string;
     quota: number;
-    activeInPool: number;
-    claimedSoFar: number;
+    boundSoFar: number;
   }>;
   userId: string;
 }) {
@@ -49,8 +48,8 @@ export function TagClaimDialog({
 
   const selectedFarmerId = form.watch("farmerId");
   const currentFarmer = farmers.find((f) => f.id === selectedFarmerId);
-  const remainingQuota = currentFarmer ? Math.max(0, currentFarmer.quota - currentFarmer.claimedSoFar) : 0;
-  const maxClaimable = currentFarmer ? Math.min(currentFarmer.activeInPool, remainingQuota) : 0;
+  const remainingQuota = currentFarmer ? Math.max(0, currentFarmer.quota - currentFarmer.boundSoFar) : 0;
+  const maxClaimable = remainingQuota;
 
   async function onSubmit(data: TagClaimFormValues) {
     const count = Number(data.claimCount);
@@ -112,11 +111,10 @@ export function TagClaimDialog({
                     </FormControl>
                     <SelectContent>
                       {farmers.map((f) => {
-                        const rem = Math.max(0, f.quota - f.claimedSoFar);
-                        const maxAvail = Math.min(f.activeInPool, rem);
+                        const rem = Math.max(0, f.quota - f.boundSoFar);
                         return (
                           <SelectItem key={f.id} value={f.id}>
-                            {f.code} - {f.name} (可领余量: {maxAvail} 只)
+                            {f.code} - {f.name} (额度余量: {rem} 只)
                           </SelectItem>
                         );
                       })}
@@ -134,15 +132,11 @@ export function TagClaimDialog({
                   <span>{currentFarmer.quota.toLocaleString()} 只</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">该户名下在池存活合计:</span>
-                  <span>{currentFarmer.activeInPool.toLocaleString()} 只</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">年度累计已核销蟹扣:</span>
-                  <span>{currentFarmer.claimedSoFar.toLocaleString()} 只</span>
+                  <span className="text-muted-foreground">累计已完成绑扎:</span>
+                  <span>{currentFarmer.boundSoFar.toLocaleString()} 只</span>
                 </div>
                 <div className="flex justify-between border-t pt-1 font-bold text-emerald-600">
-                  <span>当前最大可领扣余量:</span>
+                  <span>当前年度额度余量:</span>
                   <span className="text-sm">{maxClaimable.toLocaleString()} 只</span>
                 </div>
               </div>

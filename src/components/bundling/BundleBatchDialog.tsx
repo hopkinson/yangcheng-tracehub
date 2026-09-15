@@ -57,11 +57,13 @@ export function BundleBatchDialog({
   materialBatches,
   tagClaims,
   pools,
+  defaultRopeBatch,
 }: {
   groups: GroupOption[];
   materialBatches: MaterialBatchOption[];
   tagClaims: TagClaimOption[];
   pools: PoolOption[];
+  defaultRopeBatch: string;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -72,7 +74,7 @@ export function BundleBatchDialog({
   const [selectedBatchId, setSelectedBatchId] = useState(firstBatch?.id || "");
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedTagId, setSelectedTagId] = useState(firstTagForBatch(firstBatch)?.id || "");
-  const [ropeBatch, setRopeBatch] = useState("");
+  const [ropeBatch, setRopeBatch] = useState(defaultRopeBatch);
   const [selectedPools, setSelectedPools] = useState<
     Array<{ poolId: string; gender: string; weightTier: string; count: number }>
   >([]);
@@ -102,7 +104,7 @@ export function BundleBatchDialog({
       setSelectedBatchId(nextBatch?.id || "");
       setSelectedTagId(firstTagForBatch(nextBatch)?.id || "");
       setSelectedPools([]);
-      setRopeBatch("");
+      setRopeBatch(defaultRopeBatch);
     }
     setOpen(nextOpen);
   };
