@@ -71,6 +71,16 @@ function runDiagnostics() {
   assert.equal(female3.available, 13, `可出存量应为 13，实际为 ${female3.available}`);
   assert.equal(female3.usagePct, 96, `占用率应为 96%，实际为 ${female3.usagePct}`);
 
+  const withLoss = Invariants.aggregateSpecStocks({
+    sortTasks,
+    outboundLines,
+    outboundLosses: [{ gender: "FEMALE", weightTier: "3两", count: 3 }],
+  });
+  const female3WithLoss = withLoss.find((s) => s.gender === "FEMALE" && s.weightTier === "3.0两");
+  assert.equal(female3WithLoss?.loss, 3, "出库损耗应按标准化规格累计");
+  assert.equal(female3WithLoss?.available, 10, "可出库存应扣除出库损耗");
+  assert.equal(female3WithLoss?.usagePct, 97, "占用比例应包含出库损耗");
+
   console.log("  ✔ Test 2 通过: 规格库存成功合并，不再拆分展示\n");
 }
 

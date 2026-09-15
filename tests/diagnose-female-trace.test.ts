@@ -103,7 +103,7 @@ async function runTest() {
   });
   const groupA = await prisma.bundleGroup.create({ data: { code: `P-A-${ts}`, name: `P1组 公-${ts}` } });
   const bundleA = await prisma.bundleBatch.create({
-    data: { code: `KZD-A-${ts}`, groupId: groupA.id, tagClaimId: tagClaimA.id, ropeBatch: `XS-A-${ts}`, status: "COMPLETED", doneAt: new Date() },
+    data: { code: `KZD-A-${ts}`, groupId: groupA.id, sourceBatchId: batchA.id, tagClaimId: tagClaimA.id, ropeBatch: `XS-A-${ts}`, status: "COMPLETED", doneAt: new Date() },
   });
   const machineA = await prisma.sortMachine.create({ data: { code: `FJ-A-${ts}`, name: "分拣机A", status: "ACTIVE" } });
   const sortTaskA = await prisma.sortTask.create({
@@ -116,7 +116,7 @@ async function runTest() {
   });
   const groupB = await prisma.bundleGroup.create({ data: { code: `P-B-${ts}`, name: `P2组 母-${ts}` } });
   const bundleB = await prisma.bundleBatch.create({
-    data: { code: `KZD-B-${ts}`, groupId: groupB.id, tagClaimId: tagClaimB.id, ropeBatch: `XS-B-${ts}`, status: "COMPLETED", doneAt: new Date() },
+    data: { code: `KZD-B-${ts}`, groupId: groupB.id, sourceBatchId: batchB.id, tagClaimId: tagClaimB.id, ropeBatch: `XS-B-${ts}`, status: "COMPLETED", doneAt: new Date() },
   });
   const machineB = await prisma.sortMachine.create({ data: { code: `FJ-B-${ts}`, name: "分拣机B", status: "ACTIVE" } });
   const sortTaskB = await prisma.sortTask.create({
@@ -126,10 +126,10 @@ async function runTest() {
   // Cold store & logs
   const coldStore = await prisma.coldStore.create({ data: { code: `BX-A-${ts}`, name: "保鲜库" } });
   const coldLogA = await prisma.coldLog.create({
-    data: { code: `CR-0902-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, refType: "SORT", refId: sortTaskA.code, operator: "仓管" },
+    data: { code: `CR-0902-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, sortTaskId: sortTaskA.id, operator: "仓管" },
   });
   const coldLogB = await prisma.coldLog.create({
-    data: { code: `CR-0901-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, refType: "SORT", refId: sortTaskB.code, operator: "仓管" },
+    data: { code: `CR-0901-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, sortTaskId: sortTaskB.id, operator: "仓管" },
   });
 
   // Orders:
@@ -165,14 +165,10 @@ async function runTest() {
     },
   });
 
-  // 执行门店出库申请 (带 specBatchMap)
+  // 执行门店出库申请，系统按真实冷库链路自动 FIFO 分配。
   const outboundRes = await createStoreOutboundAction({
     storeId: store.id,
     orderIds: [order1.id, order2.id],
-    specBatchMap: {
-      "FEMALE_3.0两": coldLogB.id,
-      "MALE_4.0两": coldLogA.id,
-    },
     contactName: "测试联系人",
     contactPhone: "13800000000",
     applicantId: admin.id,
@@ -249,8 +245,8 @@ async function runTest() {
     `公蟹预冷应为 ${coldLogA.code}，实际为: ${coldStepM.subtitle}`
   );
 
-  console.log("\n🔍 [Phase 2] 模拟生产环境无 specBatchMap 且出库单仅绑定公蟹 coldLog 时的母蟹防串溯源测试...");
-  // 创建一个仅挂靠公蟹 coldLogA、且无 auditLog specBatchMap 的多规格出库单
+  console.log("\n🔍 [Phase 2] 验证多规格出库只按行级 coldLogId 溯源，单头冷库字段不能串链...");
+  // 单头仍保留公蟹 coldLog 兼容字段，但每条出库明细都绑定自己的真实 ColdLog。
   const obDirect = await prisma.outboundOrder.create({
     data: {
       code: `CK-DIRECT-${ts}`,
@@ -267,8 +263,8 @@ async function runTest() {
       approvedAt: new Date(),
       lines: {
         create: [
-          { orderNo: `SO-F-${ts}`, gender: "FEMALE", weightTier: "3.0两", count: 300 },
-          { orderNo: `SO-M-${ts}`, gender: "MALE", weightTier: "4.0两", count: 300 },
+          { orderNo: `SO-F-${ts}`, gender: "FEMALE", weightTier: "3.0两", count: 300, coldLogId: coldLogB.id },
+          { orderNo: `SO-M-${ts}`, gender: "MALE", weightTier: "4.0两", count: 300, coldLogId: coldLogA.id },
         ],
       },
     },
@@ -279,7 +275,7 @@ async function runTest() {
   const directFemale = traceDirect.lines.find((l) => l.gender === "FEMALE");
   assert.ok(directFemale, "必须包含母蟹行");
 
-  console.log("\n▶ 无 specBatchMap 场景下母蟹溯源节点验证:");
+  console.log("\n▶ 行级真实外键场景下母蟹溯源节点验证:");
   for (const node of directFemale.chain) {
     console.log(`  Step ${node.step} [${node.stageName}]: ${node.title} | ${node.subtitle}`);
   }

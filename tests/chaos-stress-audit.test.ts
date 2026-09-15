@@ -356,30 +356,28 @@ async function runChaosStressAudit() {
   });
 
   // -------------------------------------------------------------------------
-  // 5. 蟹扣领用双重上限与日清日结轧平
+  // 5. 蟹扣领用年度额度与日清日结轧平
   // -------------------------------------------------------------------------
-  console.log("\n▶ [5/8] 模块五：蟹扣领用双重余量卡控与日清日结轧平");
+  console.log("\n▶ [5/8] 模块五：蟹扣领用年度额度卡控与日清日结轧平");
 
-  await trackTest("申请蟹扣数超过在池存活数时被拦截", () => {
-    const claimOverActive = Invariants.checkTagClaim({
+  await trackTest("申请蟹扣不再受在池存活数限制", () => {
+    const claimAbovePool = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeClaimed: 0,
-      activeInPoolCount: 7800,
-      requestedCount: 8500, // 8500 > 7800
+      cumulativeBoundCount: 0,
+      requestedCount: 8500,
     });
-    assert.equal(claimOverActive.valid, false);
-    assert.equal(claimOverActive.maxClaimable, 7800);
+    assert.equal(claimAbovePool.valid, true);
+    assert.equal(claimAbovePool.maxClaimable, farmer.quota);
   });
 
-  await trackTest("申请蟹扣数在合规余量内时放行", () => {
+  await trackTest("申请蟹扣数在年度额度内时放行", () => {
     const validClaim = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeClaimed: 0,
-      activeInPoolCount: 7800,
+      cumulativeBoundCount: 0,
       requestedCount: 6000,
     });
     assert.equal(validClaim.valid, true);
-    assert.equal(validClaim.maxClaimable, 7800);
+    assert.equal(validClaim.maxClaimable, farmer.quota);
   });
 
   // 创建蟹扣领用单
@@ -437,6 +435,7 @@ async function runChaosStressAudit() {
     data: {
       code: `KZD-CHAOS-${testId}`,
       groupId: bundleGroup.id,
+      sourceBatchId: rawBatch.id,
       tagClaimId: tagClaim.id,
       ropeBatch: `XS2026-${testId}`,
       status: "BUNDLING",
@@ -505,8 +504,7 @@ async function runChaosStressAudit() {
       storeId: coldStore.id,
       type: "INTAKE",
       count: 4000,
-      refType: "SORT",
-      refId: sortTask.code,
+      sortTaskId: sortTask.id,
       operator: "李四仓管",
     },
   });
@@ -593,6 +591,7 @@ async function runChaosStressAudit() {
             gender: "MALE",
             weightTier: "4.0两",
             count: 4000,
+            coldLogId: coldLog.id,
             expressCompany: "顺丰冷链速运",
             waybillNo: `SF-CHAOS-${testId}`,
           },

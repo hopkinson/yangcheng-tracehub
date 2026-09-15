@@ -82,6 +82,7 @@ async function testTagClaimSettlementRepro() {
     data: {
       code: `KZD-A-${ts}`,
       groupId: groupA.id,
+      sourceBatchId: batchA.id,
       tagClaimId: tagClaimA.id,
       ropeBatch: `XS-A-${ts}`,
       inputCount: 320,
@@ -163,6 +164,7 @@ async function testTagClaimSettlementRepro() {
     data: {
       code: `KZD-B-${ts}`,
       groupId: groupB.id,
+      sourceBatchId: batchB.id,
       tagClaimId: tagClaimB.id,
       ropeBatch: `XS-B-${ts}`,
       inputCount: 320,
@@ -187,10 +189,10 @@ async function testTagClaimSettlementRepro() {
   // Cold store & logs
   const coldStore = await prisma.coldStore.create({ data: { code: `BX-${ts}`, name: "保鲜库" } });
   const coldLogA = await prisma.coldLog.create({
-    data: { code: `CR-A-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 320, refType: "SORT", refId: sortTaskA.code, operator: "仓管" },
+    data: { code: `CR-A-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 320, sortTaskId: sortTaskA.id, operator: "仓管" },
   });
   const coldLogB = await prisma.coldLog.create({
-    data: { code: `CR-B-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 320, refType: "SORT", refId: sortTaskB.code, operator: "仓管" },
+    data: { code: `CR-B-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 320, sortTaskId: sortTaskB.id, operator: "仓管" },
   });
 
   // Store Orders
@@ -224,16 +226,10 @@ async function testTagClaimSettlementRepro() {
     },
   });
 
-  const specBatchMap = {
-    "MALE_4.0两": coldLogA.id,
-    "FEMALE_3.0两": coldLogB.id,
-  };
-
   // Create Outbound Order combining both
   const outboundRes = await createStoreOutboundAction({
     storeId: store.id,
     orderIds: [orderA.id, orderB.id],
-    specBatchMap,
     transportCompany: "冷链专车",
     contactName: "测试联系人",
     contactPhone: "13800000000",
@@ -241,6 +237,9 @@ async function testTagClaimSettlementRepro() {
   });
 
   console.log("Created Outbound Order:", outboundRes.code, "Total count:", outboundRes.outboundCount);
+
+  const beforeClaimA = await prisma.tagClaim.findUniqueOrThrow({ where: { id: tagClaimA.id } });
+  const beforeClaimB = await prisma.tagClaim.findUniqueOrThrow({ where: { id: tagClaimB.id } });
 
   // Now QA / Admin approves the outbound order
   await approveOutboundOrderAction({
@@ -257,14 +256,14 @@ async function testTagClaimSettlementRepro() {
   console.log(`Claim A (${farmerA.name}): boundCount=${updatedClaimA.boundCount}, isBalanced=${updatedClaimA.isBalanced}`);
   console.log(`Claim B (${farmerB.name}): boundCount=${updatedClaimB.boundCount}, isBalanced=${updatedClaimB.isBalanced}`);
 
-  // Assertions
-  assert.equal(updatedClaimA.boundCount, 320, "张三 (4.0两公蟹) 绑扣核销数应为 320");
-  assert.equal(updatedClaimA.isBalanced, true, "张三 蟹扣应已轧平");
+  // 出库审批只处理出库业务，不得再次核销蟹扣；boundCount 仅由完成捆扎写入。
+  assert.equal(updatedClaimA.boundCount, beforeClaimA.boundCount, "出库审批不得修改张三的已完成绑扎数");
+  assert.equal(updatedClaimA.isBalanced, beforeClaimA.isBalanced, "出库审批不得修改张三的蟹扣轧平状态");
 
-  assert.equal(updatedClaimB.boundCount, 320, "李四 (3.0两母蟹) 绑扣核销数应为 320");
-  assert.equal(updatedClaimB.isBalanced, true, "李四 蟹扣应已轧平");
+  assert.equal(updatedClaimB.boundCount, beforeClaimB.boundCount, "出库审批不得修改李四的已完成绑扎数");
+  assert.equal(updatedClaimB.isBalanced, beforeClaimB.isBalanced, "出库审批不得修改李四的蟹扣轧平状态");
 
-  console.log("✔ 测试通过：张三与李四蟹扣均成功核销轧平！");
+  console.log("✔ 测试通过：出库审批未修改任何蟹扣 boundCount / isBalanced！");
 }
 
 testTagClaimSettlementRepro()

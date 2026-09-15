@@ -74,7 +74,7 @@ async function runAuditDrill() {
   });
   if (todayClaim) {
     const isBalanced = todayClaim.claimCount === todayClaim.boundCount + todayClaim.returnedCount + todayClaim.scrappedCount;
-    console.log(`  4. 蟹扣当日轧平: 申请领扣(${todayClaim.claimCount}) === 绑扣出库(${todayClaim.boundCount}) + 退回(${todayClaim.returnedCount}) + 作废(${todayClaim.scrappedCount})`);
+    console.log(`  4. 蟹扣当日轧平: 申请领扣(${todayClaim.claimCount}) === 完成绑扎(${todayClaim.boundCount}) + 退回(${todayClaim.returnedCount}) + 作废(${todayClaim.scrappedCount})`);
     assert.ok(isBalanced, "蟹扣日结必须完全轧平");
   }
 

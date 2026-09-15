@@ -111,7 +111,7 @@ async function runRepro() {
   });
   const groupA = await prisma.bundleGroup.create({ data: { code: `P-A-${ts}`, name: `组A-${ts}` } });
   const bundleA = await prisma.bundleBatch.create({
-    data: { code: `KZD-A-${ts}`, groupId: groupA.id, tagClaimId: tagClaimA.id, ropeBatch: `XS-A-${ts}`, status: "COMPLETED" },
+    data: { code: `KZD-A-${ts}`, groupId: groupA.id, sourceBatchId: batchA.id, tagClaimId: tagClaimA.id, ropeBatch: `XS-A-${ts}`, status: "COMPLETED" },
   });
   const machineA = await prisma.sortMachine.create({ data: { code: `FJ-A-${ts}`, name: "分拣机A", status: "ACTIVE" } });
   const sortTaskA = await prisma.sortTask.create({
@@ -124,7 +124,7 @@ async function runRepro() {
   });
   const groupB = await prisma.bundleGroup.create({ data: { code: `P-B-${ts}`, name: `组B-${ts}` } });
   const bundleB = await prisma.bundleBatch.create({
-    data: { code: `KZD-B-${ts}`, groupId: groupB.id, tagClaimId: tagClaimB.id, ropeBatch: `XS-B-${ts}`, status: "COMPLETED" },
+    data: { code: `KZD-B-${ts}`, groupId: groupB.id, sourceBatchId: batchB.id, tagClaimId: tagClaimB.id, ropeBatch: `XS-B-${ts}`, status: "COMPLETED" },
   });
   const sortTaskB = await prisma.sortTask.create({
     data: { code: `FJR-B-${ts}`, machineId: machineA.id, bundleBatchId: bundleB.id, gender: "FEMALE", weightTier: "3.0两", inputCount: 500, qualifiedCount: 312, status: "COMPLETED" },
@@ -133,10 +133,10 @@ async function runRepro() {
   // Cold store & logs
   const coldStore = await prisma.coldStore.create({ data: { code: `BX-A-${ts}`, name: "保鲜库" } });
   const coldLogA = await prisma.coldLog.create({
-    data: { code: `CR-0902-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, refType: "SORT", refId: sortTaskA.code, operator: "仓管" },
+    data: { code: `CR-0902-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, sortTaskId: sortTaskA.id, operator: "仓管" },
   });
   const coldLogB = await prisma.coldLog.create({
-    data: { code: `CR-0901-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, refType: "SORT", refId: sortTaskB.code, operator: "仓管" },
+    data: { code: `CR-0901-${ts}`, storeId: coldStore.id, type: "INTAKE", count: 312, sortTaskId: sortTaskB.id, operator: "仓管" },
   });
 
   // Orders:
@@ -178,19 +178,11 @@ async function runRepro() {
     data: { status: "COMPLETED" },
   });
 
-  // Now construct specBatchMap as the frontend does:
-  // Frontend sorts demands: MALE first, then FEMALE
-  const specBatchMap = {
-    "MALE_4.0两": coldLogA.id,
-    "FEMALE_3.0两": coldLogB.id,
-  };
-
-  console.log("Testing createStoreOutboundAction with [order1 (FEMALE 3.0两), order2 (MALE 4.0两)] and specBatchMap...");
+  console.log("Testing createStoreOutboundAction with [order1 (FEMALE 3.0两), order2 (MALE 4.0两)] using automatic FIFO allocation...");
   try {
     const res = await createStoreOutboundAction({
       storeId: store.id,
       orderIds: [order1.id, order2.id],
-      specBatchMap,
       transportCompany: "苏州市冷链物流专车",
       contactName: "测试联系人",
       contactPhone: "13800000000",

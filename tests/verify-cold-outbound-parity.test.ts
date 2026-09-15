@@ -94,6 +94,7 @@ async function runParityVerification() {
       data: {
         code: `KZD-${suffix}`,
         groupId: group.id,
+        sourceBatchId: rawBatch.id,
         tagClaimId: tagClaim.id,
         ropeBatch: `XS-${suffix}`,
         status: "COMPLETED",
@@ -137,8 +138,7 @@ async function runParityVerification() {
           storeId,
           type: "INTAKE",
           count: sp.count,
-          refType: "SORT",
-          refId: sortTask.code,
+          sortTaskId: sortTask.id,
           operator: "李仓管",
         },
       });
@@ -234,7 +234,6 @@ async function runParityVerification() {
     const outboundOrder = await createStoreOutboundAction({
       storeId: store.id,
       orderIds: [orderFemale3.id],
-      coldLogId: createdColdLogs[1].id, // 关联 CR-0902 (母蟹 3.0两)
       contactName: "测试联系人",
       contactPhone: "13800000000",
       applicantId: admin.id,

@@ -13,7 +13,7 @@ async function smokeTestRoutes() {
     { path: "/tags", name: "蟹扣领用与日清日结", expectedStatus: [200, 307, 308] },
     { path: "/outbound", name: "出库管理与物流回填", expectedStatus: [200, 307, 308] },
     { path: "/approvals", name: "品控审批中心", expectedStatus: [200, 307, 308] },
-    { path: "/ledgers", name: "四本台账综合查询", expectedStatus: [200, 307, 308] },
+    { path: "/ledgers", name: "八本台账综合查询", expectedStatus: [200, 307, 308] },
     { path: "/trace", name: "山姆渠道反向溯源", expectedStatus: [200, 307, 308] },
     { path: "/stores", name: "渠道与门店档案配置", expectedStatus: [200, 307, 308] },
     { path: "/users", name: "系统角色与权限配置", expectedStatus: [200, 307, 308] },
