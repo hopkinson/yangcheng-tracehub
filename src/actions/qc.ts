@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
 import { getBeijingDateStr } from "@/lib/utils";
+import { requireRole } from "@/lib/auth";
 
 export interface CreateQCRecordData {
   cat: string;
@@ -20,6 +21,10 @@ export interface CreateQCRecordData {
 
 export async function createQCRecordAction(data: CreateQCRecordData) {
   try {
+    if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
+      await requireRole(["QA_DIRECTOR", "ADMIN", "WAREHOUSE_ADMIN"]);
+    }
+
     if (!data.cat || !data.refId || !data.checkTime) {
       return { success: false, message: "记录类别、关联对象与巡检时间均为必填项" };
     }
@@ -31,14 +36,14 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       data.conclusion?.includes("异常") ||
       data.conclusion?.includes("暂停") ||
       data.conclusion?.includes("待整改") ||
-      data.conclusion?.includes("存在问题")
+      data.conclusion?.includes("存在问题") ||
+      data.conclusion?.includes("不合格")
     ) {
       result = "EXCEPTION";
     }
 
     const dateStr = getBeijingDateStr();
-    const count = await prisma.qCRecord.count();
-    
+
     // 生成前缀 (JC/SC/XJ/SZ/KZ/JZ/FJ/BX/BZ/CL)
     const prefixMap: Record<string, string> = {
       QUICK_CHECK: "JC",
@@ -53,25 +58,50 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       VEHICLE_INSPECT: "CL",
     };
     const prefix = prefixMap[data.cat] || "QC";
-    const code = `${prefix}${dateStr}${String(count + 1).padStart(2, "0")}`;
+    const code = await prisma.$transaction(async (tx) => {
+      const count = await tx.qCRecord.count();
+      const recordCode = `${prefix}${dateStr}${String(count + 1).padStart(2, "0")}`;
+      const now = new Date();
 
-    await prisma.qCRecord.create({
-      data: {
-        code,
-        cat: data.cat,
-        formNo: data.formNo || null,
-        refType: data.refType,
-        refId: data.refId,
-        title: data.title,
-        checkTime: new Date(data.checkTime),
-        uploadTime: new Date(),
-        result,
-        conclusion: data.conclusion || "全部指标合格",
-        reason: data.reason?.trim() || null,
-        uploader: data.uploader || "赵质检 (质检员)",
-        fileName: data.fileName || `${code}_质检留痕原件.jpg`,
-        fileUrl: data.fileUrl || null,
-      },
+      await tx.qCRecord.create({
+        data: {
+          code: recordCode,
+          cat: data.cat,
+          formNo: data.formNo || null,
+          refType: data.refType,
+          refId: data.refId,
+          title: data.title,
+          checkTime: new Date(data.checkTime),
+          uploadTime: now,
+          result,
+          conclusion: data.conclusion || "全部指标合格",
+          reason: data.reason?.trim() || null,
+          uploader: data.uploader || "赵质检 (质检员)",
+          fileName: data.fileName || `${recordCode}_质检留痕原件.jpg`,
+          fileUrl: data.fileUrl || null,
+        },
+      });
+
+      if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
+        const status = result === "QUALIFIED" ? "QUALIFIED" : "UNQUALIFIED";
+        await tx.batch.update({
+          where: { code: data.refId },
+          data: data.cat === "QUICK_CHECK"
+            ? {
+                quickCheck: status,
+                quickCheckUrl: data.fileUrl || null,
+                quickCheckName: data.fileName || null,
+                ...(data.fileUrl ? { reportUrl: data.fileUrl, reportName: data.fileName || null, reportUploadedAt: now } : {}),
+              }
+            : {
+                sampleCheck: status,
+                sampleCheckUrl: data.fileUrl || null,
+                sampleCheckName: data.fileName || null,
+              },
+        });
+      }
+
+      return recordCode;
     });
 
     try {

@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
-import { BatchInspectionDialog } from "@/components/batches/BatchInspectionDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
 import { BatchEditDialog } from "@/components/batches/BatchEditDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -20,7 +19,6 @@ import {
   FileText,
   ShieldAlert,
   ShieldCheck,
-  ClipboardCheck,
   History,
   Trash2,
   Pencil,
@@ -96,20 +94,6 @@ export function BatchRowActions({
                 <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                   <Pencil className="size-3.5 mr-2 text-primary" />
                   <span>编辑批次</span>
-                </DropdownMenuItem>
-              }
-            />
-          )}
-
-          {/* 品控检测报告录入/修改 */}
-          {(isQaOrAdmin || isWarehouseOrAdmin) && (
-            <BatchInspectionDialog
-              batch={batch}
-              userId={userId}
-              trigger={
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                  <ClipboardCheck className="size-3.5 mr-2 text-emerald-600" />
-                  <span>品控检测报告</span>
                 </DropdownMenuItem>
               }
             />

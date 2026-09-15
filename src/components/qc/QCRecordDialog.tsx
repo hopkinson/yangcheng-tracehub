@@ -15,10 +15,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, FileCheck, Loader2, AlertTriangle, Upload, X } from "lucide-react";
+import { Camera, FileCheck, Loader2, AlertTriangle, X } from "lucide-react";
 import { createQCRecordAction, getQCInspectorsAction } from "@/actions/qc";
 import { uploadFileAction } from "@/actions/upload";
-import { cn } from "@/lib/utils";
+import { cn, getBeijingTimeString, getPreviewFileUrl } from "@/lib/utils";
 
 const ROLE_NAME_MAP: Record<string, string> = {
   ADMIN: "超级管理员",
@@ -30,6 +30,8 @@ const ROLE_NAME_MAP: Record<string, string> = {
 
 const formatInspectorName = (u: { fullName: string; role: string }) =>
   u.fullName.includes("(") ? u.fullName : `${u.fullName} (${ROLE_NAME_MAP[u.role] || u.role})`;
+
+const getDefaultCheckTime = () => (getBeijingTimeString(new Date()) || "").slice(0, 16).replace(" ", "T");
 
 export interface QCConfig {
   cat: string;
@@ -74,12 +76,13 @@ export function QCRecordDialog({
 
   const [title, setTitle] = useState(config.defaultTitle);
   const [formNo, setFormNo] = useState(config.formNoPreset || "");
-  const [checkTime, setCheckTime] = useState("2026-09-21T08:30");
+  const [checkTime, setCheckTime] = useState(getDefaultCheckTime);
   const [conclusion, setConclusion] = useState(config.conclusions[0] || "全部项目合格，环境正常");
   const [reason, setReason] = useState("");
   const [fileUrl, setFileUrl] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [uploading, setUploading] = useState(false);
+  const isPdf = fileName.toLowerCase().endsWith(".pdf");
 
   const isExceptionConclusion = /异常|暂停|待整改|存在问题|不合格/.test(conclusion);
 
@@ -99,9 +102,9 @@ export function QCRecordDialog({
       const res = await uploadFileAction(formData);
       setFileUrl(res.url);
       setFileName(res.name);
-      toast.success(`照片已上传: ${res.name}`);
+      toast.success(`文件已上传: ${res.name}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "照片上传失败";
+      const msg = err instanceof Error ? err.message : "文件上传失败";
       toast.error(msg);
     } finally {
       setUploading(false);
@@ -140,7 +143,13 @@ export function QCRecordDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) setCheckTime(getDefaultCheckTime());
+        setOpen(nextOpen);
+      }}
+    >
       <DialogTrigger asChild>
         {trigger ? (
           trigger
@@ -245,14 +254,26 @@ export function QCRecordDialog({
             </div>
           )}
 
-          {/* 照片原件 */}
+          {/* 原件 */}
           <div className="space-y-2 border rounded-lg p-3 bg-muted/20">
-            <Label className="text-xs">现场纸质记录原件照片</Label>
+            <Label className="text-xs">现场纸质记录原件（图片/PDF）</Label>
 
             {fileUrl ? (
               <div className="space-y-2">
                 <div className="border rounded overflow-hidden bg-background p-1 flex items-center justify-center max-h-40 relative group">
-                  <img src={fileUrl} alt="原件预览" className="max-h-36 object-contain rounded" />
+                  {isPdf ? (
+                    <a
+                      href={getPreviewFileUrl(fileUrl, fileName)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="h-24 w-full flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <FileCheck className="size-8 text-primary" />
+                      <span className="max-w-[80%] truncate">{fileName || "PDF 原件"}</span>
+                    </a>
+                  ) : (
+                    <img src={getPreviewFileUrl(fileUrl, fileName)} alt="原件预览" className="max-h-36 object-contain rounded" />
+                  )}
                   <Button
                     type="button"
                     variant="destructive"
@@ -273,12 +294,12 @@ export function QCRecordDialog({
                 {uploading ? (
                   <>
                     <Loader2 className="size-6 text-primary animate-spin" />
-                    <span>照片上传中...</span>
+                    <span>文件上传中...</span>
                   </>
                 ) : (
                   <>
                     <Camera className="size-6 text-muted-foreground/60" />
-                    <span>点击上传或拍照上传现场纸质记录原件照片</span>
+                    <span>点击上传现场纸质记录原件（图片/PDF）</span>
                   </>
                 )}
                 <input

@@ -7,15 +7,37 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MultiSpecIntakeDialog } from "@/components/batches/MultiSpecIntakeDialog";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchRowActions } from "@/components/batches/BatchRowActions";
-import { BatchInspectionDialog } from "@/components/batches/BatchInspectionDialog";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
+import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import { cn } from "@/lib/utils";
 import { Invariants } from "@/lib/invariants";
-import { CheckCircle2, XCircle, Clock, FileText, ClipboardCheck } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, FileText } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+const QUICK_QC_PRESET = {
+  cat: "QUICK_CHECK",
+  categoryLabel: "农残快速检测记录表",
+  formNoPreset: "YCGF-PZZX-202601",
+  refType: "BATCH",
+  conclusions: [
+    "全部指标符合要求，未检出违禁药物",
+    "检测异常，发现超标或违禁项目",
+  ],
+};
+
+const TASTE_QC_PRESET = {
+  cat: "TASTE_CHECK",
+  categoryLabel: "品质抽检与试吃记录表",
+  formNoPreset: "YCGF-PZZX-202602",
+  refType: "BATCH",
+  conclusions: [
+    "品质抽检合格，肉质、膏黄与口感正常",
+    "品质抽检异常，需复核或整改",
+  ],
+};
 
 function InspectionTag({
   status,
@@ -23,12 +45,14 @@ function InspectionTag({
   label,
   batchCode,
   reportName,
+  editable = false,
 }: {
   status?: string | null;
   url?: string | null;
   label: string;
   batchCode: string;
   reportName?: string | null;
+  editable?: boolean;
 }) {
   const isQualified = status === "QUALIFIED";
   const isUnqualified = status === "UNQUALIFIED";
@@ -62,15 +86,31 @@ function InspectionTag({
     );
   }
   if (isUnqualified) {
+    const content = <><XCircle className="size-2.5 shrink-0" /> {label}不合格</>;
+    if (editable) {
+      return (
+        <button type="button" className="inline-flex items-center gap-0.5 text-[10px] text-destructive font-medium whitespace-nowrap hover:underline cursor-pointer">
+          {content}
+        </button>
+      );
+    }
     return (
       <span className="inline-flex items-center gap-0.5 text-[10px] text-destructive font-medium whitespace-nowrap">
-        <XCircle className="size-2.5 shrink-0" /> {label}不合格
+        {content}
       </span>
+    );
+  }
+  const content = <><Clock className="size-2.5 shrink-0" /> {label}待检</>;
+  if (editable) {
+    return (
+      <button type="button" className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-500 font-medium whitespace-nowrap hover:underline cursor-pointer">
+        {content}
+      </button>
     );
   }
   return (
     <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-500 font-medium whitespace-nowrap">
-      <Clock className="size-2.5 shrink-0" /> {label}待检
+      {content}
     </span>
   );
 }
@@ -175,7 +215,7 @@ export default async function BatchesPage({
                     const liveInPool = Math.max(0, batch.inPoolCount - batch.outPoolCount - batch.lossCount);
                     const livePct = batch.inPoolCount > 0 ? Math.min(100, Math.round((liveInPool / batch.inPoolCount) * 100)) : 0;
                     const hasMultiItems = batch.items && batch.items.length > 0;
-                    const isPendingQc = batch.quickCheck !== "QUALIFIED" || batch.sampleCheck !== "QUALIFIED";
+                    const canEditQc = isQaOrAdmin || isWarehouseOrAdmin;
                     const firstItem = hasMultiItems ? batch.items[0] : batch;
                     const primaryPool = hasMultiItems ? batch.items[0].pool : batch.pool;
                     const primaryPoolName = primaryPool?.name || primaryPool?.code || "暂养池";
@@ -315,37 +355,53 @@ export default async function BatchesPage({
                         <TableCell className="align-middle">
                           <div className="flex flex-col gap-1 max-w-[125px]">
                             <div className="flex items-center gap-2 whitespace-nowrap">
-                              <InspectionTag
-                                status={batch.quickCheck}
-                                url={batch.quickCheckUrl || batch.reportUrl}
-                                label="农残"
-                                batchCode={batch.code}
-                                reportName={batch.quickCheckName || batch.reportName}
-                              />
-                              <InspectionTag
-                                status={batch.sampleCheck}
-                                url={batch.sampleCheckUrl}
-                                label="试吃"
-                                batchCode={batch.code}
-                                reportName={batch.sampleCheckName}
-                              />
+                              {canEditQc && batch.quickCheck !== "QUALIFIED" ? (
+                                <QCRecordDialog
+                                  config={{ ...QUICK_QC_PRESET, defaultTitle: `${batch.code} 农残快速检测`, refId: batch.code }}
+                                  trigger={
+                                    <InspectionTag
+                                      status={batch.quickCheck}
+                                      url={batch.quickCheckUrl || batch.reportUrl}
+                                      label="农残"
+                                      batchCode={batch.code}
+                                      reportName={batch.quickCheckName || batch.reportName}
+                                      editable
+                                    />
+                                  }
+                                />
+                              ) : (
+                                <InspectionTag
+                                  status={batch.quickCheck}
+                                  url={batch.quickCheckUrl || batch.reportUrl}
+                                  label="农残"
+                                  batchCode={batch.code}
+                                  reportName={batch.quickCheckName || batch.reportName}
+                                />
+                              )}
+                              {canEditQc && batch.sampleCheck !== "QUALIFIED" ? (
+                                <QCRecordDialog
+                                  config={{ ...TASTE_QC_PRESET, defaultTitle: `${batch.code} 品质抽检与试吃`, refId: batch.code }}
+                                  trigger={
+                                    <InspectionTag
+                                      status={batch.sampleCheck}
+                                      url={batch.sampleCheckUrl}
+                                      label="试吃"
+                                      batchCode={batch.code}
+                                      reportName={batch.sampleCheckName}
+                                      editable
+                                    />
+                                  }
+                                />
+                              ) : (
+                                <InspectionTag
+                                  status={batch.sampleCheck}
+                                  url={batch.sampleCheckUrl}
+                                  label="试吃"
+                                  batchCode={batch.code}
+                                  reportName={batch.sampleCheckName}
+                                />
+                              )}
                             </div>
-
-                            {(isQaOrAdmin || isWarehouseOrAdmin) && isPendingQc && (
-                              <BatchInspectionDialog
-                                batch={batch}
-                                userId={currentUserId}
-                                trigger={
-                                  <button
-                                    type="button"
-                                    className="text-[10px] text-left cursor-pointer transition-colors inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-1 py-0.5 rounded w-fit whitespace-nowrap"
-                                  >
-                                    <ClipboardCheck className="size-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                                    <span>录入检测</span>
-                                  </button>
-                                }
-                              />
-                            )}
                           </div>
                         </TableCell>
 

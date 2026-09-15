@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
-import { createMultiSpecBatchAction, updateBatchInspectionAction } from "../src/actions/batches";
+import { createMultiSpecBatchAction } from "../src/actions/batches";
+import { createQCRecordAction } from "../src/actions/qc";
 
 const prisma = new PrismaClient();
 
@@ -70,27 +71,43 @@ async function run() {
   assert.strictEqual(batch.sampleCheckUrl, null, "刚上传时无试吃报告");
   console.log("  ✔ 刚上传批次品控状态验证为 PENDING (待检测)");
 
-  // 2. 填写并上传检测报告后：状态变更为 QUALIFIED (合格)
-  console.log("▶ [步骤 2] 校验上传并填写检测报告后状态变更为 QUALIFIED (合格)");
-  const updateRes = await updateBatchInspectionAction({
-    batchId: batch.id,
-    quickCheck: "QUALIFIED",
-    quickCheckUrl: "/uploads/reports/test-quick-check.pdf",
-    quickCheckName: "阳澄湖大闸蟹农药残留快速检测合格单.pdf",
-    sampleCheck: "QUALIFIED",
-    sampleCheckUrl: "/uploads/reports/test-sample-check.jpg",
-    sampleCheckName: "品质抽检试吃记录表.jpg",
-    inspectorId: admin.id,
+  // 2. 通过统一 QC 留痕分别录入农残与试吃，批次状态应同步合格/不合格
+  console.log("▶ [步骤 2] 校验统一 QC 留痕会同步批次快检/抽检状态");
+  const quickRes = await createQCRecordAction({
+    cat: "QUICK_CHECK",
+    formNo: "YCGF-PZZX-202601",
+    refType: "BATCH",
+    refId: batch.code,
+    title: `${batch.code} 农残快速检测`,
+    checkTime: new Date().toISOString(),
+    conclusion: "全部指标符合要求，未检出违禁药物",
+    uploader: admin.fullName,
+    fileUrl: "/uploads/reports/test-quick-check.pdf",
+    fileName: "阳澄湖大闸蟹农药残留快速检测合格单.pdf",
+  });
+  const tasteRes = await createQCRecordAction({
+    cat: "TASTE_CHECK",
+    formNo: "YCGF-PZZX-202602",
+    refType: "BATCH",
+    refId: batch.code,
+    title: `${batch.code} 品质抽检与试吃`,
+    checkTime: new Date().toISOString(),
+    conclusion: "品质抽检异常，需复核或整改",
+    reason: "试吃发现异常，安排复核",
+    uploader: admin.fullName,
+    fileUrl: "/uploads/reports/test-sample-check.jpg",
+    fileName: "品质抽检试吃记录表.jpg",
   });
 
-  assert.strictEqual(updateRes.success, true, `Inspection update should succeed: ${updateRes.error}`);
+  assert.strictEqual(quickRes.success, true, `Quick QC create should succeed: ${quickRes.message}`);
+  assert.strictEqual(tasteRes.success, true, `Taste QC create should succeed: ${tasteRes.message}`);
 
   batch = await prisma.batch.findUniqueOrThrow({ where: { id: batchId } });
   assert.strictEqual(batch.quickCheck, "QUALIFIED", "填报后农残快检应为 QUALIFIED (合格)");
-  assert.strictEqual(batch.sampleCheck, "QUALIFIED", "填报后抽检试吃应为 QUALIFIED (合格)");
+  assert.strictEqual(batch.sampleCheck, "UNQUALIFIED", "异常抽检试吃应同步为 UNQUALIFIED (不合格)");
   assert.strictEqual(batch.quickCheckUrl, "/uploads/reports/test-quick-check.pdf");
   assert.strictEqual(batch.sampleCheckUrl, "/uploads/reports/test-sample-check.jpg");
-  console.log("  ✔ 填写并上传检测报告后状态成功更新为合格，报告成功绑定");
+  console.log("  ✔ QC 留痕成功同步批次合格/不合格状态并绑定报告");
 
   // 3. 在入库时直接携带品控报告上传：状态应直接为 QUALIFIED 并附带报告
   console.log("▶ [步骤 3] 校验入池时直接携带品控报告登记入库");
@@ -130,6 +147,7 @@ async function run() {
 
   // 清理测试数据，避免污染正式台账与列表
   console.log("▶ [步骤 4] 清理本次测试生成的批次与隔离池");
+  await prisma.qCRecord.deleteMany({ where: { refType: "BATCH", refId: batch.code } });
   await prisma.batchItem.deleteMany({ where: { batchId: { in: [batchId, directBatchId] } } });
   await prisma.auditLog.deleteMany({ where: { entityType: "BATCH", entityId: { in: [batchId, directBatchId] } } });
   await prisma.batch.deleteMany({ where: { id: { in: [batchId, directBatchId] } } });
