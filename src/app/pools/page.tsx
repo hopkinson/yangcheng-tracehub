@@ -34,6 +34,7 @@ export const dynamic = "force-dynamic";
 const WATER_QC_PRESET = {
   cat: "WATER_QUALITY",
   categoryLabel: "水质监测记录表",
+  defaultTitle: "暂养水质监测记录",
   formNoPreset: "YCGF-PZZX-202605",
   refType: "POOL",
   conclusions: [
@@ -46,6 +47,7 @@ const WATER_QC_PRESET = {
 const INSPECT_QC_PRESET = {
   cat: "POOL_INSPECT",
   categoryLabel: "暂养巡检记录表",
+  defaultTitle: "暂养巡检记录",
   formNoPreset: "YCGF-PZZX-202604",
   refType: "POOL",
   conclusions: [
@@ -509,13 +511,13 @@ export default async function PoolsPage({
                     <div className="flex flex-col gap-1.5 pt-0.5">
                       <div className="grid grid-cols-2 gap-1.5">
                         <QCRecordDialog
-                          config={{ ...WATER_QC_PRESET, defaultTitle: `${pool.code} 水质监测`, refId: pool.code }}
+                          config={{ ...WATER_QC_PRESET, refId: pool.code }}
                           triggerLabel="水质监测"
                           triggerClassName="w-full"
                         />
 
                         <QCRecordDialog
-                          config={{ ...INSPECT_QC_PRESET, defaultTitle: `${pool.code} 暂养巡检`, refId: pool.code }}
+                          config={{ ...INSPECT_QC_PRESET, refId: pool.code }}
                           triggerLabel="暂养巡检"
                           triggerClassName="w-full"
                         />
@@ -571,11 +573,11 @@ export default async function PoolsPage({
 
               <div className="flex items-center flex-wrap gap-2">
                 <QCRecordDialog
-                  config={{ ...WATER_QC_PRESET, defaultTitle: "暂养水质监测", refId: selectedPool || "全部暂养池" }}
+                  config={{ ...WATER_QC_PRESET, refId: selectedPool || "全部暂养池" }}
                   triggerLabel="录入水质监测"
                 />
                 <QCRecordDialog
-                  config={{ ...INSPECT_QC_PRESET, defaultTitle: "暂养巡检", refId: selectedPool || "全部暂养池" }}
+                  config={{ ...INSPECT_QC_PRESET, refId: selectedPool || "全部暂养池" }}
                   triggerLabel="录入暂养巡检"
                 />
               </div>

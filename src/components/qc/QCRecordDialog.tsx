@@ -74,7 +74,6 @@ export function QCRecordDialog({
     }
   }, [open, userList.length]);
 
-  const [title, setTitle] = useState(config.defaultTitle);
   const [formNo, setFormNo] = useState(config.formNoPreset || "");
   const [checkTime, setCheckTime] = useState(getDefaultCheckTime);
   const [conclusion, setConclusion] = useState(config.conclusions[0] || "全部项目合格，环境正常");
@@ -124,7 +123,7 @@ export function QCRecordDialog({
         formNo,
         refType: config.refType,
         refId: config.refId,
-        title,
+        title: config.defaultTitle,
         checkTime,
         conclusion,
         reason,
@@ -173,8 +172,10 @@ export function QCRecordDialog({
 
         <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 overflow-y-auto px-1 py-1">
           <div className="space-y-1">
-            <Label className="text-xs">记录标题</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 text-xs" />
+            <Label className="text-xs">质检表名称</Label>
+            <div className="h-8 flex items-center rounded-md border bg-muted/30 px-3 text-xs text-foreground">
+              {config.defaultTitle}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">

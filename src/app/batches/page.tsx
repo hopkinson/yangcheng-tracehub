@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 const QUICK_QC_PRESET = {
   cat: "QUICK_CHECK",
   categoryLabel: "农残快速检测记录表",
+  defaultTitle: "原料兽药农残快检",
   formNoPreset: "YCGF-PZZX-202601",
   refType: "BATCH",
   conclusions: [
@@ -31,6 +32,7 @@ const QUICK_QC_PRESET = {
 const TASTE_QC_PRESET = {
   cat: "TASTE_CHECK",
   categoryLabel: "品质抽检与试吃记录表",
+  defaultTitle: "品质抽检与试吃记录",
   formNoPreset: "YCGF-PZZX-202602",
   refType: "BATCH",
   conclusions: [
@@ -357,7 +359,7 @@ export default async function BatchesPage({
                             <div className="flex items-center gap-2 whitespace-nowrap">
                               {canEditQc && batch.quickCheck !== "QUALIFIED" ? (
                                 <QCRecordDialog
-                                  config={{ ...QUICK_QC_PRESET, defaultTitle: `${batch.code} 农残快速检测`, refId: batch.code }}
+                                  config={{ ...QUICK_QC_PRESET, refId: batch.code }}
                                   trigger={
                                     <InspectionTag
                                       status={batch.quickCheck}
@@ -380,7 +382,7 @@ export default async function BatchesPage({
                               )}
                               {canEditQc && batch.sampleCheck !== "QUALIFIED" ? (
                                 <QCRecordDialog
-                                  config={{ ...TASTE_QC_PRESET, defaultTitle: `${batch.code} 品质抽检与试吃`, refId: batch.code }}
+                                  config={{ ...TASTE_QC_PRESET, refId: batch.code }}
                                   trigger={
                                     <InspectionTag
                                       status={batch.sampleCheck}

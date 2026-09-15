@@ -355,7 +355,7 @@ export default async function ColdStoragePage({
             config={{
               cat: "COLD_TEMP",
               categoryLabel: "保鲜温湿度巡检",
-              defaultTitle: "保鲜库温湿度监控记录表",
+              defaultTitle: "保鲜库信息记录表",
               formNoPreset: "YCGF-PZZX-202609",
               refType: "STORE",
               refId: stores[0]?.code || "BX-01",

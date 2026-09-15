@@ -67,15 +67,15 @@ function LedgerCardSection({
 }
 
 const QC_CATEGORY_LABELS: Record<string, string> = {
-  QUICK_CHECK: "1. 农残快速检测合格报告 (产地准出)",
-  TASTE_CHECK: "2. 品质抽检与试吃记录表",
+  QUICK_CHECK: "1. 原料兽药农残快检",
+  TASTE_CHECK: "2. 品质抽检与试吃记录",
   WAYBILL: "3. 大闸蟹入库码单",
-  POOL_INSPECT: "4. 暂养巡检记录表",
-  WATER_QUALITY: "5. 暂养水质监测记录表",
-  BUNDLE_INSPECT: "6. 捆扎品质巡检记录表",
-  SORT_CALIBRATE: "7. 自动分拣机精度校准记录表",
-  SORT_INSPECT: "8. 分拣品质巡检记录表",
-  COLD_TEMP: "9. 保鲜库温湿度监控记录表",
+  POOL_INSPECT: "4. 暂养巡检记录",
+  WATER_QUALITY: "5. 暂养水质监测记录",
+  BUNDLE_INSPECT: "6. 捆扎作业巡检记录",
+  SORT_CALIBRATE: "7. 分拣设备精度校验记录",
+  SORT_INSPECT: "8. 分拣作业巡检记录",
+  COLD_TEMP: "9. 保鲜库信息记录表",
   PACK_INSPECT: "10. 装箱打包巡检记录表",
   VEHICLE_INSPECT: "11. 运输车辆卫生与温湿度检查表",
   SHIP_LOG: "12. 成品发货台账",

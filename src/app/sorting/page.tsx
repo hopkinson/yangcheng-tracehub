@@ -26,7 +26,7 @@ const QC_PRESETS = {
   calibrate: {
     cat: "SORT_CALIBRATE" as const,
     categoryLabel: "分拣校准",
-    defaultTitle: "分拣设备精度校验记录表",
+    defaultTitle: "分拣设备精度校验记录",
     formNoPreset: "YCGF-PZZX-202607",
     refType: "MACHINE" as const,
     conclusions: [
@@ -37,7 +37,7 @@ const QC_PRESETS = {
   inspect: {
     cat: "SORT_INSPECT" as const,
     categoryLabel: "分拣巡检",
-    defaultTitle: "分拣品质与车间巡检记录表",
+    defaultTitle: "分拣作业巡检记录",
     formNoPreset: "YCGF-PZZX-202608",
     refType: "WORKSHOP" as const,
     refId: "FJ-WORKSHOP",

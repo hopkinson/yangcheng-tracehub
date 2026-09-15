@@ -493,7 +493,7 @@ export default async function BundlingPage({
               config={{
                 cat: "BUNDLE_INSPECT",
                 categoryLabel: "捆扎巡检",
-                defaultTitle: "车间捆扎现场作业与绑扣规范巡检记录表",
+                defaultTitle: "捆扎作业巡检记录",
                 formNoPreset: "YCGF-PZZX-202606",
                 refType: "WORKSHOP",
                 refId: "BZ-WORKSHOP",

@@ -19,6 +19,17 @@ export interface CreateQCRecordData {
   fileUrl?: string;
 }
 
+const FIXED_QC_TITLES: Record<string, string> = {
+  QUICK_CHECK: "原料兽药农残快检",
+  TASTE_CHECK: "品质抽检与试吃记录",
+  POOL_INSPECT: "暂养巡检记录",
+  WATER_QUALITY: "暂养水质监测记录",
+  BUNDLE_INSPECT: "捆扎作业巡检记录",
+  SORT_CALIBRATE: "分拣设备精度校验记录",
+  SORT_INSPECT: "分拣作业巡检记录",
+  COLD_TEMP: "保鲜库信息记录表",
+};
+
 export async function createQCRecordAction(data: CreateQCRecordData) {
   try {
     if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
@@ -70,7 +81,7 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
           formNo: data.formNo || null,
           refType: data.refType,
           refId: data.refId,
-          title: data.title,
+          title: FIXED_QC_TITLES[data.cat] || data.title,
           checkTime: new Date(data.checkTime),
           uploadTime: now,
           result,
