@@ -30,30 +30,20 @@ export function aggregateTraceableColdStocks({
     code: string;
     gender: string;
     weightTier: string;
-    bundleBatch?: { sourceBatchId?: string | null } | null;
+    bundleBatch: { sourceBatchId: string };
   }>;
-  coldLogs: Array<{ id: string; count: number; type?: string; sortTaskId?: string | null; refId?: string | null }>;
-  outboundLines?: Array<{ count: number; coldLogId?: string | null; gender?: string; weightTier?: string }>;
-  outboundLosses?: Array<{ count: number; coldLogId?: string | null }>;
+  coldLogs: Array<{ id: string; count: number; type?: string; sortTaskId: string }>;
+  outboundLines?: Array<{ count: number; coldLogId: string }>;
+  outboundLosses?: Array<{ count: number; coldLogId: string }>;
   defaultSpecs?: Array<{ gender: string; weightTier: string }>;
 }): ColdSpecStock[] {
-  const traceableTasks = sortTasks.filter((task) => Boolean(task.bundleBatch?.sourceBatchId));
-  const taskMap = new Map(traceableTasks.map((task) => [task.id, task] as const));
-  const taskByRef = new Map<string, (typeof traceableTasks)[number]>();
-  for (const task of traceableTasks) {
-    taskByRef.set(task.id, task);
-    taskByRef.set(task.code, task);
-  }
+  const taskMap = new Map(sortTasks.map((task) => [task.id, task] as const));
   const coldLogSpecs = new Map<string, { gender: string; weightTier: string }>();
   const stockMap = new Map<string, { qualified: number; used: number; loss: number }>();
 
   for (const log of coldLogs) {
     if (log.type && log.type !== "INTAKE") continue;
-    const task = log.sortTaskId
-      ? taskMap.get(log.sortTaskId)
-      : log.refId
-        ? taskByRef.get(log.refId)
-        : undefined;
+    const task = taskMap.get(log.sortTaskId);
     if (!task) continue;
     const spec = { gender: task.gender, weightTier: Invariants.normalizeWeightTier(task.weightTier) };
     const key = `${spec.gender}_${spec.weightTier}`;
@@ -63,9 +53,8 @@ export function aggregateTraceableColdStocks({
     coldLogSpecs.set(log.id, spec);
   }
 
-  const addUsage = (rows: Array<{ count: number; coldLogId?: string | null }>, kind: "used" | "loss") => {
+  const addUsage = (rows: Array<{ count: number; coldLogId: string }>, kind: "used" | "loss") => {
     for (const row of rows) {
-      if (!row.coldLogId) continue;
       const spec = coldLogSpecs.get(row.coldLogId);
       if (!spec) continue;
       const key = `${spec.gender}_${spec.weightTier}`;
@@ -77,15 +66,6 @@ export function aggregateTraceableColdStocks({
 
   addUsage(outboundLines, "used");
   addUsage(outboundLosses, "loss");
-
-  // 历史出库明细可能没有 coldLogId，但仍能按规格从总库存中扣除。
-  for (const row of outboundLines) {
-    if (row.coldLogId || !row.gender || !row.weightTier) continue;
-    const key = `${row.gender}_${Invariants.normalizeWeightTier(row.weightTier)}`;
-    const current = stockMap.get(key) || { qualified: 0, used: 0, loss: 0 };
-    current.used += row.count || 0;
-    stockMap.set(key, current);
-  }
 
   const finalKeys = new Set(stockMap.keys());
   for (const spec of defaultSpecs) {

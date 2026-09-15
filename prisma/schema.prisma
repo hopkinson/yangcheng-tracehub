@@ -201,7 +201,7 @@ model TagClaim {
   farmer          Farmer          @relation(fields: [farmerId], references: [id])
   
   claimCount      Int             // 申请领扣数
-  boundCount      Int             @default(0) // 当日已绑扣出库数
+  boundCount      Int             @default(0) // 已完成捆扎合格数（完成捆扎时自动归集）
   returnedCount   Int             @default(0) // 当日退回数
   returnReason    String?
   scrappedCount   Int             @default(0) // 当日作废数
@@ -243,8 +243,8 @@ model BundleBatch {
   date            DateTime        @default(now())
   groupId         String
   group           BundleGroup     @relation(fields: [groupId], references: [id])
-  sourceBatchId   String?
-  sourceBatch     Batch?          @relation(fields: [sourceBatchId], references: [id], onDelete: SetNull)
+  sourceBatchId   String
+  sourceBatch     Batch           @relation(fields: [sourceBatchId], references: [id], onDelete: Restrict)
 
   tagClaimId      String
   tagClaim        TagClaim        @relation(fields: [tagClaimId], references: [id])
@@ -349,8 +349,8 @@ model ColdLog {
   count           Int             // 入库只数
   refType         String?         // 历史兼容：BUNDLE, SORT
   refId           String?         // 历史兼容：KZD/FJR 编号
-  sortTaskId      String?
-  sortTask        SortTask?       @relation(fields: [sortTaskId], references: [id], onDelete: SetNull)
+  sortTaskId      String
+  sortTask        SortTask        @relation(fields: [sortTaskId], references: [id], onDelete: Restrict)
   operator        String          // 经手人
   createdAt       DateTime        @default(now())
 
@@ -475,8 +475,8 @@ model OutboundLine {
   weightTier        String          // 4.0两, 3.5两
   count             Int             // 出库只数
   
-  coldLogId         String?
-  coldLog           ColdLog?        @relation(fields: [coldLogId], references: [id], onDelete: SetNull)
+  coldLogId         String
+  coldLog           ColdLog         @relation(fields: [coldLogId], references: [id], onDelete: Restrict)
 
   expressCompany    String?         // 顺丰速运 等
   waybillNo         String?         // 快递运单号
@@ -484,6 +484,7 @@ model OutboundLine {
   createdAt         DateTime        @default(now())
 }
 
+// 发货环节损耗盘点：按规格扣减尚未被出库单占用的可发库存
 model OutboundLossRecord {
   id          String   @id @default(cuid())
   gender      String   // MALE, FEMALE
@@ -554,6 +555,8 @@ model InspectionReport {
   name         String
   fileUrl      String
   fileName     String
+  licenseUrl   String?
+  licenseName  String?
   inspectedAt  DateTime?
   uploadedById String
   uploadedBy   User     @relation(fields: [uploadedById], references: [id])

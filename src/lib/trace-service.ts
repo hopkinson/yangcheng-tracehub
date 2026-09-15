@@ -253,24 +253,6 @@ async function buildTraceFromOutbound(
     orderBy: { checkTime: "desc" },
   });
 
-  // 读取可能随出库申请留痕的 specBatchMap（用于精准定位规格与冷库批次）
-  const outboundAudit = await prisma.auditLog.findFirst({
-    where: {
-      entityId: outOrder.id,
-      action: { in: ["STORE_OUTBOUND_REQUEST", "CARD_OUTBOUND_REQUEST"] },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  let specBatchMap: Record<string, string> = {};
-  if (outboundAudit?.details) {
-    try {
-      const d = JSON.parse(outboundAudit.details);
-      if (d.specBatchMap && typeof d.specBatchMap === "object") {
-        specBatchMap = d.specBatchMap;
-      }
-    } catch {}
-  }
-
   // 针对蟹卡提货或按单查询场景：严格按目标订单ID/单号隔离，不泄漏同出库批次的其他订单明细
   let matchedLines = outOrder.lines;
   if (relatedOrders && relatedOrders.length > 0) {
@@ -283,257 +265,58 @@ async function buildTraceFromOutbound(
     );
   }
 
-  const linesToProcess = matchedLines && matchedLines.length > 0 ? matchedLines : [{
-    gender: batch.gender,
-    weightTier: batch.weightTier,
-    count: outOrder.outboundCount,
-    expressCompany: null,
-    waybillNo: null,
-  }];
+  const linesToProcess = matchedLines || [];
+  if (linesToProcess.length === 0) {
+    throw new Error(`出库单 ${outOrder.code} 缺少可追溯的出库明细`);
+  }
 
   const lineDetails: TraceLineDetail[] = [];
 
   for (let idx = 0; idx < linesToProcess.length; idx++) {
     const line = linesToProcess[idx];
-    const gender = line.gender || batch.gender;
-    const weightTier = line.weightTier || batch.weightTier;
-    const normTier = Invariants.normalizeWeightTier(weightTier);
-    const tierVariants = Array.from(new Set([weightTier, normTier].filter(Boolean)));
-
-    // 核心规格穿透校验：检查 outOrder.batch 是否真正包含当前明细行规格
-    // 若出库单绑定的是单主批次，但当前行属于多单合单/礼盒多规格混装（例如 4.0两公 与 3.0两母 属于不同养殖户或不同原料批次）
-    // 则精准反向寻源与该规格严格匹配的真实原料批次及签约养殖户，杜绝张冠李戴
-    const batchHasSpec =
-      (batch.gender === gender && tierVariants.includes(batch.weightTier)) ||
-      batch.items?.some((it: any) => it.gender === gender && tierVariants.includes(it.weightTier));
-
-    let effectiveBatch = batch;
-    let effectiveFarmer = farmer;
-
-    if (!batchHasSpec) {
-      const findSourceBatch = (formNo?: string | null) =>
-        prisma.batch.findFirst({
-          where: {
-            ...(formNo ? { formNo } : {}),
-            OR: [
-              { gender, weightTier: { in: tierVariants } },
-              { items: { some: { gender, weightTier: { in: tierVariants } } } },
-            ],
-          },
+    const gender = line.gender;
+    const weightTier = line.weightTier;
+    const coldLog = await prisma.coldLog.findUnique({
+      where: { id: line.coldLogId },
+      include: {
+        store: true,
+        sortTask: {
           include: {
-            farmer: { include: { enclosures: true } },
-            enclosure: true,
-            pool: true,
-            items: { include: { pool: true } },
+            machine: true,
+            bundleBatch: {
+              include: {
+                group: true,
+                tagClaim: { include: { farmer: true } },
+                lines: true,
+                sourceBatch: {
+                  include: {
+                    farmer: { include: { enclosures: true } },
+                    enclosure: true,
+                    pool: true,
+                    items: { include: { pool: true } },
+                  },
+                },
+              },
+            },
           },
-          orderBy: { createdAt: "desc" },
-        });
+        },
+      },
+    });
 
-      const matchedSourceBatch =
-        (batch.formNo && (await findSourceBatch(batch.formNo))) ||
-        (await findSourceBatch());
+    const sortTask: any = coldLog?.sortTask || null;
+    const bundleBatch = sortTask?.bundleBatch || null;
+    const sourceBatch = bundleBatch?.sourceBatch || null;
 
-      if (matchedSourceBatch) {
-        effectiveBatch = matchedSourceBatch;
-        effectiveFarmer = matchedSourceBatch.farmer;
-      }
+    if (!coldLog || !sortTask || !bundleBatch || !sourceBatch) {
+      throw new Error(`出库明细 ${line.orderNo || line.id} 的原料批次链路不完整，禁止生成溯源`);
     }
+
+    const effectiveBatch = sourceBatch;
+    const effectiveFarmer = effectiveBatch.farmer;
 
     if (idx === 0) {
       primaryFarmer = effectiveFarmer;
       primaryBatch = effectiveBatch;
-    }
-
-    // 溯源链路层层反向锚定：同一农户、暂养池、规格，贯通称重分拣与预冷入库
-    // 1. 优先读取出库申请时所选 specBatchMap 中的专属保鲜批次
-    const allocatedColdLogId =
-      specBatchMap[`${gender}_${normTier}`] || specBatchMap[`${gender}_${weightTier}`];
-
-    let coldLog: any = null;
-    let sortTask: any = null;
-    let bundleBatch: any = null;
-
-    if (allocatedColdLogId) {
-      coldLog = await prisma.coldLog.findUnique({
-        where: { id: allocatedColdLogId },
-        include: { store: true },
-      });
-    }
-
-    const inspectColdLogLineage = async (cl: any, strictSpec = true) => {
-      if (!cl?.refId) return null;
-      const st = await prisma.sortTask.findFirst({
-        where: {
-          OR: [{ code: cl.refId }, { id: cl.refId }],
-          gender,
-          ...(strictSpec ? { weightTier: { in: tierVariants } } : {}),
-        },
-        include: {
-          machine: true,
-          bundleBatch: {
-            include: { group: true, tagClaim: { include: { farmer: true } }, lines: true },
-          },
-        },
-      });
-      if (st) {
-        return { sortTask: st, bundleBatch: st.bundleBatch };
-      }
-
-      const specMatch = strictSpec
-        ? [
-            { lines: { some: { gender, weightTier: { in: tierVariants } } } },
-            { sortTasks: { some: { gender, weightTier: { in: tierVariants } } } },
-          ]
-        : [
-            { lines: { some: { gender } } },
-            { sortTasks: { some: { gender } } },
-          ];
-
-      const bb = await prisma.bundleBatch.findFirst({
-        where: {
-          AND: [
-            { OR: [{ code: cl.refId }, { id: cl.refId }] },
-            { OR: specMatch },
-          ],
-        },
-        include: {
-          group: true,
-          tagClaim: { include: { farmer: true } },
-          lines: true,
-          sortTasks: {
-            where: { gender, ...(strictSpec ? { weightTier: { in: tierVariants } } : {}) },
-            include: { machine: true },
-          },
-        },
-      });
-      if (bb) {
-        return {
-          sortTask: bb.sortTasks?.[0] || null,
-          bundleBatch: bb,
-        };
-      }
-      return null;
-    };
-
-    if (coldLog) {
-      const lineage =
-        (await inspectColdLogLineage(coldLog, true)) ||
-        (await inspectColdLogLineage(coldLog, false));
-      if (lineage) {
-        sortTask = lineage.sortTask;
-        bundleBatch = lineage.bundleBatch;
-      }
-    } else if (outOrder.coldLog) {
-      // 仅当出库单关联的 coldLog 确实严格匹配当前行性别/规格时才沿用
-      const lineage = await inspectColdLogLineage(outOrder.coldLog, true);
-      if (lineage) {
-        coldLog = outOrder.coldLog;
-        sortTask = lineage.sortTask;
-        bundleBatch = lineage.bundleBatch;
-      }
-    }
-
-    // 分拣任务深度反向对齐（严格限制当前行 gender，杜绝公母混淆）
-    const sortTaskInclude = {
-      machine: true,
-      bundleBatch: {
-        include: { group: true, tagClaim: { include: { farmer: true } }, lines: true },
-      },
-    };
-
-    if (!sortTask) {
-      sortTask =
-        (await prisma.sortTask.findFirst({
-          where: {
-            gender,
-            weightTier: { in: tierVariants },
-            status: "COMPLETED",
-            bundleBatch: { tagClaim: { farmerId: effectiveBatch.farmerId } },
-          },
-          include: sortTaskInclude,
-          orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
-        })) ||
-        (await prisma.sortTask.findFirst({
-          where: {
-            gender,
-            weightTier: { in: tierVariants },
-            status: "COMPLETED",
-          },
-          include: sortTaskInclude,
-          orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
-        })) ||
-        (await prisma.sortTask.findFirst({
-          where: { gender, status: "COMPLETED" },
-          include: sortTaskInclude,
-          orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
-        }));
-    }
-
-    // 捆扎批次反向对齐（必须保证 bundleBatch 属于当前性别与养殖户，绝不跨性别）
-    if (!bundleBatch) {
-      if (sortTask?.bundleBatch) {
-        bundleBatch = sortTask.bundleBatch;
-      } else {
-        const bundleInclude = {
-          group: true,
-          tagClaim: { include: { farmer: true } },
-          lines: true,
-        };
-        bundleBatch =
-          (await prisma.bundleBatch.findFirst({
-            where: {
-              status: "COMPLETED",
-              tagClaim: { farmerId: effectiveBatch.farmerId },
-              OR: [
-                { lines: { some: { gender, weightTier: { in: tierVariants } } } },
-                { sortTasks: { some: { gender, weightTier: { in: tierVariants } } } },
-              ],
-            },
-            include: bundleInclude,
-            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
-          })) ||
-          (await prisma.bundleBatch.findFirst({
-            where: {
-              status: "COMPLETED",
-              tagClaim: { farmerId: effectiveBatch.farmerId },
-              OR: [
-                { lines: { some: { gender } } },
-                { sortTasks: { some: { gender } } },
-              ],
-            },
-            include: bundleInclude,
-            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
-          })) ||
-          (await prisma.bundleBatch.findFirst({
-            where: {
-              status: "COMPLETED",
-              OR: [
-                { lines: { some: { gender } } },
-                { sortTasks: { some: { gender } } },
-              ],
-            },
-            include: bundleInclude,
-            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
-          }));
-      }
-    }
-
-    // 预冷入库台账反向对齐
-    if (!coldLog) {
-      const refIds = [
-        sortTask?.code,
-        sortTask?.id,
-        bundleBatch?.code,
-        bundleBatch?.id,
-      ].filter(Boolean) as string[];
-
-      if (refIds.length > 0) {
-        coldLog = await prisma.coldLog.findFirst({
-          where: { refId: { in: refIds } },
-          include: { store: true },
-          orderBy: { createdAt: "desc" },
-        });
-      }
     }
 
     const outboundLogistics = line.expressCompany && line.waybillNo

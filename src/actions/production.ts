@@ -196,6 +196,7 @@ export async function createBundleBatchAction(data: {
   lines: Array<{ poolId: string; gender: string; weightTier: string; count: number }>;
 }) {
   try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
     const sourceBatchId = data.batchId?.trim();
     if (!sourceBatchId || !data.groupId || !data.tagClaimId || !data.ropeBatch.trim()) {
       return { success: false, message: "原料批次、捆扎班组、蟹扣批次与蟹绳批次均为必填项" };
@@ -238,7 +239,6 @@ export async function createBundleBatchAction(data: {
       where: { id: data.tagClaimId },
       include: {
         farmer: true,
-        bundleBatches: { include: { lines: true } },
       },
     });
     if (!tagClaim || tagClaim.status !== "APPROVED") {
@@ -249,11 +249,10 @@ export async function createBundleBatchAction(data: {
     }
 
     const totalCrabs = data.lines.reduce((acc, l) => acc + l.count, 0);
-    const alreadyUsed = tagClaim.bundleBatches.flatMap((b) => b.lines).reduce((sum, l) => sum + l.count, 0);
     const availableTags = Math.max(
       0,
       tagClaim.claimCount -
-        Math.max(alreadyUsed, tagClaim.boundCount || 0) -
+        (tagClaim.boundCount || 0) -
         (tagClaim.returnedCount || 0) -
         (tagClaim.scrappedCount || 0)
     );
@@ -448,11 +447,24 @@ export async function completeBundleBatchAction(
   lossReason?: string
 ) {
   try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
     const batch = await prisma.bundleBatch.findUnique({
       where: { id: bundleId },
       include: { lines: true },
     });
     if (!batch) return { success: false, message: "未找到指定的捆扎批次" };
+    if (batch.status !== "BUNDLING") {
+      return { success: false, message: "该捆扎批次已完成，请勿重复操作" };
+    }
+
+    const resultLineIds = new Set(lineResults.map((item) => item.lineId));
+    if (
+      lineResults.length !== batch.lines.length ||
+      resultLineIds.size !== batch.lines.length ||
+      batch.lines.some((line) => !resultLineIds.has(line.id))
+    ) {
+      return { success: false, message: "请完整填写每个捆扎明细的合格只数，且同一明细不能重复提交" };
+    }
 
     const totalInput = batch.lines.reduce((acc, l) => acc + l.count, 0);
     const totalQualified = lineResults.reduce((acc, l) => acc + l.qualifiedCount, 0);
@@ -478,21 +490,8 @@ export async function completeBundleBatchAction(
     }
 
     await prisma.$transaction(async (tx) => {
-      for (const res of lineResults) {
-        const line = batch.lines.find((l) => l.id === res.lineId);
-        if (line) {
-          await tx.bundleLine.update({
-            where: { id: line.id },
-            data: {
-              qualifiedCount: res.qualifiedCount,
-              lossCount: line.count - res.qualifiedCount,
-            },
-          });
-        }
-      }
-
-      await tx.bundleBatch.update({
-        where: { id: bundleId },
+      const completeResult = await tx.bundleBatch.updateMany({
+        where: { id: bundleId, status: "BUNDLING" },
         data: {
           inputCount: totalInput,
           qualifiedCount: totalQualified,
@@ -503,6 +502,20 @@ export async function completeBundleBatchAction(
           doneAt: new Date(),
         },
       });
+      if (completeResult.count !== 1) {
+        throw new Error("该捆扎批次已完成，请勿重复操作");
+      }
+
+      for (const res of lineResults) {
+        const line = batch.lines.find((l) => l.id === res.lineId)!;
+        await tx.bundleLine.update({
+          where: { id: line.id },
+          data: {
+            qualifiedCount: res.qualifiedCount,
+            lossCount: line.count - res.qualifiedCount,
+          },
+        });
+      }
 
       // 捆扎组置为 COMPLETED
       await tx.bundleGroup.update({
@@ -510,22 +523,32 @@ export async function completeBundleBatchAction(
         data: { status: "COMPLETED" },
       });
 
-      // 同步绑扣与损耗至蟹扣台账并自动轧平
+      // 蟹扣只在完成捆扎时按最终合格只数扣减；捆扎损耗不自动等同于蟹扣作废。
       if (batch.tagClaimId) {
         const claim = await tx.tagClaim.findUnique({ where: { id: batch.tagClaimId } });
-        if (claim) {
-          const newBound = claim.boundCount + totalQualified;
-          const newScrapped = claim.scrappedCount + lossRes.lossCount;
-          const isBalanced = claim.claimCount === (newBound + claim.returnedCount + newScrapped);
-          await tx.tagClaim.update({
-            where: { id: claim.id },
-            data: {
-              boundCount: newBound,
-              scrappedCount: newScrapped,
-              scrapReason: claim.scrapReason || (lossRes.lossCount > 0 ? "捆扎损耗" : null),
-              isBalanced,
-            },
-          });
+        if (!claim) throw new Error("未找到关联的蟹扣领用记录");
+
+        const availableTags = claim.claimCount - claim.boundCount - claim.returnedCount - claim.scrappedCount;
+        if (totalQualified > availableTags) {
+          throw new Error(`蟹扣余量不足：剩余 ${Math.max(0, availableTags)} 只，本次完成 ${totalQualified} 只`);
+        }
+
+        const newBound = claim.boundCount + totalQualified;
+        const isBalanced = claim.claimCount === (newBound + claim.returnedCount + claim.scrappedCount);
+        const claimUpdate = await tx.tagClaim.updateMany({
+          where: {
+            id: claim.id,
+            boundCount: claim.boundCount,
+            returnedCount: claim.returnedCount,
+            scrappedCount: claim.scrappedCount,
+          },
+          data: {
+            boundCount: newBound,
+            isBalanced,
+          },
+        });
+        if (claimUpdate.count !== 1) {
+          throw new Error("蟹扣台账已变化，请刷新后重试");
         }
       }
     });
@@ -574,6 +597,7 @@ export async function deleteBundleGroupAction(groupId: string) {
 
 export async function deleteBundleBatchAction(bundleId: string) {
   try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
     const batch = await prisma.bundleBatch.findUnique({
       where: { id: bundleId },
       include: { lines: true, sortTasks: true },
@@ -680,20 +704,34 @@ export async function deleteBundleBatchAction(bundleId: string) {
       if (batch.status === "COMPLETED" && batch.tagClaimId) {
         const claim = await tx.tagClaim.findUnique({ where: { id: batch.tagClaimId } });
         if (claim) {
-          const newBound = Math.max(0, claim.boundCount - batch.qualifiedCount);
-          const newScrapped = Math.max(0, claim.scrappedCount - batch.lossCount);
-          await tx.tagClaim.update({
-            where: { id: claim.id },
+          if (claim.boundCount < batch.qualifiedCount) {
+            throw new Error("蟹扣台账异常：已完成绑扎数小于待撤销数量");
+          }
+          const newBound = claim.boundCount - batch.qualifiedCount;
+          const claimUpdate = await tx.tagClaim.updateMany({
+            where: {
+              id: claim.id,
+              boundCount: claim.boundCount,
+              returnedCount: claim.returnedCount,
+              scrappedCount: claim.scrappedCount,
+            },
             data: {
               boundCount: newBound,
-              scrappedCount: newScrapped,
-              isBalanced: claim.claimCount === (newBound + claim.returnedCount + newScrapped),
+              isBalanced: claim.claimCount === (newBound + claim.returnedCount + claim.scrappedCount),
             },
           });
+          if (claimUpdate.count !== 1) {
+            throw new Error("蟹扣台账已变化，请刷新后重试");
+          }
         }
       }
 
-      await tx.bundleBatch.delete({ where: { id: bundleId } });
+      const deleteResult = await tx.bundleBatch.deleteMany({
+        where: { id: bundleId, status: batch.status },
+      });
+      if (deleteResult.count !== 1) {
+        throw new Error("捆扎批次状态已变化，请刷新后重试");
+      }
 
       const remainingBundling = await tx.bundleBatch.count({
         where: { groupId: batch.groupId, status: "BUNDLING" },
@@ -804,7 +842,7 @@ export async function createSortTasksAction(data: {
 
       // 分拣阶段继续执行原料批次 FIFO：更早批次即使仍在捆扎，也不能被后续原料批次跨越。
       const fifoBundles = await tx.bundleBatch.findMany({
-        where: { status: { in: ["BUNDLING", "COMPLETED"] }, sourceBatchId: { not: null } },
+        where: { status: { in: ["BUNDLING", "COMPLETED"] } },
         select: {
           status: true,
           qualifiedCount: true,
@@ -851,10 +889,7 @@ export async function createSortTasksAction(data: {
       const hasFirstSuffix = existingTasks.some((task) => task.code === `${baseCode}-1`);
       if (existingTasks.length + data.items.length > 1 && unsuffixed && !hasFirstSuffix) {
         const downstream = await tx.coldLog.findFirst({
-          where: {
-            refType: "SORT",
-            refId: { in: [unsuffixed.id, baseCode] },
-          },
+          where: { sortTaskId: unsuffixed.id },
           select: { id: true },
         });
         if (downstream) {
@@ -949,13 +984,17 @@ export async function deleteSortTaskAction(taskId: string) {
     if (!task) return { success: false, message: "分拣任务未找到" };
 
     const coldLog = await prisma.coldLog.findFirst({
-      where: { refId: task.code },
-      include: { outboundOrders: true },
+      where: { sortTaskId: task.id },
+      include: {
+        outboundOrders: true,
+        outboundLines: { take: 1 },
+        outboundLosses: { take: 1 },
+      },
     });
-    if (coldLog && coldLog.outboundOrders.length > 0) {
+    if (coldLog && (coldLog.outboundOrders.length > 0 || coldLog.outboundLines.length > 0 || coldLog.outboundLosses.length > 0)) {
       return {
         success: false,
-        message: `该分拣任务已被冷库记录 (${coldLog.code}) 关联并参与出库 (${coldLog.outboundOrders[0].code})，无法直接撤回`,
+        message: `该分拣任务已被冷库记录 (${coldLog.code}) 关联并参与后续库存流转，无法直接撤回`,
       };
     }
     if (coldLog) {
@@ -1117,25 +1156,15 @@ export async function createColdIntakeAction(data: {
 
       const allTasks = pipelineBundles.flatMap((bundle) => bundle.sortTasks);
       const taskIds = allTasks.map((task) => task.id);
-      const taskRefs = allTasks.flatMap((task) => [task.id, task.code]);
-      const taskByRef = new Map(allTasks.flatMap((task) => [[task.id, task.id], [task.code, task.id]]));
       const intakeLogs = taskIds.length > 0
         ? await tx.coldLog.findMany({
-            where: {
-              type: "INTAKE",
-              OR: [
-                { sortTaskId: { in: taskIds } },
-                { sortTaskId: null, refId: { in: taskRefs } },
-              ],
-            },
-            select: { sortTaskId: true, refId: true, count: true },
+            where: { type: "INTAKE", sortTaskId: { in: taskIds } },
+            select: { sortTaskId: true, count: true },
           })
         : [];
       const intakeByTask = new Map<string, number>();
       for (const log of intakeLogs) {
-        const taskId = log.sortTaskId || (log.refId ? taskByRef.get(log.refId) : undefined);
-        if (!taskId) continue;
-        intakeByTask.set(taskId, (intakeByTask.get(taskId) || 0) + log.count);
+        intakeByTask.set(log.sortTaskId, (intakeByTask.get(log.sortTaskId) || 0) + log.count);
       }
 
       const unfinishedSources = new Map<string, { id: string; code: string; inPoolTime: Date }>();
@@ -1171,13 +1200,7 @@ export async function createColdIntakeAction(data: {
 
       // 同一事务内统计已入库数量，避免并发请求同时通过余量校验。
       const logAgg = await tx.coldLog.aggregate({
-        where: {
-          type: "INTAKE",
-          OR: [
-            { sortTaskId: sortTask.id },
-            { sortTaskId: null, refId: { in: [sortTask.id, sortTask.code] } },
-          ],
-        },
+        where: { type: "INTAKE", sortTaskId: sortTask.id },
         _sum: { count: true },
       });
       const alreadyIntakeCount = logAgg._sum.count || 0;

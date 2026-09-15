@@ -11,6 +11,7 @@ async function main() {
   await prisma.specialApproval.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.lossRecord.deleteMany();
+  await prisma.outboundLossRecord.deleteMany();
   await prisma.outboundLine.deleteMany();
   await prisma.outboundOrder.deleteMany();
   await prisma.order.deleteMany();
@@ -236,15 +237,16 @@ async function main() {
       slipName: "YCGF-PZZX-202603_入库码单原件.jpg",
       quickCheck: "QUALIFIED",
       sampleCheck: "QUALIFIED",
-      status: "TEMPORARY_HOLDING",
-      inPoolCount: 5000,
+      status: "PARTIALLY_OUTBOUND",
+      inPoolCount: 5200,
+      outPoolCount: 1200,
       createdById: warehouseAdmin.id,
       inPoolTime: new Date("2026-09-21T07:30:00Z"),
       items: {
         create: [
           { poolId: pool1.id, gender: "MALE", weightTier: "4.0两", weight: 450.0, inPoolCount: 1500 },
           { poolId: pool2.id, gender: "FEMALE", weightTier: "3.5两", weight: 380.0, inPoolCount: 1500 },
-          { poolId: pool3.id, gender: "FEMALE", weightTier: "3.2两", weight: 260.0, inPoolCount: 1000 },
+          { poolId: pool3.id, gender: "FEMALE", weightTier: "3.2两", weight: 312.0, inPoolCount: 1200, outPoolCount: 1200 },
           { poolId: pool5.id, gender: "MALE", weightTier: "3.5两", weight: 270.0, inPoolCount: 1000 },
         ],
       },
@@ -299,6 +301,32 @@ async function main() {
       items: {
         create: [
           { poolId: pool2.id, gender: "FEMALE", weightTier: "3.5两", weight: 800.0, inPoolCount: 3000, outPoolCount: 2814, lossCount: 186 },
+        ],
+      },
+    },
+  });
+
+  // YL2026092004: 王秀兰 09-20 历史母蟹3.2两批次，供历史捆扎/分拣/冷库闭环
+  const ylWang32Hist = await prisma.batch.create({
+    data: {
+      code: "YL2026092004",
+      farmerId: farmerWang.id,
+      enclosureId: farmerWang.enclosures[0].id,
+      poolId: pool3.id,
+      gender: "FEMALE",
+      weightTier: "3.2两",
+      formNo: "YCGF-PZZX-202621",
+      temp: 18.4,
+      humidity: 84.0,
+      escort: "孙师傅",
+      status: "COMPLETED",
+      inPoolCount: 1000,
+      outPoolCount: 1000,
+      createdById: warehouseAdmin.id,
+      inPoolTime: new Date("2026-09-20T07:00:00Z"),
+      items: {
+        create: [
+          { poolId: pool3.id, gender: "FEMALE", weightTier: "3.2两", weight: 260.0, inPoolCount: 1000, outPoolCount: 1000 },
         ],
       },
     },
@@ -461,6 +489,24 @@ async function main() {
   });
 
   // 7. 蟹扣申领 (XK)
+  const xkHistWang = await prisma.tagClaim.create({
+    data: {
+      code: "XK2026092000",
+      claimDate: new Date("2026-09-20T07:15:00Z"),
+      farmerId: farmerWang.id,
+      claimCount: 2200,
+      boundCount: 2200,
+      returnedCount: 0,
+      scrappedCount: 0,
+      isBalanced: true,
+      status: "APPROVED",
+      applicantId: warehouseAdmin.id,
+      approverId: internalAuditor.id,
+      approvalComment: "历史批次核验无误，准予领用",
+      approvedAt: new Date("2026-09-20T07:30:00Z"),
+    },
+  });
+
   const xk01 = await prisma.tagClaim.create({
     data: {
       code: "XK2026092001",
@@ -485,14 +531,14 @@ async function main() {
       claimDate: new Date("2026-09-21T07:40:00Z"),
       farmerId: farmerWang.id,
       claimCount: 1500,
-      boundCount: 1240,
-      returnedCount: 200,
-      scrappedCount: 60,
-      isBalanced: true,
+      boundCount: 0,
+      returnedCount: 0,
+      scrappedCount: 0,
+      isBalanced: false,
       status: "APPROVED",
       applicantId: warehouseAdmin.id,
       approverId: internalAuditor.id,
-      approvalComment: "核验无误，予以发放",
+      approvalComment: "核验无误，予以发放，待捆扎完成后核销",
       approvedAt: new Date("2026-09-21T08:00:00Z"),
     },
   });
@@ -514,6 +560,10 @@ async function main() {
       claimDate: new Date("2026-09-21T08:20:00Z"),
       farmerId: farmerWang.id,
       claimCount: 1200,
+      boundCount: 1200,
+      returnedCount: 0,
+      scrappedCount: 0,
+      isBalanced: true,
       status: "APPROVED",
       applicantId: warehouseAdmin.id,
       approverId: internalAuditor.id,
@@ -551,6 +601,7 @@ async function main() {
     data: {
       code: "KZD2026092101",
       groupId: group1.id,
+      sourceBatchId: ylZhang.id,
       tagClaimId: xk01.id,
       ropeBatch: "XS2026090101",
       status: "COMPLETED",
@@ -566,13 +617,14 @@ async function main() {
     data: {
       code: "KZD2026092102",
       groupId: group2.id,
+      sourceBatchId: yl03.id,
       tagClaimId: xk04.id, // XK2026092103
       ropeBatch: "XS2026090101",
       status: "COMPLETED",
       date: new Date("2026-09-21T08:30:00Z"),
       doneAt: new Date("2026-09-21T09:40:00Z"),
       lines: {
-        create: [{ poolId: pool3.id, gender: "FEMALE", weightTier: "3.2两", count: 1240 }],
+        create: [{ poolId: pool3.id, gender: "FEMALE", weightTier: "3.2两", count: 1200 }],
       },
     },
   });
@@ -582,14 +634,14 @@ async function main() {
     data: {
       code: "KZD2026092103",
       groupId: group3.id,
+      sourceBatchId: yl03.id,
       tagClaimId: xk02.id,
       ropeBatch: "XS2026090102",
       status: "BUNDLING",
       date: new Date("2026-09-21T09:00:00Z"),
       lines: {
         create: [
-          { poolId: pool5.id, gender: "MALE", weightTier: "3.5两", count: 2475 },
-          { poolId: pool6.id, gender: "FEMALE", weightTier: "3.0两", count: 780 },
+          { poolId: pool5.id, gender: "MALE", weightTier: "3.5两", count: 800 },
         ],
       },
     },
@@ -600,7 +652,8 @@ async function main() {
     data: {
       code: "KZD2026092001",
       groupId: group1.id,
-      tagClaimId: xk01.id,
+      sourceBatchId: ylOld.id,
+      tagClaimId: xkHistWang.id,
       ropeBatch: "XS2026090101",
       status: "COMPLETED",
       date: new Date("2026-09-20T08:00:00Z"),
@@ -615,7 +668,8 @@ async function main() {
     data: {
       code: "KZD2026092002",
       groupId: group2.id,
-      tagClaimId: xk02.id,
+      sourceBatchId: ylWang32Hist.id,
+      tagClaimId: xkHistWang.id,
       ropeBatch: "XS2026090101",
       status: "COMPLETED",
       date: new Date("2026-09-20T09:00:00Z"),
@@ -672,8 +726,12 @@ async function main() {
       gender: "FEMALE",
       weightTier: "3.2两",
       inputCount: 1200,
-      status: "PENDING",
+      qualifiedCount: 1200,
+      lossCount: 0,
+      lossRate: 0,
+      status: "COMPLETED",
       date: new Date("2026-09-21T09:50:00Z"),
+      doneAt: new Date("2026-09-21T10:20:00Z"),
     },
   });
 
@@ -725,12 +783,21 @@ async function main() {
 
   await prisma.coldLog.createMany({
     data: [
-      { code: "CR-0901", storeId: bx01.id, type: "INTAKE", count: 438, refType: "SORT", refId: "FJR2026092101", operator: "李仓管" },
-      { code: "CR-0902", storeId: bx02.id, type: "INTAKE", count: 1200, refType: "BUNDLE", refId: "KZD2026092102", operator: "李仓管" },
-      { code: "CR-0903", storeId: bx02.id, type: "INTAKE", count: 1180, refType: "SORT", refId: "FJR2026092001", operator: "李仓管" },
-      { code: "CR-0904", storeId: bx03.id, type: "INTAKE", count: 985, refType: "SORT", refId: "FJR2026092002", operator: "李仓管" },
+      { code: "CR-0901", storeId: bx01.id, type: "INTAKE", count: 438, sortTaskId: fjr01.id, operator: "李仓管" },
+      { code: "CR-0902", storeId: bx02.id, type: "INTAKE", count: 1200, sortTaskId: fjr02.id, operator: "李仓管" },
+      { code: "CR-0903", storeId: bx02.id, type: "INTAKE", count: 1180, sortTaskId: fjrHist1.id, operator: "李仓管" },
+      { code: "CR-0904", storeId: bx03.id, type: "INTAKE", count: 985, sortTaskId: fjrHist2.id, operator: "李仓管" },
     ],
   });
+
+  const seededColdLogs = await prisma.coldLog.findMany({
+    where: { code: { in: ["CR-0901", "CR-0902", "CR-0903", "CR-0904"] } },
+  });
+  const coldLogByCode = new Map(seededColdLogs.map((log) => [log.code, log]));
+  const cr0901 = coldLogByCode.get("CR-0901")!;
+  const cr0902 = coldLogByCode.get("CR-0902")!;
+  const cr0903 = coldLogByCode.get("CR-0903")!;
+  const cr0904 = coldLogByCode.get("CR-0904")!;
 
   // 11. 订单管理 (SO)
   const order1 = await prisma.order.create({
@@ -781,6 +848,7 @@ async function main() {
     data: {
       code: "CK2026092101",
       batchId: ylZhang.id,
+      coldLogId: cr0901.id,
       type: "STORE_ORDER",
       storeId: storeMap["ST-01"],
       storeName: "山姆会员店 (深圳福田店)",
@@ -795,7 +863,7 @@ async function main() {
       approvedAt: new Date("2026-09-21T10:00:00Z"),
       lines: {
         create: [
-          { orderId: order1.id, orderNo: order1.orderNo, gender: "MALE", weightTier: "4.0两", count: 400 },
+          { orderId: order1.id, orderNo: order1.orderNo, gender: "MALE", weightTier: "4.0两", count: 400, coldLogId: cr0901.id },
         ],
       },
     },
@@ -805,7 +873,8 @@ async function main() {
   await prisma.outboundOrder.create({
     data: {
       code: "CK2026092102",
-      batchId: yl03.id,
+      batchId: ylOld.id,
+      coldLogId: cr0903.id,
       type: "CRAB_CARD",
       storeId: storeMap["ST-01"],
       storeName: "蟹卡提货 (顺丰全国直发)",
@@ -816,7 +885,7 @@ async function main() {
       applicantId: warehouseAdmin.id,
       lines: {
         create: [
-          { orderId: order2.id, orderNo: order2.orderNo, gender: "FEMALE", weightTier: "3.5两", count: 600 },
+          { orderId: order2.id, orderNo: order2.orderNo, gender: "FEMALE", weightTier: "3.5两", count: 600, coldLogId: cr0903.id },
         ],
       },
     },
@@ -826,7 +895,8 @@ async function main() {
   await prisma.outboundOrder.create({
     data: {
       code: "CK2026092002",
-      batchId: ylOld.id,
+      batchId: ylWang32Hist.id,
+      coldLogId: cr0904.id,
       type: "STORE_ORDER",
       storeId: storeMap["ST-03"],
       storeName: "山姆会员店 (广州天河店)",
@@ -841,7 +911,7 @@ async function main() {
       approvedAt: new Date("2026-09-20T16:00:00Z"),
       lines: {
         create: [
-          { orderNo: "SM20260920002", gender: "FEMALE", weightTier: "3.2两", count: 900 },
+          { orderNo: "SM20260920002", gender: "FEMALE", weightTier: "3.2两", count: 900, coldLogId: cr0904.id },
         ],
       },
     },
@@ -852,6 +922,7 @@ async function main() {
     data: {
       code: "CK2026092001",
       batchId: ylOld.id,
+      coldLogId: cr0903.id,
       type: "CRAB_CARD",
       storeId: storeMap["ST-01"],
       storeName: "蟹卡提货 (顺丰速运直发)",
@@ -865,8 +936,8 @@ async function main() {
       approvedAt: new Date("2026-09-20T14:30:00Z"),
       lines: {
         create: [
-          { orderNo: "KK20260919018", gender: "FEMALE", weightTier: "3.5两", count: 300, expressCompany: "顺丰冷链", waybillNo: "SF10982310891" },
-          { orderNo: "KK20260919026", gender: "FEMALE", weightTier: "3.5两", count: 200, expressCompany: "顺丰冷链", waybillNo: "SF10982310892" },
+          { orderNo: "KK20260919018", gender: "FEMALE", weightTier: "3.5两", count: 300, coldLogId: cr0903.id, expressCompany: "顺丰冷链", waybillNo: "SF10982310891" },
+          { orderNo: "KK20260919026", gender: "FEMALE", weightTier: "3.5两", count: 200, coldLogId: cr0903.id, expressCompany: "顺丰冷链", waybillNo: "SF10982310892" },
         ],
       },
     },

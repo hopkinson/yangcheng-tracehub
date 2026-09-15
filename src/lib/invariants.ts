@@ -10,8 +10,7 @@ export interface FarmerQuotaCheck {
 
 export interface TagClaimCheck {
   farmerQuota: number;
-  cumulativeClaimed: number;
-  activeInPoolCount: number;
+  cumulativeBoundCount: number;
   requestedCount: number;
 }
 
@@ -78,6 +77,7 @@ export interface SpecStockInfo {
   label: string;
   qualified: number;
   used: number;
+  loss: number;
   available: number;
   usagePct: number;
 }
@@ -152,17 +152,15 @@ export const Invariants = {
     };
   },
 
-  // 3. 蟹扣领用余量计算与校验: min(在池存活合计, 剩余额度)
-  checkTagClaim: ({ farmerQuota, cumulativeClaimed, activeInPoolCount, requestedCount }: TagClaimCheck) => {
-    const remainingQuota = Math.max(0, farmerQuota - cumulativeClaimed);
-    const maxClaimable = Math.min(activeInPoolCount, remainingQuota);
-    const valid = requestedCount > 0 && requestedCount <= maxClaimable;
+  // 3. 蟹扣领用只受年度额度约束；实际消耗仅在完成捆扎时计入 boundCount
+  checkTagClaim: ({ farmerQuota, cumulativeBoundCount, requestedCount }: TagClaimCheck) => {
+    const remainingQuota = Math.max(0, farmerQuota - cumulativeBoundCount);
+    const valid = requestedCount > 0 && requestedCount <= remainingQuota;
     return {
       valid,
-      maxClaimable,
-      activeInPoolCount,
+      maxClaimable: remainingQuota,
       remainingQuota,
-      reason: valid ? "领用数量在合规余量范围内" : `超领拦截: 申请 ${requestedCount} 只，当前可领上限为 ${maxClaimable} 只`,
+      reason: valid ? "领用数量在年度额度范围内" : `超领拦截: 申请 ${requestedCount} 只，当前年度额度余量为 ${remainingQuota} 只`,
     };
   },
 
@@ -695,6 +693,7 @@ export const Invariants = {
   aggregateSpecStocks({
     sortTasks = [],
     outboundLines = [],
+    outboundLosses = [],
     defaultSpecs = [
       { gender: "MALE", weightTier: "4.0两" },
       { gender: "MALE", weightTier: "3.5两" },
@@ -704,19 +703,26 @@ export const Invariants = {
   }: {
     sortTasks: Array<{ gender: string; weightTier: string; qualifiedCount: number }>;
     outboundLines?: Array<{ gender: string; weightTier: string; count: number }>;
+    outboundLosses?: Array<{ gender: string; weightTier: string; count: number }>;
     defaultSpecs?: Array<{ gender: string; weightTier: string }>;
   }) {
-    const stockMap = new Map<string, { qualified: number; used: number }>();
+    const stockMap = new Map<string, { qualified: number; used: number; loss: number }>();
     for (const t of sortTasks) {
       const k = `${t.gender}_${Invariants.normalizeWeightTier(t.weightTier)}`;
-      const e = stockMap.get(k) || { qualified: 0, used: 0 };
+      const e = stockMap.get(k) || { qualified: 0, used: 0, loss: 0 };
       e.qualified += t.qualifiedCount || 0;
       stockMap.set(k, e);
     }
     for (const l of outboundLines) {
       const k = `${l.gender}_${Invariants.normalizeWeightTier(l.weightTier)}`;
-      const e = stockMap.get(k) || { qualified: 0, used: 0 };
+      const e = stockMap.get(k) || { qualified: 0, used: 0, loss: 0 };
       e.used += l.count || 0;
+      stockMap.set(k, e);
+    }
+    for (const l of outboundLosses) {
+      const k = `${l.gender}_${Invariants.normalizeWeightTier(l.weightTier)}`;
+      const e = stockMap.get(k) || { qualified: 0, used: 0, loss: 0 };
+      e.loss += l.count || 0;
       stockMap.set(k, e);
     }
 
@@ -730,16 +736,17 @@ export const Invariants = {
     return [...finalKeys]
       .map((k) => {
         const [gender, weightTier] = k.split("_");
-        const { qualified = 0, used = 0 } = stockMap.get(k) || {};
-        const available = Math.max(0, qualified - used);
+        const { qualified = 0, used = 0, loss = 0 } = stockMap.get(k) || {};
+        const available = Math.max(0, qualified - used - loss);
         return {
           gender,
           weightTier,
           label: `${weightTier} ${gender === "FEMALE" ? "母蟹" : "公蟹"}`,
           qualified,
           used,
+          loss,
           available,
-          usagePct: qualified > 0 ? Math.min(100, Math.round((used / qualified) * 100)) : 0,
+          usagePct: qualified > 0 ? Math.min(100, Math.round(((used + loss) / qualified) * 100)) : 0,
         };
       })
       .sort((a, b) =>

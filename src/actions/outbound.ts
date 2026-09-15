@@ -23,70 +23,38 @@ function tierVariants(rawWeightTier: string) {
 }
 
 // 唯一库存来源：ColdLog -> SortTask -> BundleBatch -> Batch。
-// 历史 ColdLog 允许仅通过 refId 关联分拣任务；新记录始终写 sortTaskId。
 async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = prisma): Promise<FifoColdLot[]> {
   const tiers = tierVariants(rawWeightTier);
-  const tasks = await db.sortTask.findMany({
+  const logs = await db.coldLog.findMany({
     where: {
-      status: "COMPLETED",
-      gender,
-      weightTier: { in: tiers },
-      bundleBatch: { sourceBatchId: { not: null } },
+      type: "INTAKE",
+      sortTask: {
+        is: {
+          status: "COMPLETED",
+          gender,
+          weightTier: { in: tiers },
+        },
+      },
     },
     include: {
-      bundleBatch: {
+      sortTask: {
         include: {
-          sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
+          bundleBatch: {
+            include: {
+              sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
+            },
+          },
         },
       },
     },
   });
-  if (tasks.length === 0) return [];
+  if (logs.length === 0) return [];
 
-  const taskIds = tasks.map((task: any) => task.id);
-  const taskRefs = tasks.flatMap((task: any) => [task.id, task.code]);
-  const taskByRef = new Map<string, any>();
-  for (const task of tasks) {
-    taskByRef.set(task.id, task);
-    taskByRef.set(task.code, task);
-  }
-
-  const logs = await db.coldLog.findMany({
-    where: {
-      type: "INTAKE",
-      OR: [
-        { sortTaskId: { in: taskIds } },
-        { sortTaskId: null, refId: { in: taskRefs } },
-      ],
-    },
-    select: { id: true, sortTaskId: true, refId: true, count: true, createdAt: true },
-  });
-
-  const traceableLogs = logs.flatMap((log: any) => {
-    const task = log.sortTaskId
-      ? taskByRef.get(log.sortTaskId)
-      : log.refId
-        ? taskByRef.get(log.refId)
-        : null;
-    const sourceBatch = task?.bundleBatch?.sourceBatch;
-    return sourceBatch ? [{ log, sourceBatch }] : [];
-  });
-  if (traceableLogs.length === 0) return [];
-
-  const logIds = traceableLogs.map(({ log }: any) => log.id);
-  const [boundOutbound, legacyOutbound, boundLoss] = await Promise.all([
+  const logIds = logs.map((log: any) => log.id);
+  const [boundOutbound, boundLoss] = await Promise.all([
     db.outboundLine.findMany({
       where: { coldLogId: { in: logIds }, outboundOrder: { status: { not: "REJECTED" } } },
       select: { coldLogId: true, count: true },
-    }),
-    db.outboundLine.findMany({
-      where: {
-        coldLogId: null,
-        gender,
-        weightTier: { in: tiers },
-        outboundOrder: { status: { not: "REJECTED" } },
-      },
-      select: { count: true },
     }),
     db.outboundLossRecord.findMany({
       where: { coldLogId: { in: logIds } },
@@ -96,14 +64,14 @@ async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = 
 
   const usedByLog = new Map<string, number>();
   for (const row of boundOutbound) {
-    if (!row.coldLogId) continue;
     usedByLog.set(row.coldLogId, (usedByLog.get(row.coldLogId) || 0) + row.count);
   }
   const lossByLog = new Map<string, number>();
   for (const row of boundLoss) lossByLog.set(row.coldLogId, (lossByLog.get(row.coldLogId) || 0) + row.count);
 
-  const lots = traceableLogs
-    .map(({ log, sourceBatch }: any) => ({
+  return logs.map((log: any) => {
+    const sourceBatch = log.sortTask.bundleBatch.sourceBatch;
+    return {
       coldLogId: log.id,
       sourceBatchId: sourceBatch.id,
       sourceBatchCode: sourceBatch.code,
@@ -111,22 +79,10 @@ async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = 
       availableCount: Math.max(0, log.count - (usedByLog.get(log.id) || 0) - (lossByLog.get(log.id) || 0)),
       inPoolTime: sourceBatch.inPoolTime,
       createdAt: log.createdAt,
-    } satisfies FifoColdLot))
-    .sort((a: FifoColdLot, b: FifoColdLot) =>
-      a.inPoolTime.getTime() - b.inPoolTime.getTime() || a.createdAt.getTime() - b.createdAt.getTime()
-    );
-
-  // 旧出库明细没有 coldLogId，只能确定规格。按同一 FIFO 顺序消耗历史库存，
-  // 避免旧发货量在升级后重新变成“可发库存”。
-  let legacyUsed = legacyOutbound.reduce((sum: number, row: any) => sum + row.count, 0);
-  for (const lot of lots) {
-    if (legacyUsed <= 0) break;
-    const used = Math.min(lot.availableCount, legacyUsed);
-    lot.availableCount -= used;
-    legacyUsed -= used;
-  }
-
-  return lots;
+    } satisfies FifoColdLot;
+  }).sort((a: FifoColdLot, b: FifoColdLot) =>
+    a.inPoolTime.getTime() - b.inPoolTime.getTime() || a.createdAt.getTime() - b.createdAt.getTime()
+  );
 }
 
 async function getColdStorageStock(gender: string, rawWeightTier: string, db: any = prisma) {
