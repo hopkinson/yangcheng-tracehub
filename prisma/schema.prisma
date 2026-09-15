@@ -147,6 +147,7 @@ model Batch {
   items            BatchItem[]
   lossRecords      LossRecord[]
   outboundOrders   OutboundOrder[]
+  bundleBatches    BundleBatch[]
 }
 
 // 原料批次明细行 (一码单拆多规格入多池)
@@ -237,11 +238,13 @@ model BundleGroup {
 
 model BundleBatch {
   id              String          @id @default(cuid())
-  code            String          @unique // KZD+YYYYMMDD+XX
+  code            String          @unique // KZD + 原料批次核心编码，可追加 -1/-2
   date            DateTime        @default(now())
   groupId         String
   group           BundleGroup     @relation(fields: [groupId], references: [id])
-  
+  sourceBatchId   String?
+  sourceBatch     Batch?          @relation(fields: [sourceBatchId], references: [id], onDelete: SetNull)
+
   tagClaimId      String
   tagClaim        TagClaim        @relation(fields: [tagClaimId], references: [id])
   ropeBatch       String          // 手填蟹绳批次, 如 XS2026090101

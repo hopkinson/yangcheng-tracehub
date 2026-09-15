@@ -60,59 +60,95 @@ export default async function SortingPage() {
     },
   });
 
-  // 2. 查询已完成捆扎批次 (status=COMPLETED) 及其关联分拣任务，精确计算各批次规格剩余待分拣只数
-  const completedBundles = await prisma.bundleBatch.findMany({
-    where: { status: "COMPLETED" },
-    orderBy: { date: "desc" },
+  // 2. 查询捆扎流转中的原料来源。BUNDLING 也参与 FIFO，避免后批次跨过尚未完成捆扎的前批次。
+  const workflowBundles = await prisma.bundleBatch.findMany({
+    where: { status: { in: ["BUNDLING", "COMPLETED"] } },
+    orderBy: { date: "asc" },
     include: {
       group: true,
+      sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
       lines: { include: { pool: true } },
       sortTasks: true,
     },
   });
 
-  const completedBundleOptions = completedBundles.map((b: any) => {
-    const specUsed = new Map<string, number>();
-    for (const t of b.sortTasks) {
-      const key = `${t.gender}_${t.weightTier}`;
-      specUsed.set(key, (specUsed.get(key) || 0) + t.inputCount);
-    }
+  const completedBundleOptions = workflowBundles
+    .filter((b: any) => b.status === "COMPLETED")
+    .map((b: any) => {
+      const specUsed = new Map<string, number>();
+      for (const t of b.sortTasks) {
+        const key = `${t.gender}_${t.weightTier}`;
+        specUsed.set(key, (specUsed.get(key) || 0) + t.inputCount);
+      }
 
-    let totalAvailable = 0;
-    let totalQualified = 0;
+      let totalAvailable = 0;
+      let totalQualified = 0;
 
-    const lines = b.lines.map((l: any) => {
-      const key = `${l.gender}_${l.weightTier}`;
-      const totalCount = l.qualifiedCount ?? l.count;
-      const used = specUsed.get(key) || 0;
-      const consumed = Math.min(used, totalCount);
-      specUsed.set(key, used - consumed);
-      const availableCount = totalCount - consumed;
+      const lines = b.lines.map((l: any) => {
+        const key = `${l.gender}_${l.weightTier}`;
+        const totalCount = l.qualifiedCount ?? l.count;
+        const used = specUsed.get(key) || 0;
+        const consumed = Math.min(used, totalCount);
+        specUsed.set(key, used - consumed);
+        const availableCount = totalCount - consumed;
 
-      totalAvailable += availableCount;
-      totalQualified += totalCount;
+        totalAvailable += availableCount;
+        totalQualified += totalCount;
+
+        return {
+          id: l.id,
+          gender: l.gender,
+          weightTier: l.weightTier,
+          totalCount,
+          availableCount,
+          count: availableCount,
+          poolCode: l.pool.code,
+          poolName: l.pool.name,
+        };
+      });
 
       return {
-        id: l.id,
-        gender: l.gender,
-        weightTier: l.weightTier,
-        totalCount,
-        availableCount,
-        count: availableCount,
-        poolCode: l.pool.code,
-        poolName: l.pool.name,
+        id: b.id,
+        code: b.code,
+        groupName: b.group.name,
+        sourceBatchId: b.sourceBatch?.id ?? null,
+        sourceBatchCode: b.sourceBatch?.code ?? null,
+        sourceBatchInPoolTime: b.sourceBatch?.inPoolTime?.toISOString() ?? null,
+        sortTaskCount: b.sortTasks.length,
+        totalQualified,
+        availableCount: totalAvailable,
+        lines,
       };
+    })
+    .sort((a: any, b: any) => {
+      const aTime = a.sourceBatchInPoolTime ? new Date(a.sourceBatchInPoolTime).getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = b.sourceBatchInPoolTime ? new Date(b.sourceBatchInPoolTime).getTime() : Number.MAX_SAFE_INTEGER;
+      return aTime - bTime || a.code.localeCompare(b.code);
     });
 
-    return {
-      id: b.id,
-      code: b.code,
-      groupName: b.group.name,
-      totalQualified,
-      availableCount: totalAvailable,
-      lines,
-    };
-  });
+  const sourceBatchMap = new Map<string, {
+    id: string;
+    code: string;
+    inPoolTime: string;
+    availableCount: number;
+    hasBundling: boolean;
+  }>();
+  for (const bundle of workflowBundles) {
+    const source = bundle.sourceBatch;
+    if (!source) continue;
+    const current = sourceBatchMap.get(source.id);
+    const completedOption = completedBundleOptions.find((item: any) => item.id === bundle.id);
+    sourceBatchMap.set(source.id, {
+      id: source.id,
+      code: source.code,
+      inPoolTime: source.inPoolTime.toISOString(),
+      availableCount: (current?.availableCount ?? 0) + (completedOption?.availableCount ?? 0),
+      hasBundling: (current?.hasBundling ?? false) || bundle.status === "BUNDLING",
+    });
+  }
+  const sourceBatches = [...sourceBatchMap.values()]
+    .filter((batch) => batch.hasBundling || batch.availableCount > 0)
+    .sort((a, b) => new Date(a.inPoolTime).getTime() - new Date(b.inPoolTime).getTime() || a.code.localeCompare(b.code));
 
   // 3. 查询全部分拣任务
   const tasks = await prisma.sortTask.findMany({
@@ -120,7 +156,7 @@ export default async function SortingPage() {
     include: {
       machine: true,
       bundleBatch: {
-        include: { group: true },
+        include: { group: true, sourceBatch: { select: { code: true } } },
       },
     },
   });
@@ -161,6 +197,7 @@ export default async function SortingPage() {
           <SortMachineDialog />
           <SortTaskDialog
             machines={machines}
+            sourceBatches={sourceBatches}
             completedBundles={completedBundleOptions}
           />
         </div>
@@ -361,11 +398,12 @@ export default async function SortingPage() {
           </span>
         </CardHeader>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1020px] text-xs text-left">
+          <table className="w-full min-w-[1160px] text-xs text-left">
             <thead className="bg-muted/40 text-muted-foreground border-b font-mono text-[11px]">
               <tr>
                 <th className="px-3 py-2 font-medium whitespace-nowrap w-[140px]">任务号 (FJR)</th>
                 <th className="px-3 py-2 font-medium whitespace-nowrap w-[110px]">作业设备</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap w-[130px]">原料批次</th>
                 <th className="px-3 py-2 font-medium whitespace-nowrap w-[130px]">来源捆扎批次</th>
                 <th className="px-3 py-2 font-medium whitespace-nowrap w-[90px]">规格</th>
                 <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[85px]">投入 (只)</th>
@@ -380,7 +418,7 @@ export default async function SortingPage() {
             <tbody className="divide-y divide-border/50">
               {tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-muted-foreground">
+                  <td colSpan={12} className="text-center py-8 text-muted-foreground">
                     暂无分拣任务，请点击右上角「新建分拣任务 (FJR)」
                   </td>
                 </tr>
@@ -399,6 +437,9 @@ export default async function SortingPage() {
                         <div className="text-[11px] text-muted-foreground truncate max-w-[120px]" title={task.machine.name}>
                           {task.machine.name}
                         </div>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-foreground whitespace-nowrap">
+                        {task.bundleBatch.sourceBatch?.code || "—"}
                       </td>
                       <td className="px-3 py-2 font-mono text-foreground whitespace-nowrap">
                         <div>{task.bundleBatch.code}</div>

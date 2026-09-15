@@ -51,11 +51,32 @@ async function testSortTaskRepeatSelection() {
       },
     }));
 
+  const marker = Date.now();
+  const enclosure = await prisma.enclosure.create({
+    data: { code: `W-SORT-REPEAT-${marker}`, farmerId: farmer.id },
+  });
+  const sourceBatch = await prisma.batch.create({
+    data: {
+      code: `YL-SORT-REPEAT-${marker}`,
+      farmerId: farmer.id,
+      enclosureId: enclosure.id,
+      poolId: pool.id,
+      gender: "FEMALE",
+      weightTier: "3.0两",
+      inPoolTime: new Date("1800-01-01T00:00:00.000Z"),
+      inPoolCount: 315,
+      outPoolCount: 315,
+      status: "COMPLETED",
+      createdById: user.id,
+    },
+  });
+
   const testBundleCode = `KZD-TEST-${Date.now()}`;
   const testBundle = await prisma.bundleBatch.create({
     data: {
       code: testBundleCode,
       groupId: group.id,
+      sourceBatchId: sourceBatch.id,
       tagClaimId: tagClaim.id,
       ropeBatch: "XS-TEST",
       status: "COMPLETED",
@@ -76,8 +97,6 @@ async function testSortTaskRepeatSelection() {
     include: { lines: true },
   });
 
-  const lineId = testBundle.lines[0].id;
-
   try {
     console.log("1. 第一次创建分拣任务，投入全部 315 只...");
     const firstRes = await createSortTasksAction({
@@ -85,7 +104,7 @@ async function testSortTaskRepeatSelection() {
       bundleBatchId: testBundle.id,
       items: [
         {
-          lineId,
+          lineId: testBundle.lines[0].id,
           gender: "FEMALE",
           weightTier: "3.0两",
           inputCount: 315,
@@ -102,7 +121,7 @@ async function testSortTaskRepeatSelection() {
       bundleBatchId: testBundle.id,
       items: [
         {
-          lineId,
+          lineId: testBundle.lines[0].id,
           gender: "FEMALE",
           weightTier: "3.0两",
           inputCount: 315,
@@ -120,6 +139,8 @@ async function testSortTaskRepeatSelection() {
     await prisma.sortTask.deleteMany({ where: { bundleBatchId: testBundle.id } });
     await prisma.bundleLine.deleteMany({ where: { bundleBatchId: testBundle.id } });
     await prisma.bundleBatch.delete({ where: { id: testBundle.id } });
+    await prisma.batch.delete({ where: { id: sourceBatch.id } });
+    await prisma.enclosure.delete({ where: { id: enclosure.id } });
   }
 }
 

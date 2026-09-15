@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
 import { formatDateTime, cn } from "@/lib/utils";
-import { Invariants } from "@/lib/invariants";
 
 export const dynamic = "force-dynamic";
 
@@ -62,32 +61,62 @@ export default async function BundlingPage({
     orderBy: { claimDate: "desc" },
   });
 
-  // 3. 查询暂养池及其在池存活
-  const rawPools = await prisma.holdingPool.findMany({
-    where: { status: "ACTIVE" },
+  // 3. 查询待捆扎原料批次，按入池时间 FIFO 排队；池库存只取对应原料批次的 BatchItem。
+  const rawMaterialBatches = await prisma.batch.findMany({
+    where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
     include: {
-      batches: {
-        where: { status: { not: "FROZEN" } },
-        include: { farmer: true },
-      },
-      batchItems: {
-        where: { batch: { status: { not: "FROZEN" } } },
-        include: { batch: { include: { farmer: true } } },
-      },
+      farmer: true,
+      pool: true,
+      items: { include: { pool: true } },
     },
-    orderBy: { code: "asc" },
+    orderBy: [{ inPoolTime: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
 
-  const poolOptions = rawPools.map((p: any) => ({
-    id: p.id,
-    code: p.code,
-    name: p.name,
-    currentGender: p.currentGender,
-    currentWeightTier: p.currentWeightTier,
-    liveCount: Invariants.calculatePoolLiveCount(p),
-    farmerName:
-      [...new Set([...p.batches, ...p.batchItems.map((i: any) => i.batch)].map((b: any) => b?.farmer?.name).filter(Boolean))].join(", ") || null,
-  }));
+  const materialBatches = rawMaterialBatches
+    .map((batch: any) => {
+      const liveCount = batch.items.length > 0
+        ? batch.items.reduce(
+            (sum: number, item: any) => sum + Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
+            0
+          )
+        : Math.max(0, batch.inPoolCount - batch.outPoolCount - batch.lossCount);
+      return {
+        id: batch.id,
+        code: batch.code,
+        farmerId: batch.farmerId,
+        farmerName: batch.farmer.name,
+        inPoolTime: formatDateTime(batch.inPoolTime),
+        liveCount,
+      };
+    })
+    .filter((batch: any) => batch.liveCount > 0);
+
+  const poolOptions = rawMaterialBatches.flatMap((batch: any) => {
+    const entries = batch.items.length > 0
+      ? batch.items
+      : [{
+          poolId: batch.poolId,
+          pool: batch.pool,
+          gender: batch.gender,
+          weightTier: batch.weightTier,
+          inPoolCount: batch.inPoolCount,
+          outPoolCount: batch.outPoolCount,
+          lossCount: batch.lossCount,
+        }];
+
+    return entries
+      .map((item: any) => ({
+        id: item.poolId,
+        batchId: batch.id,
+        code: item.pool.code,
+        name: item.pool.name,
+        currentGender: item.gender,
+        currentWeightTier: item.weightTier,
+        liveCount: Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
+        farmerName: batch.farmer.name,
+      }))
+      .filter((pool: any) => pool.liveCount > 0 && entries.find((item: any) => item.poolId === pool.id)?.pool.status === "ACTIVE");
+  });
 
   // 4. 查询捆扎批次
   const batches = await prisma.bundleBatch.findMany({
@@ -99,6 +128,7 @@ export default async function BundlingPage({
     include: {
       group: true,
       tagClaim: { include: { farmer: true } },
+      sourceBatch: { include: { farmer: true } },
       lines: { include: { pool: true } },
       sortTasks: true,
     },
@@ -137,18 +167,20 @@ export default async function BundlingPage({
             捆扎管理
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            蟹扣批次与暂养批次的物理与身份绑定 · 严禁混扣混源头 · 只有完成捆扎方可进入分拣
+            原料批次先入先处理 · 蟹扣与原料身份绑定 · 严禁混扣混源头 · 只有完成捆扎方可进入分拣
           </p>
         </div>
         <div className="flex items-center gap-2">
           <BundleGroupDialog groups={groups} />
           <BundleBatchDialog
             groups={groups.map((g: any) => ({ id: g.id, code: g.code, name: g.name }))}
+            materialBatches={materialBatches}
             tagClaims={approvedTagClaims.map((t: any) => {
               const used = t.bundleBatches?.flatMap((b: any) => b.lines || []).reduce((s: number, l: any) => s + l.count, 0) || 0;
               return {
                 id: t.id,
                 code: t.code,
+                farmerId: t.farmerId,
                 farmerName: t.farmer.name,
                 claimCount: t.claimCount,
                 availableCount: Math.max(0, t.claimCount - Math.max(used, t.boundCount || 0) - (t.returnedCount || 0) - (t.scrappedCount || 0)),
@@ -337,10 +369,11 @@ export default async function BundlingPage({
           )}
         </CardHeader>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] text-xs text-left">
+          <table className="w-full min-w-[1260px] text-xs text-left">
             <thead className="bg-muted/50 text-muted-foreground border-b uppercase font-mono">
               <tr>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">捆扎批次号 (KZD)</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">原料批次</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[120px]">班组</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">绑定蟹扣 (XK)</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[120px]">蟹绳批次</th>
@@ -354,7 +387,7 @@ export default async function BundlingPage({
             <tbody className="divide-y divide-border/60">
               {batches.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-6 text-muted-foreground">
+                  <td colSpan={10} className="text-center py-6 text-muted-foreground">
                     暂无捆扎批次，请点击右上角「新建捆扎批次 (KZD)」
                   </td>
                 </tr>
@@ -366,6 +399,14 @@ export default async function BundlingPage({
                     <tr key={batch.id} className="hover:bg-muted/40 transition-colors">
                       <td className="px-3 py-2 font-mono font-bold text-foreground whitespace-nowrap">
                         {batch.code}
+                      </td>
+                      <td className="px-3 py-2 font-mono whitespace-nowrap">
+                        <div className="font-medium text-primary">{batch.sourceBatch?.code || "—"}</div>
+                        {batch.sourceBatch?.farmer?.name && (
+                          <div className="text-[10px] text-muted-foreground mt-0.5 font-sans">
+                            {batch.sourceBatch.farmer.name}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-foreground border border-border/70 leading-none">

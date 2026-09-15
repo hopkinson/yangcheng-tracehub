@@ -21,6 +21,10 @@ export interface CompletedBundleOption {
   id: string;
   code: string;
   groupName: string;
+  sourceBatchId: string | null;
+  sourceBatchCode: string | null;
+  sourceBatchInPoolTime: string | null;
+  sortTaskCount?: number;
   totalQualified?: number;
   availableCount?: number;
   lines: Array<{
@@ -35,6 +39,14 @@ export interface CompletedBundleOption {
   }>;
 }
 
+export interface SourceBatchOption {
+  id: string;
+  code: string;
+  inPoolTime: string;
+  availableCount: number;
+  hasBundling: boolean;
+}
+
 export interface MachineOption {
   id: string;
   code: string;
@@ -45,18 +57,22 @@ export interface MachineOption {
 
 export function SortTaskDialog({
   machines,
+  sourceBatches,
   completedBundles,
 }: {
   machines: MachineOption[];
+  sourceBatches: SourceBatchOption[];
   completedBundles: CompletedBundleOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
-
-  // 优先默认选中第一个有待分拣余量的批次
-  const initialBundle = completedBundles.find((b) => (b.availableCount ?? 0) > 0) || completedBundles[0];
+  const initialSourceBatch = sourceBatches[0];
+  const initialBundle = completedBundles.find(
+    (b) => b.sourceBatchId === initialSourceBatch?.id && (b.availableCount ?? 0) > 0
+  );
 
   const [selectedMachineId, setSelectedMachineId] = useState(machines[0]?.id || "");
+  const [selectedSourceBatchId, setSelectedSourceBatchId] = useState(initialSourceBatch?.id || "");
   const [selectedBundleId, setSelectedBundleId] = useState(initialBundle?.id || "");
   const [selectedLines, setSelectedLines] = useState<Record<string, number>>({});
   const [genderFilter, setGenderFilter] = useState<"ALL" | "MALE" | "FEMALE">("ALL");
@@ -65,7 +81,8 @@ export function SortTaskDialog({
   const isMachineDisabled = selectedMachine?.status === "DISABLED";
   const isMachineBlocked = selectedMachine?.lastCalibrationStatus === "EXCEPTION" || isMachineDisabled;
 
-  const currentBundle = completedBundles.find((b) => b.id === selectedBundleId);
+  const sourceBundles = completedBundles.filter((b) => b.sourceBatchId === selectedSourceBatchId);
+  const currentBundle = sourceBundles.find((b) => b.id === selectedBundleId);
   const currentLines = currentBundle?.lines || [];
   const currentBundleAvailable = currentBundle?.availableCount ?? 0;
 
@@ -76,6 +93,44 @@ export function SortTaskDialog({
 
   const selectedCount = Object.keys(selectedLines).length;
   const totalInputCount = Object.values(selectedLines).reduce((acc, cur) => acc + (cur || 0), 0);
+
+  const selectedSourceBatch = sourceBatches.find((batch) => batch.id === selectedSourceBatchId);
+  const currentSortTaskCount = sourceBundles.reduce((sum, bundle) => sum + (bundle.sortTaskCount ?? 0), 0);
+  const sourceCoreCode = selectedSourceBatch?.code.replace(/^(YL|PC)-?/, "").replace(/-/g, "") ?? "";
+  const sortCodeBase = sourceCoreCode ? `FJR${sourceCoreCode}` : "";
+  const nextSortNo = currentSortTaskCount + 1;
+  const lastSortNo = nextSortNo + Math.max(selectedCount, 1) - 1;
+  const sortCodePreview = !sortCodeBase
+    ? ""
+    : currentSortTaskCount === 0 && selectedCount <= 1
+      ? sortCodeBase
+      : lastSortNo === nextSortNo
+        ? `${sortCodeBase}-${nextSortNo}`
+        : `${sortCodeBase}-${nextSortNo} ~ ${sortCodeBase}-${lastSortNo}`;
+
+  const handleSourceBatchChange = (sourceBatchId: string) => {
+    setSelectedSourceBatchId(sourceBatchId);
+    const nextBundle = completedBundles.find(
+      (b) => b.sourceBatchId === sourceBatchId && (b.availableCount ?? 0) > 0
+    );
+    setSelectedBundleId(nextBundle?.id || "");
+    setSelectedLines({});
+    setGenderFilter("ALL");
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      const firstSource = sourceBatches[0];
+      const firstBundle = completedBundles.find(
+        (b) => b.sourceBatchId === firstSource?.id && (b.availableCount ?? 0) > 0
+      );
+      setSelectedSourceBatchId(firstSource?.id || "");
+      setSelectedBundleId(firstBundle?.id || "");
+      setSelectedLines({});
+      setGenderFilter("ALL");
+    }
+    setOpen(nextOpen);
+  };
 
   const handleBundleChange = (bundleId: string) => {
     setSelectedBundleId(bundleId);
@@ -99,8 +154,8 @@ export function SortTaskDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMachineId || !selectedBundleId) {
-      toast.error("请选择完整分拣设备与捆扎批次");
+    if (!selectedSourceBatchId || !selectedMachineId || !selectedBundleId) {
+      toast.error("请选择完整原料批次、捆扎批次与分拣设备");
       return;
     }
     if (isMachineBlocked) {
@@ -146,7 +201,7 @@ export function SortTaskDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
           <Plus className="size-4" />
@@ -160,12 +215,73 @@ export function SortTaskDialog({
             创建机器分拣称重任务
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            仅支持选择当日【已完成捆扎】的批次，分拣机必须校准合格方允许开机。支持多选规格明细批量建单。
+            按原料入池时间先进先出，仅可处理已完成捆扎且仍有待分拣余量的批次。支持多选规格明细批量建单。
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 flex-1 overflow-y-auto px-1">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                原料批次 <span className="text-[11px] text-muted-foreground">（按入池时间先进先出）</span>
+              </Label>
+              <Select value={selectedSourceBatchId} onValueChange={handleSourceBatchChange}>
+                <SelectTrigger className="h-9 text-xs font-mono">
+                  <SelectValue placeholder="暂无待分拣原料批次" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sourceBatches.length === 0 ? (
+                    <SelectItem value="none" disabled className="text-xs">
+                      暂无可进入分拣的原料批次
+                    </SelectItem>
+                  ) : (
+                    sourceBatches.map((batch, index) => (
+                      <SelectItem key={batch.id} value={batch.id} disabled={index > 0} className="text-xs font-mono">
+                        {batch.code} · {batch.availableCount > 0 ? `待分拣 ${batch.availableCount} 只` : "等待捆扎完成"}{index === 0 ? " · 当前优先" : " · 待前序完成"}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                来源捆扎批次 <span className="text-[11px] text-muted-foreground">（仅当前原料批次）</span>
+              </Label>
+              <Select value={selectedBundleId} onValueChange={handleBundleChange}>
+                <SelectTrigger className="h-9 text-xs font-mono">
+                  <SelectValue placeholder="选择已完成捆扎批次" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sourceBundles.length === 0 ? (
+                    <SelectItem value="none" disabled className="text-xs">
+                      当前原料批次暂无已完成捆扎批次
+                    </SelectItem>
+                  ) : (
+                    sourceBundles.map((b) => {
+                      const bundleAvailable = b.availableCount ?? 0;
+                      const isExhausted = bundleAvailable <= 0;
+                      const totalCrabs = b.totalQualified ?? 0;
+
+                      return (
+                        <SelectItem key={b.id} value={b.id} disabled={isExhausted} className="text-xs font-mono">
+                          <div className="flex items-center justify-between gap-3 w-full">
+                            <span className={isExhausted ? "text-muted-foreground line-through" : "font-medium"}>
+                              {b.code} ({b.groupName})
+                            </span>
+                            <span className={isExhausted ? "text-muted-foreground line-through" : "text-primary font-bold"}>
+                              {isExhausted ? "余 0 只" : `余 ${bundleAvailable} 只 / 捆扎 ${totalCrabs} 只`}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs">作业分拣机</Label>
               <Select value={selectedMachineId} onValueChange={setSelectedMachineId}>
@@ -190,51 +306,8 @@ export function SortTaskDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">
-                来源捆扎批次 <span className="text-[11px] text-muted-foreground">（仅已完成批次可选）</span>
-              </Label>
-              <Select value={selectedBundleId} onValueChange={handleBundleChange}>
-                <SelectTrigger className="h-9 text-xs font-mono">
-                  <SelectValue placeholder="选择已完成捆扎批次" />
-                </SelectTrigger>
-                <SelectContent>
-                  {completedBundles.length === 0 ? (
-                    <SelectItem value="none" disabled className="text-xs">
-                      暂无已完成捆扎批次，请先完成捆扎
-                    </SelectItem>
-                  ) : (
-                    completedBundles.map((b) => {
-                      const bundleAvailable = b.availableCount ?? 0;
-                      const isExhausted = bundleAvailable <= 0;
-                      const totalCrabs = b.totalQualified ?? 0;
-
-                      return (
-                        <SelectItem
-                          key={b.id}
-                          value={b.id}
-                          disabled={isExhausted}
-                          className="text-xs font-mono"
-                        >
-                          <div className="flex items-center justify-between gap-3 w-full">
-                            <span className={isExhausted ? "text-muted-foreground line-through" : "font-medium"}>
-                              {b.code} ({b.groupName})
-                            </span>
-                            <span
-                              className={`text-[11px] font-mono ${
-                                isExhausted ? "text-muted-foreground line-through" : "text-primary font-bold"
-                              }`}
-                            >
-                              {isExhausted
-                                ? "已全部分拣建单 (余 0 只)"
-                                : `余 ${bundleAvailable} 只 / 捆扎 ${totalCrabs} 只`}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      );
-                    })
-                  )}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">分拣批次编码</Label>
+              <Input value={sortCodePreview} readOnly placeholder="选择捆扎批次后自动生成" className="h-9 text-xs font-mono bg-muted/30" />
             </div>
           </div>
 
@@ -443,7 +516,7 @@ export function SortTaskDialog({
               disabled={
                 isPending ||
                 isMachineBlocked ||
-                completedBundles.length === 0 ||
+                sourceBatches.length === 0 ||
                 selectedCount === 0 ||
                 currentBundleAvailable <= 0
               }

@@ -21,6 +21,8 @@ async function runOutboundQcTest() {
   let testTagClaimId = "";
   let testFarmerId = "";
   let testPoolId = "";
+  let testEnclosureId = "";
+  let testSourceBatchId = "";
 
   try {
     // -------------------------------------------------------------------------
@@ -135,6 +137,32 @@ async function runOutboundQcTest() {
     testPoolId = pool.id;
 
     const adminUser = await prisma.user.findFirst({ where: { role: "ADMIN" } });
+    assert.ok(adminUser, "缺少 ADMIN 用户 seed 数据");
+
+    const enclosure = await prisma.enclosure.create({
+      data: {
+        code: `W-TEST-${timestamp}`,
+        farmerId: farmer.id,
+      },
+    });
+    testEnclosureId = enclosure.id;
+
+    const sourceBatch = await prisma.batch.create({
+      data: {
+        code: `YL-TEST-${timestamp}`,
+        farmerId: farmer.id,
+        enclosureId: enclosure.id,
+        poolId: pool.id,
+        gender: "MALE",
+        weightTier: "4.0两",
+        inPoolTime: new Date("1900-01-01T00:00:00.000Z"),
+        inPoolCount: 300,
+        outPoolCount: 300,
+        status: "COMPLETED",
+        createdById: adminUser.id,
+      },
+    });
+    testSourceBatchId = sourceBatch.id;
 
     const tagClaim = await prisma.tagClaim.create({
       data: {
@@ -160,14 +188,16 @@ async function runOutboundQcTest() {
       data: {
         code: `BB-TEST-${timestamp}`,
         groupId: bundleGroup.id,
+        sourceBatchId: sourceBatch.id,
         tagClaimId: tagClaim.id,
         ropeBatch: "XS-TEST",
         status: "COMPLETED",
         inputCount: 300,
+        qualifiedCount: 300,
         lines: {
           create: [
-            { poolId: pool.id, gender: "MALE", weightTier: "4.0两", count: 150 },
-            { poolId: pool.id, gender: "FEMALE", weightTier: "3.5两", count: 150 },
+            { poolId: pool.id, gender: "MALE", weightTier: "4.0两", count: 150, qualifiedCount: 150 },
+            { poolId: pool.id, gender: "FEMALE", weightTier: "3.5两", count: 150, qualifiedCount: 150 },
           ],
         },
       },
@@ -180,8 +210,8 @@ async function runOutboundQcTest() {
       machineId: machine.id,
       bundleBatchId: bundleBatch.id,
       items: [
-        { gender: "MALE", weightTier: "4.0两", inputCount: 100 },
-        { gender: "FEMALE", weightTier: "3.5两", inputCount: 80 },
+        { lineId: bundleBatch.lines.find((line) => line.gender === "MALE")!.id, gender: "MALE", weightTier: "4.0两", inputCount: 100 },
+        { lineId: bundleBatch.lines.find((line) => line.gender === "FEMALE")!.id, gender: "FEMALE", weightTier: "3.5两", inputCount: 80 },
       ],
     });
 
@@ -203,7 +233,7 @@ async function runOutboundQcTest() {
       machineId: machine.id,
       bundleBatchId: bundleBatch.id,
       items: [
-        { gender: "MALE", weightTier: "4.0两", inputCount: 9999 }, // 超过150
+        { lineId: bundleBatch.lines.find((line) => line.gender === "MALE")!.id, gender: "MALE", weightTier: "4.0两", inputCount: 9999 }, // 超过150
       ],
     });
     assert.equal(overRes.success, false, "超额投入未被拦截！");
@@ -225,6 +255,9 @@ async function runOutboundQcTest() {
       await prisma.bundleLine.deleteMany({ where: { bundleBatchId: testBundleBatchId } }).catch(() => {});
       await prisma.bundleBatch.delete({ where: { id: testBundleBatchId } }).catch(() => {});
     }
+    if (testSourceBatchId) {
+      await prisma.batch.delete({ where: { id: testSourceBatchId } }).catch(() => {});
+    }
     if (testBundleGroupId) {
       await prisma.bundleGroup.delete({ where: { id: testBundleGroupId } }).catch(() => {});
     }
@@ -233,6 +266,9 @@ async function runOutboundQcTest() {
     }
     if (testPoolId) {
       await prisma.holdingPool.delete({ where: { id: testPoolId } }).catch(() => {});
+    }
+    if (testEnclosureId) {
+      await prisma.enclosure.delete({ where: { id: testEnclosureId } }).catch(() => {});
     }
     if (testFarmerId) {
       await prisma.farmer.delete({ where: { id: testFarmerId } }).catch(() => {});

@@ -53,6 +53,7 @@ async function testBundleLossWorkflow() {
       poolId: pool.id,
       gender: "MALE",
       weightTier: "4.0两",
+      inPoolTime: new Date("1899-01-01T00:00:00.000Z"),
       inPoolCount: 3000,
       createdById: user!.id,
     },
@@ -91,6 +92,7 @@ async function testBundleLossWorkflow() {
     // -------------------------------------------------------------------------
     console.log("▶ [步骤 1] 创建捆扎批次（起池投入 1000 只）");
     const createRes = await createBundleBatchAction({
+      batchId: batch.id,
       groupId: group.id,
       tagClaimId: tagClaim.id,
       ropeBatch: `XS-${suffix}`,
@@ -169,7 +171,7 @@ async function testBundleLossWorkflow() {
       bundleBatchId: updatedBatch!.id,
       items: [
         {
-          lineId,
+          lineId: updatedBatch!.lines[0].id,
           gender: "MALE",
           weightTier: "4.0两",
           inputCount: 990,
@@ -186,7 +188,7 @@ async function testBundleLossWorkflow() {
       bundleBatchId: updatedBatch!.id,
       items: [
         {
-          lineId,
+          lineId: updatedBatch!.lines[0].id,
           gender: "MALE",
           weightTier: "4.0两",
           inputCount: 980,
