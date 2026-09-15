@@ -270,13 +270,13 @@ export default async function BatchesPage({
                         <TableCell className="align-middle min-w-[230px]">
                           <div className="flex flex-col gap-0.5 py-0.5">
                             {/* 第一行: Tag 完整全称 */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
+                            <div className="flex items-center gap-1.5 max-w-[220px]">
                               <Badge
                                 variant="outline"
-                                className="max-w-[180px] truncate text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
+                                className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground max-w-full shrink min-w-0"
                                 title={`${primaryPoolName}${primaryPool?.code ? ` (${primaryPool.code})` : ""}`}
                               >
-                                {primaryPoolName}
+                                <span className="truncate">{primaryPoolName}</span>
                               </Badge>
                               {hasMultiItems && batch.items.length > 1 && (
                                 <Popover>

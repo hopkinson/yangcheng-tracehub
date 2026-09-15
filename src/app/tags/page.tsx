@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { TagClaimDialog } from "@/components/forms/TagClaimDialog";
 import { ResubmitTagClaimDialog } from "@/components/forms/ResubmitTagClaimDialog";
 import { SettleTagClaimDialog } from "@/components/forms/SettleTagClaimDialog";
+import { UnbalancedClaimsBanner } from "@/components/tags/UnbalancedClaimsBanner";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { formatDate } from "@/lib/utils";
 import { TAG_CLAIM_APPROVAL } from "@/config/approval";
@@ -75,52 +76,12 @@ export default async function TagsPage({
         {isWarehouseOrAdmin && <TagClaimDialog farmers={farmerOptions} userId={currentUserId} />}
       </div>
 
-      {/* 待日结轧平预警看板 */}
-      {unbalancedClaims.length > 0 && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 shadow-xs">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-sm">
-                ⚠️
-              </span>
-              <div>
-                <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                  蟹扣日结待轧平预警
-                  <Badge variant="outline" className="bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/40 text-[10px]">
-                    {unbalancedClaims.length} 笔未轧平
-                  </Badge>
-                </h3>
-                <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
-                  系统硬约束：若前日存在未轧平领扣记录，次日将阻断该养殖户的新领扣申请，请及时核销退废。
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {unbalancedClaims.map((claim) => {
-              const accounted = (claim.boundCount || 0) + (claim.returnedCount || 0) + (claim.scrappedCount || 0);
-              const diff = claim.claimCount - accounted;
-              return (
-                <div key={claim.id} className="flex items-center justify-between rounded-lg bg-background/80 p-2.5 border border-amber-500/20 text-xs">
-                  <div className="flex flex-col">
-                    <div className="font-semibold text-foreground flex items-center gap-1.5">
-                      {claim.farmer.name}
-                      <span className="font-mono text-[10px] text-muted-foreground">({formatDate(claim.claimDate)})</span>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      领用: <span className="font-mono font-medium">{claim.claimCount}</span> · 已核销: <span className="font-mono text-emerald-600">{accounted}</span> · 差额: <span className="font-mono font-bold text-destructive">{diff} 只</span>
-                    </div>
-                  </div>
-                  {isWarehouseOrAdmin && (
-                    <SettleTagClaimDialog claim={claim} userId={currentUserId} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* 待日结轧平预警看板 (紧凑可折叠收纳) */}
+      <UnbalancedClaimsBanner
+        claims={unbalancedClaims}
+        isWarehouseOrAdmin={isWarehouseOrAdmin}
+        currentUserId={currentUserId}
+      />
 
       <Card>
         <CardContent>

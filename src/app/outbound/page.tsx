@@ -197,40 +197,42 @@ export default async function OutboundPage({
 
       {/* 14.2 页首：冷库规格库存紧凑指标条 */}
       <FadeIn>
-        <div id="closing" className="flex items-center gap-2 overflow-x-auto p-2 bg-muted/20 rounded-lg border border-border/70 text-xs no-scrollbar scroll-mt-20">
-          <div className="flex items-center gap-1.5 text-muted-foreground font-medium shrink-0 px-1">
-            <ThermometerSnowflake className="size-3.5 text-primary" />
-            <span>规格库存:</span>
-          </div>
-          {specStocks.map((stock, idx) => (
-            <div
-              key={idx}
-              title={`分拣合格: ${stock.qualified} | 出库已占: ${stock.used} | 出库损耗: ${stock.loss}`}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-background border border-border/80 shrink-0 hover:border-primary/50 transition-colors"
-            >
-              <span className="font-medium text-foreground">{stock.label}</span>
-              <div className="flex items-baseline gap-0.5 font-mono">
-                <span className={cn("font-bold", stock.available > 0 ? "text-primary" : "text-destructive")}>
-                  {stock.available.toLocaleString()}
-                </span>
-                <span className="text-[10px] text-muted-foreground">只</span>
-              </div>
-              {stock.usagePct > 0 && (
-                <span
-                  className={cn(
-                    "text-[10px] px-1 py-0.2 rounded font-mono font-medium",
-                    stock.usagePct >= 80
-                      ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  占 {stock.usagePct}%
-                </span>
-              )}
+        <div id="closing" className="flex items-center justify-between gap-2 p-2 bg-muted/20 rounded-lg border border-border/70 text-xs scroll-mt-20">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-muted-foreground font-medium shrink-0 px-1">
+              <ThermometerSnowflake className="size-3.5 text-primary" />
+              <span>规格库存:</span>
             </div>
-          ))}
+            {specStocks.map((stock, idx) => (
+              <div
+                key={idx}
+                title={`分拣合格: ${stock.qualified} | 出库已占: ${stock.used} | 出库损耗: ${stock.loss}`}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-background border border-border/80 shrink-0 hover:border-primary/50 transition-colors"
+              >
+                <span className="font-medium text-foreground">{stock.label}</span>
+                <div className="flex items-baseline gap-0.5 font-mono">
+                  <span className={cn("font-bold", stock.available > 0 ? "text-primary" : "text-destructive")}>
+                    {stock.available.toLocaleString()}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">只</span>
+                </div>
+                {stock.usagePct > 0 && (
+                  <span
+                    className={cn(
+                      "text-[10px] px-1 py-0.2 rounded font-mono font-medium",
+                      stock.usagePct >= 80
+                        ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    占 {stock.usagePct}%
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
           {isWarehouseOrAdmin && (
-            <div className="ml-auto shrink-0 pl-2">
+            <div className="shrink-0 pl-2 border-l border-border/70">
               <OutboundLossDialog specStocks={specStocks} />
             </div>
           )}
@@ -275,14 +277,16 @@ export default async function OutboundPage({
                     const filledLineCount = lines.filter((l: any) => Boolean(l.waybillNo)).length;
                     const isAllLogisticsFilled = totalLineCount > 0 && filledLineCount === totalLineCount;
 
-                    // 出库明细聚合 chips
-                    const specChips = Object.entries(
-                      lines.reduce((acc: Record<string, number>, l: any) => {
-                        const key = `${l.gender === "FEMALE" ? "母" : "公"}${l.weightTier}`;
-                        acc[key] = (acc[key] || 0) + l.count;
-                        return acc;
-                      }, {} as Record<string, number>)
-                    );
+                    // 出库明细聚合 chips（无 lines 时兜底批次规格，统一样式）
+                    const specChips: [string, number][] = lines.length > 0
+                      ? Object.entries(
+                          lines.reduce((acc: Record<string, number>, l: any) => {
+                            const key = `${l.gender === "FEMALE" ? "母" : "公"}${l.weightTier}`;
+                            acc[key] = (acc[key] || 0) + l.count;
+                            return acc;
+                          }, {} as Record<string, number>)
+                        )
+                      : [[`${order.batch?.gender === "FEMALE" ? "母" : "公"}${order.batch?.weightTier || "4.0两"}`, order.outboundCount]];
 
                     return (
                       <TableRow key={order.id} className="hover:bg-muted/30 transition-colors text-xs">
@@ -292,14 +296,13 @@ export default async function OutboundPage({
                             <span className="font-mono font-bold text-foreground text-xs">
                               {order.code}
                             </span>
-                            <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
-                              {order.coldLog ? (
-                                <span className="text-primary font-medium">
-                                  {order.coldLog.code} ({order.coldLog.store?.code || "冷库"})
-                                </span>
-                              ) : (
-                                <span>{order.lines?.length || 1} 笔明细合单</span>
-                              )}
+                            <span
+                              className="text-[10px] font-mono text-muted-foreground truncate max-w-[140px]"
+                              title={order.coldLog ? `${order.coldLog.code} (${order.coldLog.store?.code || "冷库"})` : undefined}
+                            >
+                              {order.coldLog
+                                ? `${order.coldLog.code} (${order.coldLog.store?.code || "冷库"})`
+                                : `${order.lines?.length || 1} 笔明细合单`}
                             </span>
                           </div>
                         </TableCell>
@@ -334,22 +337,16 @@ export default async function OutboundPage({
 
                         {/* 4. 出库明细 (规格×数量 chip) */}
                         <TableCell className="align-middle">
-                          {specChips.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {specChips.map(([specName, count]: [string, any]) => (
-                                <span
-                                  key={specName}
-                                  className="px-1.5 py-0.5 rounded bg-muted/80 text-[10px] font-mono border"
-                                >
-                                  {specName} · {count}只
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs font-mono text-muted-foreground">
-                              {order.batch?.gender === "FEMALE" ? "母蟹" : "公蟹"} {order.batch?.weightTier || "4.0两"} · {order.outboundCount}只
-                            </span>
-                          )}
+                          <div className="flex flex-wrap gap-1">
+                            {specChips.map(([specName, count]) => (
+                              <span
+                                key={specName}
+                                className="px-1.5 py-0.5 rounded bg-muted/80 text-[10px] font-mono border"
+                              >
+                                {specName} · {count}只
+                              </span>
+                            ))}
+                          </div>
                         </TableCell>
 
                         {/* 5. 总数 */}

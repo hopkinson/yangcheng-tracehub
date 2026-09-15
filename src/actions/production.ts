@@ -248,6 +248,29 @@ export async function createBundleBatchAction(data: {
       return { success: false, message: "蟹扣批次与所选原料批次不属于同一养殖户，禁止混扣" };
     }
 
+    // 蟹扣按先进先出原则使用：避免旧领用批次长期积压。
+    // 不改变蟹扣“完成捆扎后才扣减”的规则，仅限制使用顺序。
+    const oldestAvailableTagClaim = await prisma.tagClaim.findFirst({
+      where: {
+        farmerId: sourceBatch.farmerId,
+        status: "APPROVED",
+      },
+      orderBy: [{ claimDate: "asc" }, { createdAt: "asc" }],
+    });
+    if (oldestAvailableTagClaim && oldestAvailableTagClaim.id !== tagClaim.id) {
+      const oldestAvailableCount =
+        oldestAvailableTagClaim.claimCount -
+        oldestAvailableTagClaim.boundCount -
+        oldestAvailableTagClaim.returnedCount -
+        oldestAvailableTagClaim.scrappedCount;
+      if (oldestAvailableCount > 0) {
+        return {
+          success: false,
+          message: `请优先使用更早领用的蟹扣批次 ${oldestAvailableTagClaim.code || oldestAvailableTagClaim.id}`,
+        };
+      }
+    }
+
     const totalCrabs = data.lines.reduce((acc, l) => acc + l.count, 0);
     const availableTags = Math.max(
       0,
