@@ -7,6 +7,7 @@ async function main() {
 
   // 1. 清理历史数据
   await prisma.qCRecord.deleteMany();
+  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"');
   await prisma.specialApproval.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.lossRecord.deleteMany();
@@ -29,6 +30,10 @@ async function main() {
   await prisma.store.deleteMany();
   await prisma.channel.deleteMany();
   await prisma.user.deleteMany();
+
+  await prisma.$executeRawUnsafe(
+    'INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole") VALUES (\'default\', \'FARMER_ADMIN\', \'QA_DIRECTOR\')'
+  );
 
   // 2. 用户与角色
   const admin = await prisma.user.create({

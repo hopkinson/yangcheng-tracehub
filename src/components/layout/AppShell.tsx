@@ -84,9 +84,9 @@ const NAV_GROUPS: NavGroup[] = [
 
 const PROD_ROUTES = ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/stores", "/reports", "/tags", "/outbound", "/ledgers", "/trace"];
 const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
-  QA_DIRECTOR: [...PROD_ROUTES, "/approvals"],
+  QA_DIRECTOR: PROD_ROUTES,
   WAREHOUSE_ADMIN: PROD_ROUTES,
-  FARMER_ADMIN: ["/", "/farmers", "/tags", "/ledgers", "/trace", "/approvals"],
+  FARMER_ADMIN: ["/", "/farmers", "/tags", "/ledgers", "/trace"],
   CHANNEL_VIEWER: ["/", "/trace"],
 };
 
@@ -96,12 +96,14 @@ export function AppShell({
   currentUserId,
   currentRole,
   pendingAlertCount = 0,
+  canAccessApprovals = false,
 }: {
   children: React.ReactNode;
   currentUser?: { id: string; fullName: string; role: string; username?: string; channelName?: string | null } | null;
   currentUserId: string;
   currentRole: string;
   pendingAlertCount?: number;
+  canAccessApprovals?: boolean;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -114,9 +116,10 @@ export function AppShell({
   const allowedRoutes = ROLE_ALLOWED_ROUTES[currentRole];
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: allowedRoutes
-      ? group.items.filter((i) => allowedRoutes.includes(i.href))
-      : group.items,
+    items: group.items.filter((item) => {
+      if (item.href === "/approvals") return canAccessApprovals;
+      return allowedRoutes ? allowedRoutes.includes(item.href) : true;
+    }),
   })).filter((group) => group.items.length > 0);
 
   const renderNavList = (isCollapsed: boolean) => (

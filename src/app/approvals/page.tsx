@@ -10,8 +10,10 @@ import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
 import { Tag, Truck, AlertTriangle, CheckCircle2, Clock, ShieldCheck, UserCheck } from "lucide-react";
 import { cn, formatDateTime, formatDate, formatTime } from "@/lib/utils";
-import { canApprove, OUTBOUND_APPROVAL, TAG_CLAIM_APPROVAL } from "@/config/approval";
+import { canApprove } from "@/config/approval";
+import { getApprovalSetting } from "@/lib/approval-settings";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +25,23 @@ export default async function ApprovalsPage({
     type?: string;
   }>;
 }) {
-  const [currentUser, params] = await Promise.all([
+  const [currentUser, params, approvalSetting] = await Promise.all([
     getCurrentUser(),
     searchParams,
+    getApprovalSetting(),
   ]);
 
-  const activeTab = params.tab || "pending";
   const typeFilter = params.type || "ALL"; // ALL | TAG | OUTBOUND
-  const canApproveTagClaims = canApprove(currentUser?.role, TAG_CLAIM_APPROVAL.roles);
-  const canApproveOutbound = canApprove(currentUser?.role, OUTBOUND_APPROVAL.roles);
+  const canApproveTagClaims = canApprove(currentUser?.role, approvalSetting.tagClaimRole);
+  const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
+  const canHandleExceptions = currentUser?.role === "QA_DIRECTOR" || currentUser?.role === "ADMIN";
+  const defaultTab = !canApproveTagClaims && !canApproveOutbound && canHandleExceptions ? "exceptions" : "pending";
+  const requestedTab = params.tab || defaultTab;
+  const activeTab = requestedTab === "exceptions" && !canHandleExceptions ? "pending" : requestedTab;
+
+  if (!canApproveTagClaims && !canApproveOutbound && !canHandleExceptions) {
+    redirect("/");
+  }
 
   // 待审批查询
   const [
@@ -41,76 +51,88 @@ export default async function ApprovalsPage({
     processedOutboundOrders,
     exceptionBatches,
   ] = await Promise.all([
-    prisma.tagClaim.findMany({
-      where: { status: "PENDING" },
-      include: {
-        farmer: {
+    canApproveTagClaims
+      ? prisma.tagClaim.findMany({
+          where: { status: "PENDING" },
           include: {
-            batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
-            tagClaims: { where: { status: "APPROVED" } },
+            farmer: {
+              include: {
+                batches: { where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+                tagClaims: { where: { status: "APPROVED" } },
+              },
+            },
+            applicant: true,
           },
-        },
-        applicant: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.outboundOrder.findMany({
-      where: { status: "PENDING" },
-      include: {
-        batch: { include: { farmer: true, pool: true } },
-        store: { include: { channel: true } },
-        channel: true,
-        applicant: true,
-        lines: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    // 已处理查询
-    prisma.tagClaim.findMany({
-      where: { status: { in: ["APPROVED", "REJECTED"] } },
-      take: 50,
-      include: {
-        farmer: true,
-        applicant: true,
-        approver: true,
-      },
-      orderBy: { updatedAt: "desc" },
-    }),
-    prisma.outboundOrder.findMany({
-      where: { status: { in: ["APPROVED", "REJECTED"] } },
-      take: 50,
-      include: {
-        batch: { include: { farmer: true } },
-        store: true,
-        channel: true,
-        applicant: true,
-        approver: true,
-      },
-      orderBy: { updatedAt: "desc" },
-    }),
-    // 损耗异常批次
-    prisma.batch.findMany({
-      where: {
-        isException: true,
-        status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND", "FROZEN"] },
-      },
-      include: {
-        farmer: true,
-        enclosure: true,
-        pool: true,
-        lossRecords: {
           orderBy: { createdAt: "desc" },
-          include: { inspector: true },
-        },
-      },
-      orderBy: { updatedAt: "desc" },
-    }),
+        })
+      : Promise.resolve([]),
+    canApproveOutbound
+      ? prisma.outboundOrder.findMany({
+          where: { status: "PENDING" },
+          include: {
+            batch: { include: { farmer: true, pool: true } },
+            store: { include: { channel: true } },
+            channel: true,
+            applicant: true,
+            lines: true,
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
+    // 已处理查询
+    canApproveTagClaims
+      ? prisma.tagClaim.findMany({
+          where: { status: { in: ["APPROVED", "REJECTED"] } },
+          take: 50,
+          include: {
+            farmer: true,
+            applicant: true,
+            approver: true,
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : Promise.resolve([]),
+    canApproveOutbound
+      ? prisma.outboundOrder.findMany({
+          where: { status: { in: ["APPROVED", "REJECTED"] } },
+          take: 50,
+          include: {
+            batch: { include: { farmer: true } },
+            store: true,
+            channel: true,
+            applicant: true,
+            approver: true,
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : Promise.resolve([]),
+    // 损耗异常属于异常处置，不参与审批角色配置与审批待办数量
+    canHandleExceptions
+      ? prisma.batch.findMany({
+          where: {
+            isException: true,
+            status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND", "FROZEN"] },
+          },
+          include: {
+            farmer: true,
+            enclosure: true,
+            pool: true,
+            lossRecords: {
+              orderBy: { createdAt: "desc" },
+              include: { inspector: true },
+            },
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   const visiblePendingTagClaims = canApproveTagClaims ? pendingTagClaims : [];
   const visiblePendingOutboundOrders = canApproveOutbound ? pendingOutboundOrders : [];
+  const visibleProcessedTagClaims = canApproveTagClaims ? processedTagClaims : [];
+  const visibleProcessedOutboundOrders = canApproveOutbound ? processedOutboundOrders : [];
   const totalPendingCount = visiblePendingTagClaims.length + visiblePendingOutboundOrders.length;
-  const processedCount = processedTagClaims.length + processedOutboundOrders.length;
+  const processedCount = visibleProcessedTagClaims.length + visibleProcessedOutboundOrders.length;
 
   // 待办卡片统一聚合流
   const pendingTagCards = (typeFilter === "ALL" || typeFilter === "TAG")
@@ -180,12 +202,12 @@ export default async function ApprovalsPage({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          操作与审核分离：蟹扣领用由内部核验员审核，出库申请按出库审批权限审核
+          蟹扣领用与出库审批角色由「角色与权限」统一配置；损耗超标作为独立异常处置
         </p>
       </div>
 
       {/* 统计概览卡片 */}
-      <div className="grid gap-2.5 sm:grid-cols-3">
+      <div className={cn("grid gap-2.5", canHandleExceptions ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
         <Card className="transition-all hover:shadow-xs border-amber-500/20 bg-amber-500/[0.02]">
           <CardHeader className="p-2.5 pb-1 flex flex-row items-center justify-between">
             <CardTitle className="text-xs font-medium text-amber-700 dark:text-amber-400">待审蟹扣领用</CardTitle>
@@ -212,24 +234,26 @@ export default async function ApprovalsPage({
           </CardContent>
         </Card>
 
-        <Card className={`transition-all hover:shadow-xs ${exceptionBatches.length > 0 ? "border-destructive/40 bg-destructive/5" : "border-border/80"}`}>
-          <CardHeader className="p-2.5 pb-1 flex flex-row items-center justify-between">
-            <CardTitle className="text-xs font-medium">损耗超标待查</CardTitle>
-            <AlertTriangle className={`size-3.5 ${exceptionBatches.length > 0 ? "text-destructive animate-pulse" : "text-muted-foreground"}`} />
-          </CardHeader>
-          <CardContent className="p-2.5 pt-0">
-            <div className={`text-base font-bold font-mono ${exceptionBatches.length > 0 ? "text-destructive" : ""}`}>
-              {exceptionBatches.length.toLocaleString()} 批
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">累计损耗率超 5% 标红预警</p>
-          </CardContent>
-        </Card>
+        {canHandleExceptions && (
+          <Card className={`transition-all hover:shadow-xs ${exceptionBatches.length > 0 ? "border-destructive/40 bg-destructive/5" : "border-border/80"}`}>
+            <CardHeader className="p-2.5 pb-1 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-medium">损耗超标待查</CardTitle>
+              <AlertTriangle className={`size-3.5 ${exceptionBatches.length > 0 ? "text-destructive animate-pulse" : "text-muted-foreground"}`} />
+            </CardHeader>
+            <CardContent className="p-2.5 pt-0">
+              <div className={`text-base font-bold font-mono ${exceptionBatches.length > 0 ? "text-destructive" : ""}`}>
+                {exceptionBatches.length.toLocaleString()} 批
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">累计损耗率超 5% 标红预警</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* 主选项卡：待审核 / 已处理 / 损耗超标 */}
       <Tabs defaultValue={activeTab} className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 border-b pb-2.5">
-          <TabsList className="grid w-full grid-cols-3 max-w-[440px] h-8">
+          <TabsList className={cn("grid w-full max-w-[440px] h-8", canHandleExceptions ? "grid-cols-3" : "grid-cols-2")}>
             <TabsTrigger value="pending" className="flex items-center gap-1.5 text-xs">
               <Clock className="size-3" />
               待审核 ({totalPendingCount})
@@ -238,10 +262,12 @@ export default async function ApprovalsPage({
               <CheckCircle2 className="size-3" />
               已处理 ({processedCount})
             </TabsTrigger>
-            <TabsTrigger value="exceptions" className="flex items-center gap-1.5 text-xs">
-              <AlertTriangle className="size-3 text-destructive" />
-              损耗超标 ({exceptionBatches.length})
-            </TabsTrigger>
+            {canHandleExceptions && (
+              <TabsTrigger value="exceptions" className="flex items-center gap-1.5 text-xs">
+                <AlertTriangle className="size-3 text-destructive" />
+                损耗超标 ({exceptionBatches.length})
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {activeTab === "pending" && (
@@ -393,7 +419,7 @@ export default async function ApprovalsPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {processedTagClaims.length === 0 && processedOutboundOrders.length === 0 ? (
+                    {visibleProcessedTagClaims.length === 0 && visibleProcessedOutboundOrders.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                           暂无已处理历史记录
@@ -401,25 +427,25 @@ export default async function ApprovalsPage({
                       </TableRow>
                     ) : (
                       [
-                        ...processedTagClaims.map((c) => ({
+                        ...visibleProcessedTagClaims.map((c) => ({
                           id: c.id,
                           type: "TAG" as const,
                           code: c.code || "—",
                           summary: `${c.farmer.name} · 领用蟹扣 ${c.claimCount.toLocaleString()} 只`,
                           applicant: c.applicant.fullName,
                           status: c.status,
-                          approver: c.approver?.fullName || TAG_CLAIM_APPROVAL.fallbackApproverLabel,
+                          approver: c.approver?.fullName || "—",
                           approvedAt: c.approvedAt || c.updatedAt,
                           comment: c.approvalComment || (c.status === "APPROVED" ? "审核通过" : "已驳回"),
                         })),
-                        ...processedOutboundOrders.map((o) => ({
+                        ...visibleProcessedOutboundOrders.map((o) => ({
                           id: o.id,
                           type: "OUTBOUND" as const,
                           code: o.code,
                           summary: `${o.store.name} · 出库 ${o.outboundCount.toLocaleString()} 只 (${o.batch.farmer.name})`,
                           applicant: o.applicant.fullName,
                           status: o.status,
-                          approver: o.approver?.fullName || "品控主管",
+                          approver: o.approver?.fullName || "—",
                           approvedAt: o.approvedAt || o.updatedAt,
                           comment: o.approvalComment || o.rejectReason || (o.status === "APPROVED" ? "审核通过" : "已驳回"),
                         })),

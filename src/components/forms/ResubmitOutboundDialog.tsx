@@ -68,7 +68,7 @@ export function ResubmitOutboundDialog({
         outboundCount: count,
         applicantId: userId,
       });
-      toast.success("出库申请已重新提交，请等待品控审批！");
+      toast.success("出库申请已重新提交，请等待审批");
       setOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "重新提交失败";

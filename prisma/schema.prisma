@@ -516,6 +516,13 @@ model SpecialApproval {
   createdAt   DateTime @default(now())
 }
 
+// 业务审批角色配置：当前仅支持蟹扣领用与出库两个审批节点
+model ApprovalSetting {
+  id           String @id @default("default")
+  tagClaimRole String @default("FARMER_ADMIN")
+  outboundRole String @default("QA_DIRECTOR")
+}
+
 model InspectionReport {
   id           String   @id @default(cuid())
   name         String

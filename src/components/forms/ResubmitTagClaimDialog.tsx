@@ -50,7 +50,7 @@ export function ResubmitTagClaimDialog({
         claimCount: Number(data.claimCount),
         applicantId: userId,
       });
-      toast.success("已重新提交领用申请，请等待品控审批！");
+      toast.success("已重新提交领用申请，请等待审批");
       setOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "重新提交失败";

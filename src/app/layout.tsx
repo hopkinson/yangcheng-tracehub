@@ -8,7 +8,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 import { getTenant } from "@/config/tenant";
-import { canApprove, OUTBOUND_APPROVAL, TAG_CLAIM_APPROVAL } from "@/config/approval";
+import { canApprove } from "@/config/approval";
+import { getApprovalSetting } from "@/lib/approval-settings";
 
 export function generateMetadata(): Metadata {
   const tenant = getTenant();
@@ -36,21 +37,23 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const tenant = getTenant();
-  const currentUser = await getCurrentUser();
+  const [currentUser, approvalSetting] = await Promise.all([
+    getCurrentUser(),
+    getApprovalSetting(),
+  ]);
 
-  const canApproveTagClaims = canApprove(currentUser?.role, TAG_CLAIM_APPROVAL.roles);
-  const canApproveOutbound = canApprove(currentUser?.role, OUTBOUND_APPROVAL.roles);
+  const canApproveTagClaims = canApprove(currentUser?.role, approvalSetting.tagClaimRole);
+  const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
+  const canHandleExceptions = currentUser?.role === "QA_DIRECTOR" || currentUser?.role === "ADMIN";
+  const canAccessApprovals = canApproveTagClaims || canApproveOutbound || canHandleExceptions;
 
   let pendingAlertCount = 0;
   if (currentUser && (canApproveTagClaims || canApproveOutbound)) {
-    const [tagCount, outboundCount, exceptionCount] = await Promise.all([
+    const [tagCount, outboundCount] = await Promise.all([
       canApproveTagClaims ? prisma.tagClaim.count({ where: { status: "PENDING" } }) : Promise.resolve(0),
       canApproveOutbound ? prisma.outboundOrder.count({ where: { status: "PENDING" } }) : Promise.resolve(0),
-      canApproveOutbound
-        ? prisma.batch.count({ where: { isException: true, status: { not: "COMPLETED" } } })
-        : Promise.resolve(0),
     ]);
-    pendingAlertCount = tagCount + outboundCount + exceptionCount;
+    pendingAlertCount = tagCount + outboundCount;
   }
 
   return (
@@ -77,6 +80,7 @@ export default async function RootLayout({
             currentUserId={currentUser?.id || ""}
             currentRole={currentUser?.role || ""}
             pendingAlertCount={pendingAlertCount}
+            canAccessApprovals={canAccessApprovals}
           >
             {children}
           </AppShell>

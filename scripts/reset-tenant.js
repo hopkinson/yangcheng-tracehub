@@ -49,12 +49,21 @@ async function main() {
   }
 
   // 表结构就绪检测 (全新库自愈)
-  try { await prisma.user.count(); } catch (err) {
+  try {
+    await prisma.user.count();
+  } catch (err) {
     if (err && err.code === "P2021") {
       console.log("⚡ 自动同步表结构 (prisma db push)...");
       execSync("npx prisma db push --skip-generate --accept-data-loss", { stdio: "inherit", env: { ...process.env, DATABASE_URL: customDbUrl || process.env.DATABASE_URL } });
     }
   }
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ApprovalSetting" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
+      "tagClaimRole" TEXT NOT NULL DEFAULT 'FARMER_ADMIN',
+      "outboundRole" TEXT NOT NULL DEFAULT 'QA_DIRECTOR'
+    )
+  `);
 
   // 倒序清空所有业务表
   const models = [
@@ -65,7 +74,12 @@ async function main() {
     "batchItem", "batch", "holdingPool", "enclosure", "farmer",
     "store", "channel", "user"
   ];
+  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"').catch(() => {});
   for (const m of models) if (prisma[m]) await prisma[m].deleteMany().catch(() => {});
+
+  await prisma.$executeRawUnsafe(
+    'INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole") VALUES (\'default\', \'FARMER_ADMIN\', \'QA_DIRECTOR\')'
+  );
 
   // 初始化专属渠道与唯一超管
   const isMaoshi = tenant.id === "maoshi";
