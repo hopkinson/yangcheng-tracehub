@@ -53,6 +53,7 @@ function getValues(report?: InspectionReportData): InspectionReportFormValues {
 export function InspectionReportDialog({ report }: { report?: InspectionReportData }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [licenseFile, setLicenseFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const isEditing = !!report;
   const form = useForm<InspectionReportFormValues>({
@@ -64,6 +65,7 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
     if (!open) return;
     form.reset(getValues(report));
     setFile(null);
+    setLicenseFile(null);
   }, [open, report, form]);
 
   function handleFileChange(selected?: File) {
@@ -76,6 +78,15 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
     if (!form.getValues("name").trim()) {
       form.setValue("name", selected.name.replace(/\.[^.]+$/, ""), { shouldValidate: true });
     }
+  }
+
+  function handleLicenseFileChange(selected?: File) {
+    if (!selected) return;
+    if (selected.size > 10 * 1024 * 1024) {
+      toast.error("营业执照不能超过 10MB");
+      return;
+    }
+    setLicenseFile(selected);
   }
 
   async function onSubmit(data: InspectionReportFormValues) {
@@ -96,6 +107,7 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
       } else if (file) {
         const formData = new FormData();
         formData.append("file", file);
+        if (licenseFile) formData.append("licenseFile", licenseFile);
         formData.append("name", data.name);
         formData.append("inspectedAt", data.inspectedAt || "");
         await createInspectionReportAction(formData);
@@ -176,6 +188,44 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                 {isEditing ? "编辑时不替换原始附件。" : "单个文件最大 10MB。"}
               </p>
             </div>
+
+
+            {!isEditing && (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium">营业执照（选填）</label>
+                <div className="rounded-md border border-dashed p-3">
+                  {licenseFile ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2 text-sm">
+                        <FileText className="size-4 shrink-0 text-primary" />
+                        <span className="truncate font-medium">{licenseFile.name}</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 shrink-0"
+                        onClick={() => setLicenseFile(null)}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <label className="flex cursor-pointer items-center justify-center gap-2 py-2 text-sm text-muted-foreground hover:text-foreground">
+                      <Upload className="size-4" />
+                      选择 PDF / JPG / PNG 文件
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                        className="hidden"
+                        onChange={(event) => handleLicenseFileChange(event.target.files?.[0])}
+                      />
+                    </label>
+                  )}
+                </div>
+                <p className="text-muted-foreground text-[11px]">单个文件最大 10MB。</p>
+              </div>
+            )}
 
             <FormField
               control={form.control}

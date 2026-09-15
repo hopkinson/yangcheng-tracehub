@@ -91,16 +91,30 @@ export default async function ReportsPage({
                       <TableCell className="font-mono text-sm">{formatShortDateTime(report.createdAt)}</TableCell>
                       <TableCell>{report.uploadedBy.fullName}</TableCell>
                       <TableCell>
-                        <BatchReportViewDialog
-                          reportName={report.fileName}
-                          reportUrl={report.fileUrl}
-                          title={report.name}
-                          trigger={
-                            <button type="button" className="max-w-[280px] truncate text-left text-sm font-medium text-primary hover:underline">
-                              {report.fileName}
-                            </button>
-                          }
-                        />
+                        <div className="flex flex-col items-start gap-1">
+                          <BatchReportViewDialog
+                            reportName={report.fileName}
+                            reportUrl={report.fileUrl}
+                            title={report.name}
+                            trigger={
+                              <button type="button" className="max-w-[280px] truncate text-left text-sm font-medium text-primary hover:underline">
+                                {report.fileName}
+                              </button>
+                            }
+                          />
+                          {report.licenseUrl && report.licenseName && (
+                            <BatchReportViewDialog
+                              reportName={report.licenseName}
+                              reportUrl={report.licenseUrl}
+                              title={`${report.name} · 营业执照`}
+                              trigger={
+                                <button type="button" className="max-w-[280px] truncate text-left text-sm font-medium text-primary hover:underline">
+                                  营业执照：{report.licenseName}
+                                </button>
+                              }
+                            />
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         {canManage ? (
