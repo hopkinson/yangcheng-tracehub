@@ -10,6 +10,7 @@ import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
 import { Tag, Truck, AlertTriangle, CheckCircle2, Clock, ShieldCheck, UserCheck } from "lucide-react";
 import { cn, formatDateTime, formatDate, formatTime } from "@/lib/utils";
+import { canApprove, OUTBOUND_APPROVAL, TAG_CLAIM_APPROVAL } from "@/config/approval";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ export default async function ApprovalsPage({
 
   const activeTab = params.tab || "pending";
   const typeFilter = params.type || "ALL"; // ALL | TAG | OUTBOUND
+  const canApproveTagClaims = canApprove(currentUser?.role, TAG_CLAIM_APPROVAL.roles);
+  const canApproveOutbound = canApprove(currentUser?.role, OUTBOUND_APPROVAL.roles);
 
   // 待审批查询
   const [
@@ -104,12 +107,14 @@ export default async function ApprovalsPage({
     }),
   ]);
 
-  const totalPendingCount = pendingTagClaims.length + pendingOutboundOrders.length;
+  const visiblePendingTagClaims = canApproveTagClaims ? pendingTagClaims : [];
+  const visiblePendingOutboundOrders = canApproveOutbound ? pendingOutboundOrders : [];
+  const totalPendingCount = visiblePendingTagClaims.length + visiblePendingOutboundOrders.length;
   const processedCount = processedTagClaims.length + processedOutboundOrders.length;
 
   // 待办卡片统一聚合流
   const pendingTagCards = (typeFilter === "ALL" || typeFilter === "TAG")
-    ? pendingTagClaims.map((claim) => {
+    ? visiblePendingTagClaims.map((claim) => {
         const activeInPool = claim.farmer.batches.reduce(
           (sum, b) => sum + (b.inPoolCount - b.outPoolCount - b.lossCount),
           0
@@ -137,7 +142,7 @@ export default async function ApprovalsPage({
     : [];
 
   const pendingOutboundCards = (typeFilter === "ALL" || typeFilter === "OUTBOUND")
-    ? pendingOutboundOrders.map((order) => {
+    ? visiblePendingOutboundOrders.map((order) => {
         const liveInBatch = order.batch ? order.batch.inPoolCount - order.batch.outPoolCount - order.batch.lossCount : 0;
         const genderLabel = order.batch.gender === "MALE" ? "公蟹" : "母蟹";
         return {
@@ -175,7 +180,7 @@ export default async function ApprovalsPage({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          操作与审核分离：库管员发起的蟹扣领用与出库申请由内部核验员统一审核卡控
+          操作与审核分离：蟹扣领用由内部核验员审核，出库申请按出库审批权限审核
         </p>
       </div>
 
@@ -188,7 +193,7 @@ export default async function ApprovalsPage({
           </CardHeader>
           <CardContent className="p-2.5 pt-0">
             <div className="text-base font-bold font-mono text-amber-600 dark:text-amber-400">
-              {pendingTagClaims.length.toLocaleString()} 笔
+              {visiblePendingTagClaims.length.toLocaleString()} 笔
             </div>
             <p className="text-[11px] text-muted-foreground mt-0.5">在池存活与额度余量双重核验</p>
           </CardContent>
@@ -201,7 +206,7 @@ export default async function ApprovalsPage({
           </CardHeader>
           <CardContent className="p-2.5 pt-0">
             <div className="text-base font-bold font-mono text-cyan-600 dark:text-cyan-400">
-              {pendingOutboundOrders.length.toLocaleString()} 笔
+              {visiblePendingOutboundOrders.length.toLocaleString()} 笔
             </div>
             <p className="text-[11px] text-muted-foreground mt-0.5">冷库规格库存与批次存活校验</p>
           </CardContent>
@@ -259,7 +264,7 @@ export default async function ApprovalsPage({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                蟹扣领用 ({pendingTagClaims.length})
+                蟹扣领用 ({visiblePendingTagClaims.length})
               </Link>
               <Link
                 href="/approvals?tab=pending&type=OUTBOUND"
@@ -269,7 +274,7 @@ export default async function ApprovalsPage({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                出库申请 ({pendingOutboundOrders.length})
+                出库申请 ({visiblePendingOutboundOrders.length})
               </Link>
             </div>
           )}
@@ -403,7 +408,7 @@ export default async function ApprovalsPage({
                           summary: `${c.farmer.name} · 领用蟹扣 ${c.claimCount.toLocaleString()} 只`,
                           applicant: c.applicant.fullName,
                           status: c.status,
-                          approver: c.approver?.fullName || "质量总监",
+                          approver: c.approver?.fullName || TAG_CLAIM_APPROVAL.fallbackApproverLabel,
                           approvedAt: c.approvedAt || c.updatedAt,
                           comment: c.approvalComment || (c.status === "APPROVED" ? "审核通过" : "已驳回"),
                         })),
@@ -414,7 +419,7 @@ export default async function ApprovalsPage({
                           summary: `${o.store.name} · 出库 ${o.outboundCount.toLocaleString()} 只 (${o.batch.farmer.name})`,
                           applicant: o.applicant.fullName,
                           status: o.status,
-                          approver: o.approver?.fullName || "质量总监",
+                          approver: o.approver?.fullName || "品控主管",
                           approvedAt: o.approvedAt || o.updatedAt,
                           comment: o.approvalComment || o.rejectReason || (o.status === "APPROVED" ? "审核通过" : "已驳回"),
                         })),

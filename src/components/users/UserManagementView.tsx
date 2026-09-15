@@ -59,7 +59,7 @@ const ROLE_CONFIG: Record<string, { label: string; className: string; variant?: 
   ADMIN: { label: "超级管理员", className: "bg-purple-600 hover:bg-purple-700" },
   QA_DIRECTOR: { label: "品控主管", className: "bg-amber-600 hover:bg-amber-700" },
   WAREHOUSE_ADMIN: { label: "仓库管理员", className: "bg-blue-600 hover:bg-blue-700" },
-  FARMER_ADMIN: { label: "养殖户管理员", className: "bg-emerald-600 hover:bg-emerald-700" },
+  FARMER_ADMIN: { label: "内部核验员", className: "bg-emerald-600 hover:bg-emerald-700" },
   CHANNEL_VIEWER: { label: "渠道审计员", className: "border-cyan-600 text-cyan-600", variant: "outline" },
 };
 

@@ -17,7 +17,7 @@ export const ROLE_LABELS: Record<string, { label: string; desc: string }> = {
   ADMIN: { label: "超级管理员 (ADMIN)", desc: "系统运维、用户与全局配置、特批放行" },
   QA_DIRECTOR: { label: "品控主管 (QA_DIRECTOR)", desc: "蟹扣审批、出库审核、异常调查" },
   WAREHOUSE_ADMIN: { label: "仓库管理员 (WAREHOUSE_ADMIN)", desc: "批次入池、盘点损耗、出库打包、物流回填" },
-  FARMER_ADMIN: { label: "养殖户管理员 (FARMER_ADMIN)", desc: "养殖户建档、围网维护、额度核定" },
+  FARMER_ADMIN: { label: "内部核验员 (FARMER_ADMIN)", desc: "蟹扣领用核验、养殖户档案维护、额度核定" },
   CHANNEL_VIEWER: { label: "渠道审计员 (CHANNEL_VIEWER)", desc: "专属渠道追溯、四大台账只读查看" },
 };
 

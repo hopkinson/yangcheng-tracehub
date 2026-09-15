@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
+import { OUTBOUND_APPROVAL, TAG_CLAIM_APPROVAL } from "@/config/approval";
 import { revalidatePath } from "next/cache";
 import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 
@@ -13,7 +14,7 @@ export async function approveTagClaimAction(data: {
   comment?: string;
   approverId?: string;
 }) {
-  const operator = await requireRole(["QA_DIRECTOR", "ADMIN"]);
+  const operator = await requireRole(TAG_CLAIM_APPROVAL.roles);
   const approverId = operator.id;
 
   return await prisma.$transaction(async (tx) => {
@@ -88,7 +89,7 @@ export async function approveOutboundOrderAction(data: {
   rejectReason?: string;
   approverId?: string;
 }) {
-  const operator = await requireRole(["QA_DIRECTOR", "ADMIN"]);
+  const operator = await requireRole(OUTBOUND_APPROVAL.roles);
   const approverId = operator.id;
 
   return await prisma.$transaction(async (tx) => {

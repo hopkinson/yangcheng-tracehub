@@ -8,6 +8,7 @@ import { ResubmitTagClaimDialog } from "@/components/forms/ResubmitTagClaimDialo
 import { SettleTagClaimDialog } from "@/components/forms/SettleTagClaimDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { formatDate } from "@/lib/utils";
+import { TAG_CLAIM_APPROVAL } from "@/config/approval";
 import { Tag } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -190,7 +191,7 @@ export default async function TagsPage({
                               ? "审批通过"
                               : claim.status === "REJECTED"
                               ? "已驳回"
-                              : "待品控审核"}
+                              : TAG_CLAIM_APPROVAL.pendingLabel}
                           </Badge>
                           {claim.status === "APPROVED" && (
                             claim.isBalanced ? (

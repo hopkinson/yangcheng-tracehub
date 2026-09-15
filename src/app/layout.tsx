@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 import { getTenant } from "@/config/tenant";
+import { canApprove, OUTBOUND_APPROVAL, TAG_CLAIM_APPROVAL } from "@/config/approval";
 
 export function generateMetadata(): Metadata {
   const tenant = getTenant();
@@ -37,14 +38,19 @@ export default async function RootLayout({
   const tenant = getTenant();
   const currentUser = await getCurrentUser();
 
+  const canApproveTagClaims = canApprove(currentUser?.role, TAG_CLAIM_APPROVAL.roles);
+  const canApproveOutbound = canApprove(currentUser?.role, OUTBOUND_APPROVAL.roles);
+
   let pendingAlertCount = 0;
-  if (currentUser && (currentUser.role === "QA_DIRECTOR" || currentUser.role === "ADMIN")) {
-    const counts = await prisma.$transaction([
-      prisma.tagClaim.count({ where: { status: "PENDING" } }),
-      prisma.outboundOrder.count({ where: { status: "PENDING" } }),
-      prisma.batch.count({ where: { isException: true, status: { not: "COMPLETED" } } }),
+  if (currentUser && (canApproveTagClaims || canApproveOutbound)) {
+    const [tagCount, outboundCount, exceptionCount] = await Promise.all([
+      canApproveTagClaims ? prisma.tagClaim.count({ where: { status: "PENDING" } }) : Promise.resolve(0),
+      canApproveOutbound ? prisma.outboundOrder.count({ where: { status: "PENDING" } }) : Promise.resolve(0),
+      canApproveOutbound
+        ? prisma.batch.count({ where: { isException: true, status: { not: "COMPLETED" } } })
+        : Promise.resolve(0),
     ]);
-    pendingAlertCount = counts.reduce((a, b) => a + b, 0);
+    pendingAlertCount = tagCount + outboundCount + exceptionCount;
   }
 
   return (
