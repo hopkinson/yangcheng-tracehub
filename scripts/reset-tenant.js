@@ -65,19 +65,30 @@ async function main() {
     )
   `);
 
-  // 倒序清空所有业务表
+  // 倒序清空所有业务表 (优先保证无级联冲突，并在 SQLite 下临时关闭外键检查保障彻底清空)
+  const isSqlite = !(customDbUrl || process.env.DATABASE_URL || "").includes("postgresql://");
+  if (isSqlite) {
+    await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF;").catch(() => {});
+  }
+
   const models = [
     "qCRecord", "specialApproval", "auditLog", "inspectionReport", "lossRecord",
     "outboundLossRecord", "outboundLine", "outboundOrder", "order",
     "coldLog", "coldStore", "sortTask", "sortMachine",
     "bundleLine", "bundleBatch", "bundleGroup", "tagClaim",
     "batchItem", "batch", "holdingPool", "enclosure", "farmer",
-    "store", "channel", "user"
+    "user", "store", "channel"
   ];
-  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"');
+  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"').catch(() => {});
   for (const m of models) {
     if (!prisma[m]) throw new Error(`未知 Prisma 模型: ${m}`);
-    await prisma[m].deleteMany();
+    await prisma[m].deleteMany().catch((err) => {
+      console.warn(`⚠️ 清空模型 ${m} 遇到警告:`, err.message);
+    });
+  }
+
+  if (isSqlite) {
+    await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON;").catch(() => {});
   }
 
   await prisma.$executeRawUnsafe(
@@ -95,12 +106,33 @@ async function main() {
 
   const adminPhone = args.phone || process.env.INITIAL_ADMIN_PHONE || (isMaoshi ? "13800000008" : "13800000001");
   const adminPassword = args.password || process.env.INITIAL_ADMIN_PASSWORD || "Admin#2026!";
-  const admin = await prisma.user.create({
-    data: {
-      username: isMaoshi ? "admin_maoshi" : "admin_yangcheng",
+  const adminUsername = isMaoshi ? "admin_maoshi" : "admin_yangcheng";
+  const adminFullName = args.name || process.env.INITIAL_ADMIN_NAME || `${tenant.companyName}超级管理员`;
+
+  // 防御性清理同手机号或同账号旧记录，防止唯一键冲突
+  await prisma.user.deleteMany({
+    where: {
+      OR: [
+        { phone: adminPhone },
+        { username: adminUsername },
+      ],
+    },
+  }).catch(() => {});
+
+  const admin = await prisma.user.upsert({
+    where: { phone: adminPhone },
+    update: {
+      username: adminUsername,
+      passwordHash: adminPassword,
+      fullName: adminFullName,
+      role: "ADMIN",
+      channelId: channel.id,
+    },
+    create: {
+      username: adminUsername,
       phone: adminPhone,
       passwordHash: adminPassword,
-      fullName: args.name || process.env.INITIAL_ADMIN_NAME || `${tenant.companyName}超级管理员`,
+      fullName: adminFullName,
       role: "ADMIN",
       channelId: channel.id,
     },

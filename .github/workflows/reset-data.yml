@@ -30,6 +30,37 @@ jobs:
       SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
       SERVER_PORT: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
     steps:
+      - name: "检出最新仓库脚本"
+        uses: actions/checkout@v4
+
+      - name: "同步最新重置脚本至服务器 (密码模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_PASSWORD }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "2m"
+          source: "scripts/reset-tenant.js"
+          target: "/tmp"
+          overwrite: true
+
+      - name: "同步最新重置脚本至服务器 (密钥模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SERVER_SSH_KEY }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "2m"
+          source: "scripts/reset-tenant.js"
+          target: "/tmp"
+          overwrite: true
+
       - name: "SSH 执行重置指令 (密码模式)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
         uses: appleboy/ssh-action@v1.0.3
@@ -45,6 +76,13 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
+
+            # 动态热同步最新 reset-tenant.js 进入容器，彻底杜绝历史旧镜像脚本残留导致报错
+            if [ -f /tmp/scripts/reset-tenant.js ]; then
+              docker compose cp /tmp/scripts/reset-tenant.js app:/app/scripts/reset-tenant.js || docker cp /tmp/scripts/reset-tenant.js yangcheng-tracehub:/app/scripts/reset-tenant.js || true
+              rm -rf /tmp/scripts
+            fi
+
             echo "=== 正在执行阳澄股份数据清理与单超管初始化 (Tenant: default) ==="
             docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
@@ -67,6 +105,13 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
+
+            # 动态热同步最新 reset-tenant.js 进入容器，彻底杜绝历史旧镜像脚本残留导致报错
+            if [ -f /tmp/scripts/reset-tenant.js ]; then
+              docker compose cp /tmp/scripts/reset-tenant.js app:/app/scripts/reset-tenant.js || docker cp /tmp/scripts/reset-tenant.js yangcheng-tracehub:/app/scripts/reset-tenant.js || true
+              rm -rf /tmp/scripts
+            fi
+
             echo "=== 正在执行阳澄股份数据清理与单超管初始化 (Tenant: default) ==="
             docker compose exec -T app node scripts/reset-tenant.js --tenant=default --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
@@ -85,6 +130,37 @@ jobs:
       SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
       SERVER_PORT: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || secrets.SERVER_PORT_1 || 22 }}
     steps:
+      - name: "检出最新仓库脚本"
+        uses: actions/checkout@v4
+
+      - name: "同步最新重置脚本至服务器 (密码模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_PASSWORD }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "2m"
+          source: "scripts/reset-tenant.js"
+          target: "/tmp"
+          overwrite: true
+
+      - name: "同步最新重置脚本至服务器 (密钥模式)"
+        if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SERVER_SSH_KEY }}
+          port: ${{ env.SERVER_PORT }}
+          timeout: "30s"
+          command_timeout: "2m"
+          source: "scripts/reset-tenant.js"
+          target: "/tmp"
+          overwrite: true
+
       - name: "SSH 执行重置指令 (密码模式)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
         uses: appleboy/ssh-action@v1.0.3
@@ -100,6 +176,13 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
+
+            # 动态热同步最新 reset-tenant.js 进入容器，彻底杜绝历史旧镜像脚本残留导致报错
+            if [ -f /tmp/scripts/reset-tenant.js ]; then
+              docker compose cp /tmp/scripts/reset-tenant.js app:/app/scripts/reset-tenant.js || docker cp /tmp/scripts/reset-tenant.js yangcheng-tracehub:/app/scripts/reset-tenant.js || true
+              rm -rf /tmp/scripts
+            fi
+
             echo "=== 正在执行毛氏分系统数据清理与单超管初始化 (Tenant: maoshi) ==="
             docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="
@@ -122,6 +205,13 @@ jobs:
             TARGET_DIR="/opt/yangcheng-tracehub"
             [ -d "$TARGET_DIR" ] || TARGET_DIR="/root/yangcheng-tracehub"
             cd "$TARGET_DIR"
+
+            # 动态热同步最新 reset-tenant.js 进入容器，彻底杜绝历史旧镜像脚本残留导致报错
+            if [ -f /tmp/scripts/reset-tenant.js ]; then
+              docker compose cp /tmp/scripts/reset-tenant.js app:/app/scripts/reset-tenant.js || docker cp /tmp/scripts/reset-tenant.js yangcheng-tracehub:/app/scripts/reset-tenant.js || true
+              rm -rf /tmp/scripts
+            fi
+
             echo "=== 正在执行毛氏分系统数据清理与单超管初始化 (Tenant: maoshi) ==="
             docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
             echo "=== 重置完成，重启应用容器以刷新状态 ==="

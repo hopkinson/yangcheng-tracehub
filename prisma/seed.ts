@@ -5,32 +5,35 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 开始初始化阳澄大闸蟹溯源系统 PRD V2.1 完整基座种子数据 (固定演示日期: 2026-09-21)...");
 
-  // 1. 清理历史数据
-  await prisma.qCRecord.deleteMany();
-  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"');
-  await prisma.specialApproval.deleteMany();
-  await prisma.auditLog.deleteMany();
-  await prisma.lossRecord.deleteMany();
-  await prisma.outboundLossRecord.deleteMany();
-  await prisma.outboundLine.deleteMany();
-  await prisma.outboundOrder.deleteMany();
-  await prisma.order.deleteMany();
-  await prisma.coldLog.deleteMany();
-  await prisma.coldStore.deleteMany();
-  await prisma.sortTask.deleteMany();
-  await prisma.sortMachine.deleteMany();
-  await prisma.bundleLine.deleteMany();
-  await prisma.bundleBatch.deleteMany();
-  await prisma.bundleGroup.deleteMany();
-  await prisma.tagClaim.deleteMany();
-  await prisma.batchItem.deleteMany();
-  await prisma.batch.deleteMany();
-  await prisma.holdingPool.deleteMany();
-  await prisma.enclosure.deleteMany();
-  await prisma.farmer.deleteMany();
-  await prisma.store.deleteMany();
-  await prisma.channel.deleteMany();
-  await prisma.user.deleteMany();
+  // 1. 清理历史数据 (关闭外键检查保障彻底清空)
+  await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF;").catch(() => {});
+  await prisma.qCRecord.deleteMany().catch(() => {});
+  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"').catch(() => {});
+  await prisma.specialApproval.deleteMany().catch(() => {});
+  await prisma.auditLog.deleteMany().catch(() => {});
+  await prisma.inspectionReport.deleteMany().catch(() => {});
+  await prisma.lossRecord.deleteMany().catch(() => {});
+  await prisma.outboundLossRecord.deleteMany().catch(() => {});
+  await prisma.outboundLine.deleteMany().catch(() => {});
+  await prisma.outboundOrder.deleteMany().catch(() => {});
+  await prisma.order.deleteMany().catch(() => {});
+  await prisma.coldLog.deleteMany().catch(() => {});
+  await prisma.coldStore.deleteMany().catch(() => {});
+  await prisma.sortTask.deleteMany().catch(() => {});
+  await prisma.sortMachine.deleteMany().catch(() => {});
+  await prisma.bundleLine.deleteMany().catch(() => {});
+  await prisma.bundleBatch.deleteMany().catch(() => {});
+  await prisma.bundleGroup.deleteMany().catch(() => {});
+  await prisma.tagClaim.deleteMany().catch(() => {});
+  await prisma.batchItem.deleteMany().catch(() => {});
+  await prisma.batch.deleteMany().catch(() => {});
+  await prisma.holdingPool.deleteMany().catch(() => {});
+  await prisma.enclosure.deleteMany().catch(() => {});
+  await prisma.farmer.deleteMany().catch(() => {});
+  await prisma.user.deleteMany().catch(() => {});
+  await prisma.store.deleteMany().catch(() => {});
+  await prisma.channel.deleteMany().catch(() => {});
+  await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON;").catch(() => {});
 
   await prisma.$executeRawUnsafe(
     'INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole") VALUES (\'default\', \'FARMER_ADMIN\', \'QA_DIRECTOR\')'
