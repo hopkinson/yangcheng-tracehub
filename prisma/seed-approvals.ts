@@ -10,8 +10,8 @@ async function main() {
   const farmer1 = await prisma.farmer.findFirstOrThrow({ where: { code: "JD-2026-001" }, include: { enclosures: true } });
   const farmer2 = await prisma.farmer.findFirstOrThrow({ where: { code: "JD-2026-002" }, include: { enclosures: true } });
   
-  const samsChannel = await prisma.channel.findFirstOrThrow({ where: { code: "SAMS" } });
-  const hemaChannel = await prisma.channel.findFirstOrThrow({ where: { code: "HEMA" } });
+  const samsChannel = await prisma.channel.findFirstOrThrow({ where: { name: { contains: "山姆" } } });
+  const hemaChannel = await prisma.channel.findFirstOrThrow({ where: { name: { contains: "盒马" } } });
 
   const samStore2 = await prisma.store.findFirstOrThrow({ where: { code: "ST-02" } }); // 苏州木渎店
   const hemaStore1 = await prisma.store.findFirstOrThrow({ where: { code: "ST-04" } }); // 苏州中心店

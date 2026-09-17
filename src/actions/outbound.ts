@@ -173,75 +173,104 @@ async function buildFifoOutboundLines(orders: any[], db: any, lineExtra?: (order
   return { lines, firstAllocation };
 }
 
-export async function registerOutboundLossAction(data: {
+export type OutboundLossItemInput = {
   gender: string;
   weightTier: string;
   lossCount: number;
+};
+
+export async function batchRegisterOutboundLossAction(data: {
+  items: OutboundLossItemInput[];
   reason?: string;
 }) {
   const user = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const gender = data.gender === "FEMALE" ? "FEMALE" : data.gender === "MALE" ? "MALE" : "";
-  const weightTier = Invariants.normalizeWeightTier(data.weightTier);
-  const lossCount = Math.floor(Number(data.lossCount));
+  const validItems = (data.items || [])
+    .map((item) => {
+      const gender = item.gender === "FEMALE" ? "FEMALE" : item.gender === "MALE" ? "MALE" : "";
+      const weightTier = Invariants.normalizeWeightTier(item.weightTier);
+      const lossCount = Math.floor(Number(item.lossCount) || 0);
+      if (lossCount > 0 && !gender) throw new Error("请选择有效的公母规格");
+      if (lossCount > 0 && !weightTier) throw new Error("请选择有效的重量规格");
+      return { gender, weightTier, lossCount };
+    })
+    .filter((item) => item.lossCount > 0);
 
-  if (!gender) throw new Error("请选择有效的公母规格");
-  if (!weightTier) throw new Error("请选择有效的重量规格");
-  if (!Number.isFinite(lossCount) || lossCount <= 0) throw new Error("损耗数量必须大于 0");
+  if (validItems.length === 0) {
+    throw new Error("请至少填入一个规格的有效损耗数量（大于 0）");
+  }
+
+  const reason = data.reason?.trim() || "发货环节损耗盘点";
 
   const transactionResult = await prisma.$transaction(async (tx) => {
-    const stock = await getColdStorageStock(gender, weightTier, tx);
-    if (lossCount > stock.availableCount) {
-      throw new Error(`损耗数量 (${lossCount} 只) 不能超过当前可发库存 (${stock.availableCount} 只)`);
-    }
+    const results: Array<{ gender: string; weightTier: string; availableAfter: number; lossCount: number }> = [];
 
-    const result = Invariants.calculateLoss({
-      bookInPool: stock.availableCount,
-      physicalCount: stock.availableCount - lossCount,
-      inPoolCount: stock.totalQualified,
-      historicalLoss: stock.totalLoss,
-    });
-    if (!result.valid) throw new Error(result.reason);
+    for (const item of validItems) {
+      const { gender, weightTier, lossCount } = item;
+      const stock = await getColdStorageStock(gender, weightTier, tx);
+      if (lossCount > stock.availableCount) {
+        throw new Error(
+          `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier} 损耗数量 (${lossCount} 只) 不能超过当前可发库存 (${stock.availableCount} 只)`
+        );
+      }
 
-    const reason = data.reason?.trim() || "发货环节损耗盘点";
-    if (result.isException && !data.reason?.trim()) {
-      throw new Error("累计出库损耗率超 5%，请详细填写损耗原因");
-    }
+      const result = Invariants.calculateLoss({
+        bookInPool: stock.availableCount,
+        physicalCount: stock.availableCount - lossCount,
+        inPoolCount: stock.totalQualified,
+        historicalLoss: stock.totalLoss,
+      });
+      if (!result.valid) throw new Error(result.reason);
 
-    const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx);
-    for (const allocation of allocations) {
-      await tx.outboundLossRecord.create({
+      if (result.isException && !data.reason?.trim()) {
+        throw new Error(`${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier} 累计出库损耗率超 5%，请详细填写损耗原因`);
+      }
+
+      const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx);
+      for (const allocation of allocations) {
+        await tx.outboundLossRecord.create({
+          data: {
+            gender,
+            weightTier,
+            count: allocation.count,
+            reason,
+            coldLogId: allocation.coldLogId,
+            operatorId: user.id,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
         data: {
-          gender,
-          weightTier,
-          count: allocation.count,
-          reason,
-          coldLogId: allocation.coldLogId,
           operatorId: user.id,
+          action: "OUTBOUND_LOSS_REGISTER",
+          entityType: "OUTBOUND_STOCK",
+          entityId: `${gender}_${weightTier}`,
+          details: JSON.stringify({
+            gender,
+            weightTier,
+            bookCount: stock.availableCount,
+            physicalCount: stock.availableCount - lossCount,
+            lossCount,
+            cumulativeLoss: result.totalLoss,
+            lossRate: result.lossRate,
+            reason,
+            fifoAllocations: allocations,
+          }),
         },
+      });
+
+      results.push({
+        gender,
+        weightTier,
+        availableAfter: stock.availableCount - lossCount,
+        lossCount,
       });
     }
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: user.id,
-        action: "OUTBOUND_LOSS_REGISTER",
-        entityType: "OUTBOUND_STOCK",
-        entityId: `${gender}_${weightTier}`,
-        details: JSON.stringify({
-          gender,
-          weightTier,
-          bookCount: stock.availableCount,
-          physicalCount: stock.availableCount - lossCount,
-          lossCount,
-          cumulativeLoss: result.totalLoss,
-          lossRate: result.lossRate,
-          reason,
-          fifoAllocations: allocations,
-        }),
-      },
-    });
-
-    return { availableAfter: stock.availableCount - lossCount };
+    return {
+      results,
+      totalLossRecorded: results.reduce((acc, r) => acc + r.lossCount, 0),
+    };
   }, { isolationLevel: "Serializable" });
 
   // 库存扣减已经提交后，不让页面缓存刷新失败把本次业务结果伪装成“登记失败”，
@@ -254,6 +283,16 @@ export async function registerOutboundLossAction(data: {
   } catch {}
 
   return transactionResult;
+}
+
+export async function registerOutboundLossAction(data: {
+  gender: string;
+  weightTier: string;
+  lossCount: number;
+  reason?: string;
+}) {
+  const result = await batchRegisterOutboundLossAction({ items: [data], reason: data.reason });
+  return { availableAfter: result.results[0]?.availableAfter ?? 0 };
 }
 
 // 辅助：生成当日唯一的出库单号

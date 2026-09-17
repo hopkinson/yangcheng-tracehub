@@ -348,6 +348,57 @@ export const Invariants = {
   calculateSortingLoss: (check: ProcessLossCheck) => Invariants.calculateProcessLoss(check, "分拣"),
   calculateBundleLoss: (check: ProcessLossCheck) => Invariants.calculateProcessLoss(check, "捆扎"),
 
+  // 8.1 批次全环节生命周期损耗汇聚 (暂养 + 捆扎 + 分拣 + 冷库发货)
+  calculateBatchLifecycleLoss: (batch: {
+    inPoolCount: number;
+    lossCount?: number;
+    lossRecords?: any[];
+    bundleBatches?: any[];
+  }) => {
+    const holdingLoss = batch.lossCount ?? (batch.lossRecords?.reduce((s, r) => s + (r.lossCount || 0), 0) ?? 0);
+    let bundlingLoss = 0;
+    let sortingLoss = 0;
+    let coldLoss = 0;
+
+    if (batch.bundleBatches) {
+      for (const bb of batch.bundleBatches) {
+        if (bb.status === "COMPLETED") {
+          bundlingLoss += bb.lossCount || 0;
+        }
+        if (bb.sortTasks) {
+          for (const st of bb.sortTasks) {
+            if (st.status === "COMPLETED") {
+              sortingLoss += st.lossCount || 0;
+            }
+            if (st.coldLogs) {
+              for (const cl of st.coldLogs) {
+                if (cl.outboundLosses) {
+                  for (const ol of cl.outboundLosses) {
+                    coldLoss += ol.count || 0;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const totalLoss = holdingLoss + bundlingLoss + sortingLoss + coldLoss;
+    const totalLossRate = batch.inPoolCount > 0 ? Number(((totalLoss / batch.inPoolCount) * 100).toFixed(2)) : 0;
+    const isLossOverLimit = totalLossRate > 5.0;
+
+    return {
+      holdingLoss,
+      bundlingLoss,
+      sortingLoss,
+      coldLoss,
+      totalLoss,
+      totalLossRate,
+      isLossOverLimit,
+    };
+  },
+
   // 9. 蟹卡规格型号正则智能拆分 (PRD V2.1)
   parseCrabCardSpec: (specModel: string): ParsedSpecItem[] => {
     if (!specModel || typeof specModel !== "string") return [];

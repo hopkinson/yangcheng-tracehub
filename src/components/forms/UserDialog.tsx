@@ -24,7 +24,6 @@ export const ROLE_LABELS: Record<string, { label: string; desc: string }> = {
 export interface ChannelOption {
   id: string;
   name: string;
-  code: string;
 }
 
 interface UserData {
@@ -267,7 +266,7 @@ export function UserDialog({
                           <SelectContent>
                             {channels.map((c) => (
                               <SelectItem key={c.id} value={c.id} className="text-xs">
-                                {c.name} ({c.code})
+                                {c.name}
                               </SelectItem>
                             ))}
                           </SelectContent>

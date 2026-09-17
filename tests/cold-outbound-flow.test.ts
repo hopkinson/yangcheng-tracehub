@@ -38,9 +38,9 @@ async function runColdOutboundFlowTest() {
     });
 
     const channel = await prisma.channel.upsert({
-      where: { code: "SAMS" },
+      where: { name: "山姆会员商店" },
       update: {},
-      create: { code: "SAMS", name: "山姆会员商店" },
+      create: { name: "山姆会员商店" },
     });
 
     const store = await prisma.store.create({

@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Edit2, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { Edit2, FileText, Loader2, Plus, RefreshCw, Trash2, Undo2, Upload, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +40,8 @@ export interface InspectionReportData {
   id: string;
   name: string;
   fileName: string;
+  licenseName?: string | null;
+  licenseUrl?: string | null;
   inspectedAt: string;
 }
 
@@ -53,7 +55,7 @@ function getValues(report?: InspectionReportData): InspectionReportFormValues {
 export function InspectionReportDialog({ report }: { report?: InspectionReportData }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [licenseFile, setLicenseFile] = useState<File | null>(null);
+  const [license, setLicense] = useState<File | "REMOVE" | null>(null);
   const [loading, setLoading] = useState(false);
   const isEditing = !!report;
   const form = useForm<InspectionReportFormValues>({
@@ -65,7 +67,7 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
     if (!open) return;
     form.reset(getValues(report));
     setFile(null);
-    setLicenseFile(null);
+    setLicense(null);
   }, [open, report, form]);
 
   function handleFileChange(selected?: File) {
@@ -86,7 +88,7 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
       toast.error("营业执照不能超过 10MB");
       return;
     }
-    setLicenseFile(selected);
+    setLicense(selected);
   }
 
   async function onSubmit(data: InspectionReportFormValues) {
@@ -98,16 +100,21 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
     setLoading(true);
     try {
       if (isEditing && report) {
-        await updateInspectionReportAction({
-          id: report.id,
-          name: data.name,
-          inspectedAt: data.inspectedAt,
-        });
+        const formData = new FormData();
+        formData.append("id", report.id);
+        formData.append("name", data.name);
+        formData.append("inspectedAt", data.inspectedAt || "");
+        if (license instanceof File) {
+          formData.append("licenseFile", license);
+        } else if (license === "REMOVE") {
+          formData.append("removeLicense", "true");
+        }
+        await updateInspectionReportAction(formData);
         toast.success("检测报告已更新");
       } else if (file) {
         const formData = new FormData();
         formData.append("file", file);
-        if (licenseFile) formData.append("licenseFile", licenseFile);
+        if (license instanceof File) formData.append("licenseFile", license);
         formData.append("name", data.name);
         formData.append("inspectedAt", data.inspectedAt || "");
         await createInspectionReportAction(formData);
@@ -141,7 +148,9 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
         <DialogHeader>
           <DialogTitle>{isEditing ? "编辑检测报告" : "上传检测报告"}</DialogTitle>
           <DialogDescription>
-            {isEditing ? "修改报告名称和检测时间，原始附件与上传留痕保持不变。" : "以报告名称归档，上传时间和上传人由系统自动记录。"}
+            {isEditing
+              ? "修改报告名称、检测时间，或维护营业执照资质（主报告附件保持不变）。"
+              : "以报告名称归档，上传时间和上传人由系统自动记录。"}
           </DialogDescription>
         </DialogHeader>
 
@@ -185,47 +194,101 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                 )}
               </div>
               <p className="text-muted-foreground text-[11px]">
-                {isEditing ? "编辑时不替换原始附件。" : "单个文件最大 10MB。"}
+                {isEditing ? "编辑时不替换主报告附件。" : "单个文件最大 10MB。"}
               </p>
             </div>
 
-
-            {!isEditing && (
-              <div className="grid gap-1.5">
+            <div className="grid gap-1.5">
+              <div className="flex items-center justify-between">
                 <label className="text-xs font-medium">营业执照（选填）</label>
-                <div className="rounded-md border border-dashed p-3">
-                  {licenseFile ? (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2 text-sm">
-                        <FileText className="size-4 shrink-0 text-primary" />
-                        <span className="truncate font-medium">{licenseFile.name}</span>
-                      </div>
+                {isEditing && !license && report.licenseName && (
+                  <span className="text-[11px] text-muted-foreground">已归档原件</span>
+                )}
+              </div>
+
+              <div className="rounded-md border border-dashed p-3">
+                {license instanceof File ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2 text-sm">
+                      <FileText className="size-4 shrink-0 text-primary" />
+                      <span className="truncate font-medium">{license.name}</span>
+                      <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                        {isEditing && report.licenseName ? "待替换" : "待上传"}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0"
+                      onClick={() => setLicense(null)}
+                      title="取消选择"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                ) : license === "REMOVE" ? (
+                  <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+                    <span className="truncate line-through">原营业执照：{report?.licenseName}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 text-xs"
+                      onClick={() => setLicense(null)}
+                    >
+                      <Undo2 className="size-3.5" />
+                      撤销移除
+                    </Button>
+                  </div>
+                ) : isEditing && report.licenseName ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2 text-sm">
+                      <FileText className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-medium text-foreground">{report.licenseName}</span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <label className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground">
+                        <RefreshCw className="size-3" />
+                        更换
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                          className="hidden"
+                          onChange={(event) => handleLicenseFileChange(event.target.files?.[0])}
+                        />
+                      </label>
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon"
-                        className="size-7 shrink-0"
-                        onClick={() => setLicenseFile(null)}
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setLicense("REMOVE")}
                       >
-                        <X className="size-3.5" />
+                        <Trash2 className="size-3" />
+                        移除
                       </Button>
                     </div>
-                  ) : (
-                    <label className="flex cursor-pointer items-center justify-center gap-2 py-2 text-sm text-muted-foreground hover:text-foreground">
-                      <Upload className="size-4" />
-                      选择 PDF / JPG / PNG 文件
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                        className="hidden"
-                        onChange={(event) => handleLicenseFileChange(event.target.files?.[0])}
-                      />
-                    </label>
-                  )}
-                </div>
-                <p className="text-muted-foreground text-[11px]">单个文件最大 10MB。</p>
+                  </div>
+                ) : (
+                  <label className="flex cursor-pointer items-center justify-center gap-2 py-2 text-sm text-muted-foreground hover:text-foreground">
+                    <Upload className="size-4" />
+                    {isEditing ? "补传营业执照 (PDF / JPG / PNG)" : "选择 PDF / JPG / PNG 文件"}
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                      className="hidden"
+                      onChange={(event) => handleLicenseFileChange(event.target.files?.[0])}
+                    />
+                  </label>
+                )}
               </div>
-            )}
+              <p className="text-muted-foreground text-[11px]">
+                {isEditing
+                  ? "支持补传、更换或移除配套营业执照，单个文件最大 10MB。"
+                  : "单个文件最大 10MB。"}
+              </p>
+            </div>
 
             <FormField
               control={form.control}

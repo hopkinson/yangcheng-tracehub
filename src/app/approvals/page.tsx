@@ -116,6 +116,7 @@ export default async function ApprovalsPage({
             farmer: true,
             enclosure: true,
             pool: true,
+            items: { include: { pool: true } },
             lossRecords: {
               orderBy: { createdAt: "desc" },
               include: { inspector: true },

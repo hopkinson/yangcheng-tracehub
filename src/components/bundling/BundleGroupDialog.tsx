@@ -13,8 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, Plus, Trash2, Loader2 } from "lucide-react";
-import { createBundleGroupAction, deleteBundleGroupAction } from "@/actions/production";
+import { Users, Plus, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
+import { createBundleGroupAction, deleteBundleGroupAction, updateBundleGroupAction } from "@/actions/production";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function BundleGroupDialog({
@@ -25,6 +25,8 @@ export function BundleGroupDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleCreate = (e: React.FormEvent) => {
@@ -36,6 +38,38 @@ export function BundleGroupDialog({
       if (res.success) {
         toast.success(res.message);
         setName("");
+      } else {
+        toast.error(res.message);
+      }
+    });
+  };
+
+  const handleStartEdit = (id: string, currentName: string) => {
+    setEditingId(id);
+    setEditingName(currentName);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingName("");
+  };
+
+  const handleSaveEdit = (id: string, originalName: string) => {
+    const trimmed = editingName.trim();
+    if (!trimmed) {
+      toast.error("班组名称不能为空");
+      return;
+    }
+    if (trimmed === originalName) {
+      setEditingId(null);
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await updateBundleGroupAction(id, trimmed);
+      if (res.success) {
+        toast.success(res.message);
+        setEditingId(null);
       } else {
         toast.error(res.message);
       }
@@ -91,27 +125,90 @@ export function BundleGroupDialog({
         <div className="border rounded-lg divide-y max-h-60 overflow-y-auto">
           {groups.map((g) => {
             const hasBatches = (g._count?.batches || 0) > 0;
+            const isEditing = editingId === g.id;
+
             return (
               <div key={g.id} className="flex items-center justify-between p-2.5 text-xs">
-                <div>
-                  <span className="font-mono font-bold text-foreground mr-2">{g.code}</span>
-                  <span className="text-foreground">{g.name}</span>
-                  {hasBatches && (
-                    <span className="text-[10px] text-muted-foreground ml-2">({g._count?.batches} 个批次)</span>
+                {isEditing ? (
+                  <div className="flex items-center gap-2 flex-1 mr-2">
+                    <span className="font-mono font-bold text-foreground shrink-0">{g.code}</span>
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSaveEdit(g.id, g.name);
+                        } else if (e.key === "Escape") {
+                          handleCancelEdit();
+                        }
+                      }}
+                      autoFocus
+                      disabled={isPending}
+                      className="h-7 text-xs flex-1"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center truncate mr-2">
+                    <span className="font-mono font-bold text-foreground mr-2 shrink-0">{g.code}</span>
+                    <span className="text-foreground truncate">{g.name}</span>
+                    {hasBatches && (
+                      <span className="text-[10px] text-muted-foreground ml-2 shrink-0">({g._count?.batches} 个批次)</span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSaveEdit(g.id, g.name)}
+                        disabled={isPending || !editingName.trim()}
+                        className="h-6 px-1.5 text-primary text-xs"
+                        title="保存"
+                      >
+                        {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                        disabled={isPending}
+                        className="h-6 px-1.5 text-muted-foreground hover:text-foreground text-xs"
+                        title="取消"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleStartEdit(g.id, g.name)}
+                        disabled={isPending}
+                        className="h-6 px-1.5 text-muted-foreground hover:text-foreground text-xs"
+                        title="编辑名称"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      {!hasBatches && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteTarget({ id: g.id, name: g.name })}
+                          disabled={isPending}
+                          className="h-6 px-1.5 text-destructive text-xs"
+                          title="删除班组"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
+                    </>
                   )}
                 </div>
-                {!hasBatches && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeleteTarget({ id: g.id, name: g.name })}
-                    disabled={isPending}
-                    className="h-6 px-1.5 text-destructive text-xs"
-                    title="删除班组"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                )}
               </div>
             );
           })}

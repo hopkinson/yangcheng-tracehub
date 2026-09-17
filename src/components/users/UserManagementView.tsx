@@ -44,7 +44,7 @@ interface UserItem {
   fullName: string;
   role: string;
   channelId: string | null;
-  channel?: { id: string; name: string; code: string } | null;
+  channel?: { id: string; name: string } | null;
   createdAt: Date | string;
   _count?: {
     createdBatches: number;

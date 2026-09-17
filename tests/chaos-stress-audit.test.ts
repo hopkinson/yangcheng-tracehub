@@ -81,10 +81,10 @@ async function runChaosStressAudit() {
     });
   }
 
-  let channel = await prisma.channel.findFirst({ where: { code: "SAMS" } });
+  let channel = await prisma.channel.findFirst({ where: { name: "山姆会员商店" } });
   if (!channel) {
     channel = await prisma.channel.create({
-      data: { code: "SAMS", name: "山姆会员商店" },
+      data: { name: "山姆会员商店" },
     });
   }
 
@@ -639,7 +639,6 @@ async function runChaosStressAudit() {
       },
     });
 
-    assert.equal(outboundRecord.channel.code, "SAMS");
     assert.match(outboundRecord.channel.name, /山姆/);
     assert.equal(outboundRecord.batch.farmer.code, farmerCode);
     assert.equal(outboundRecord.batch.enclosure.code, `W-CHAOS-${testId}`);

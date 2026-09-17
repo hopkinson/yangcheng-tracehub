@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { OverviewDashboard } from "@/components/dashboard/OverviewDashboard";
 import { formatISODate } from "@/lib/utils";
 import { aggregateTraceableColdStocks } from "@/lib/cold-stock";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,8 @@ export default async function DashboardPage() {
     outboundOrders,
     outboundLosses,
     qcRecords,
+    dailyCloseLogs,
+    currentUser,
   ] = await Promise.all([
     prisma.farmer.findMany(),
     prisma.batch.findMany({ include: { pool: true, farmer: true, items: true } }),
@@ -43,6 +46,12 @@ export default async function DashboardPage() {
     prisma.outboundOrder.findMany({ include: { store: true, lines: true } }),
     prisma.outboundLossRecord.findMany(),
     prisma.qCRecord.findMany({ orderBy: { checkTime: "desc" } }),
+    prisma.auditLog.findMany({
+      where: { action: { in: ["DAILY_POOL_CLOSE", "DAILY_COLD_CLOSE"] } },
+      orderBy: { createdAt: "desc" },
+      take: 4,
+    }),
+    getCurrentUser(),
   ]);
 
   // 1. 额度与全链累计统计
@@ -98,7 +107,6 @@ export default async function DashboardPage() {
         currentGender: p.currentGender,
         currentWeightTier: p.currentWeightTier,
         liveCount: totalLive,
-        hasCrab: true,
       };
     });
 
@@ -136,6 +144,9 @@ export default async function DashboardPage() {
   const todayOutboundOrders = outboundOrders.filter((o) => isTodayOrDemo(o.createdAt));
   const todayOutboundTotalCount = todayOutboundOrders.reduce((s, o) => s + o.outboundCount, 0);
   const pendingOutboundOrdersCount = outboundOrders.filter((o) => o.status === "PENDING").length;
+  const closeDate = formatISODate();
+  const poolCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_POOL_CLOSE" && formatISODate(log.createdAt) === closeDate);
+  const coldCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_COLD_CLOSE" && formatISODate(log.createdAt) === closeDate);
 
   // 3. 业务预警数据采集
   const frozenBatches = batches
@@ -211,7 +222,7 @@ export default async function DashboardPage() {
         totalTagClaimsCount: totalTagClaimed,
         pendingTagClaimsCount,
         todayPoolInCount,
-        activePoolsCount: activePools.length,
+        activePoolsCount: activePools.filter((p) => p.liveCount > 0).length,
         totalLiveInPoolCount: totalLiveInPool,
         todayBundleBatchesCount: todayBundleBatches.length,
         todayBundleTotalCount,
@@ -225,6 +236,9 @@ export default async function DashboardPage() {
         activeColdStoresCount: coldStores.length,
         totalColdStockCount,
         isClosingTime,
+        poolCloseCompleted,
+        coldCloseCompleted,
+        canCloseDaily: currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN",
         todayOutboundOrdersCount: todayOutboundOrders.length,
         todayOutboundTotalCount,
         pendingOutboundOrdersCount,

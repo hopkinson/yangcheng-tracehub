@@ -83,12 +83,10 @@ async function main() {
 
   // 初始化专属渠道与唯一超管
   const isMaoshi = tenant.id === "maoshi";
-  const defaultChannelCode = isMaoshi ? "CATERING" : "SAMS";
   const channel = await prisma.channel.create({
     data: {
-      code: defaultChannelCode,
       name: isMaoshi ? "餐饮连锁专属渠道" : "山姆会员商店 (专属配载)",
-      stores: { create: [{ code: `${defaultChannelCode}-01`, name: `${tenant.storeLabel} (示范店)` }] },
+      stores: { create: [{ code: "ST-01", name: `${tenant.storeLabel} (示范店)` }] },
     },
   });
 

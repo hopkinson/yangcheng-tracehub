@@ -86,39 +86,84 @@ export async function createInspectionReportAction(formData: FormData) {
   return { success: true, id: reportId };
 }
 
-export async function updateInspectionReportAction(data: {
-  id: string;
-  name: string;
-  inspectedAt?: string;
-}) {
+export async function updateInspectionReportAction(formData: FormData) {
   const operator = await requireRole(REPORT_ROLES);
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) throw new Error("报告 ID 无效");
+
   const parsed = inspectionReportFormSchema.safeParse({
-    name: data.name,
-    inspectedAt: data.inspectedAt || "",
+    name: formData.get("name"),
+    inspectedAt: formData.get("inspectedAt") || "",
   });
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "报告信息填写有误");
 
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.inspectionReport.findUniqueOrThrow({ where: { id: data.id } });
+  const licenseFileValue = formData.get("licenseFile");
+  if (licenseFileValue !== null && !(licenseFileValue instanceof File)) {
+    throw new Error("营业执照附件格式无效");
+  }
+  const licenseFile = licenseFileValue instanceof File && licenseFileValue.size > 0 ? licenseFileValue : null;
+  if (licenseFile) validateAttachment(licenseFile, "营业执照");
 
-    await tx.inspectionReport.update({
-      where: { id: data.id },
-      data: {
+  const removeLicense = formData.get("removeLicense") === "true";
+
+  let uploadedLicense: Awaited<ReturnType<typeof uploadFileToStorage>> | null = null;
+  if (licenseFile) {
+    uploadedLicense = await uploadFileToStorage(licenseFile);
+  }
+
+  let oldLicenseUrlToDelete: string | null = null;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.inspectionReport.findUniqueOrThrow({ where: { id } });
+
+      const updateData: {
+        name: string;
+        inspectedAt: Date | null;
+        licenseUrl?: string | null;
+        licenseName?: string | null;
+      } = {
         name: parsed.data.name,
         inspectedAt: parseInspectedAt(parsed.data.inspectedAt),
-      },
+      };
+
+      if (uploadedLicense || removeLicense) {
+        updateData.licenseUrl = uploadedLicense?.url ?? null;
+        updateData.licenseName = uploadedLicense?.name ?? null;
+        if (existing.licenseUrl) oldLicenseUrlToDelete = existing.licenseUrl;
+      }
+
+      await tx.inspectionReport.update({
+        where: { id },
+        data: updateData,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          operatorId: operator.id,
+          action: "INSPECTION_REPORT_UPDATE",
+          entityType: "INSPECTION_REPORT",
+          entityId: id,
+          details: JSON.stringify({
+            beforeName: existing.name,
+            name: parsed.data.name,
+            licenseChanged: Boolean(uploadedLicense || removeLicense),
+            beforeLicenseName: existing.licenseName,
+            licenseName: updateData.licenseName ?? existing.licenseName,
+          }),
+        },
+      });
     });
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: operator.id,
-        action: "INSPECTION_REPORT_UPDATE",
-        entityType: "INSPECTION_REPORT",
-        entityId: data.id,
-        details: JSON.stringify({ beforeName: existing.name, name: parsed.data.name }),
-      },
-    });
-  });
+    if (oldLicenseUrlToDelete) {
+      await deleteFileFromStorage(oldLicenseUrlToDelete);
+    }
+  } catch (error) {
+    if (uploadedLicense) {
+      await deleteFileFromStorage(uploadedLicense.url);
+    }
+    throw error;
+  }
 
   revalidatePath("/reports");
   return { success: true };

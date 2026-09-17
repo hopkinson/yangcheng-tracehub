@@ -4,10 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export async function createStoreAction(data: { name: string; channelId: string; userId: string }) {
+export async function createStoreAction(data: { code: string; name: string; channelId: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const count = await prisma.store.count();
-  const code = `ST-${String(count + 1).padStart(2, "0")}`;
+  const code = data.code.trim().toUpperCase();
+  if (!code) throw new Error("请输入门店编号");
+
+  const duplicate = await prisma.store.findUnique({ where: { code }, select: { id: true } });
+  if (duplicate) throw new Error(`门店编号「${code}」已存在，请更换`);
 
   const store = await prisma.store.create({
     data: {

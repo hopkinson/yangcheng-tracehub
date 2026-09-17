@@ -40,16 +40,16 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       return { success: false, message: "记录类别、关联对象与巡检时间均为必填项" };
     }
 
-    // 结论推导: 首项为合格，包含"异常"、"暂停"、"待整改"或提供理由的为 EXCEPTION
+    // 结论推导: 合格 (QUALIFIED)、不合格 (UNQUALIFIED)、待整改 (RECTIFYING)
+    const rawConc = (data.conclusion || "").trim();
     let result = "QUALIFIED";
-    if (
-      data.reason?.trim() ||
-      data.conclusion?.includes("异常") ||
-      data.conclusion?.includes("暂停") ||
-      data.conclusion?.includes("待整改") ||
-      data.conclusion?.includes("存在问题") ||
-      data.conclusion?.includes("不合格")
-    ) {
+    if (rawConc === "不合格" || rawConc.includes("不合格")) {
+      result = "UNQUALIFIED";
+    } else if (rawConc === "待整改" || /待整改|暂停|整改|需复核/.test(rawConc)) {
+      result = "RECTIFYING";
+    } else if (rawConc === "合格" || /合格|符合|正常/.test(rawConc)) {
+      result = "QUALIFIED";
+    } else if (data.reason?.trim() || /异常|存在问题/.test(rawConc)) {
       result = "EXCEPTION";
     }
 
@@ -85,7 +85,7 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
           checkTime: new Date(data.checkTime),
           uploadTime: now,
           result,
-          conclusion: data.conclusion || "全部指标合格",
+          conclusion: data.conclusion || "合格",
           reason: data.reason?.trim() || null,
           uploader: data.uploader || "赵质检 (质检员)",
           fileName: data.fileName || `${recordCode}_质检留痕原件.jpg`,
@@ -94,7 +94,7 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       });
 
       if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
-        const status = result === "QUALIFIED" ? "QUALIFIED" : "UNQUALIFIED";
+        const status = result === "QUALIFIED" ? "QUALIFIED" : result === "RECTIFYING" ? "RECTIFYING" : "UNQUALIFIED";
         await tx.batch.update({
           where: { code: data.refId },
           data: data.cat === "QUICK_CHECK"

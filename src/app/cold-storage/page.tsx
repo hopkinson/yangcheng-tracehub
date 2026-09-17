@@ -70,7 +70,7 @@ export default async function ColdStoragePage({
       bundleBatch: {
         select: {
           sourceBatchId: true,
-          sourceBatch: { select: { inPoolTime: true } },
+          sourceBatch: { select: { id: true, code: true, inPoolTime: true } },
         },
       },
     },
@@ -90,8 +90,41 @@ export default async function ColdStoragePage({
       alreadyIntakeCount,
       availableCount,
       sourceBatchId: t.bundleBatch?.sourceBatchId || null,
+      sourceBatchCode: t.bundleBatch?.sourceBatch?.code || null,
       sourceInPoolTime: t.bundleBatch?.sourceBatch?.inPoolTime || null,
     };
+  });
+
+  // 按原料批次归集待入库分拣任务 (先进先出 FIFO)
+  const sourceBatchMap = new Map<string, {
+    id: string;
+    code: string;
+    inPoolTime: string;
+    availableCount: number;
+    tasks: typeof sortTaskOptions;
+  }>();
+
+  for (const t of sortTaskOptions) {
+    if (!t.sourceBatchId) continue;
+    let existing = sourceBatchMap.get(t.sourceBatchId);
+    if (!existing) {
+      existing = {
+        id: t.sourceBatchId,
+        code: t.sourceBatchCode || t.sourceBatchId,
+        inPoolTime: t.sourceInPoolTime ? t.sourceInPoolTime.toISOString() : "",
+        availableCount: 0,
+        tasks: [],
+      };
+      sourceBatchMap.set(t.sourceBatchId, existing);
+    }
+    existing.availableCount += t.availableCount;
+    existing.tasks.push(t);
+  }
+
+  const sourceBatches = [...sourceBatchMap.values()].sort((a, b) => {
+    const aTime = a.inPoolTime ? new Date(a.inPoolTime).getTime() : Number.MAX_SAFE_INTEGER;
+    const bTime = b.inPoolTime ? new Date(b.inPoolTime).getTime() : Number.MAX_SAFE_INTEGER;
+    return aTime - bTime || a.code.localeCompare(b.code);
   });
 
   const taskMap = new Map(sortTaskOptions.map((t) => [t.id, t]));
@@ -126,7 +159,7 @@ export default async function ColdStoragePage({
         </div>
         <div className="flex items-center gap-2">
           <ColdStoreDialog stores={stores} />
-          <ColdIntakeDialog stores={stores} sortTasks={sortTaskOptions} />
+          <ColdIntakeDialog stores={stores} sourceBatches={sourceBatches} />
         </div>
       </div>
 
@@ -240,7 +273,7 @@ export default async function ColdStoragePage({
                     {/* 卡片入库登记按钮 */}
                     <ColdIntakeDialog
                       stores={stores}
-                      sortTasks={sortTaskOptions}
+                      sourceBatches={sourceBatches}
                       defaultStoreId={s.id}
                       trigger={
                         <Button variant="outline" size="sm" className="w-full h-8 text-xs font-medium gap-1.5 shadow-2xs">
@@ -358,12 +391,6 @@ export default async function ColdStoragePage({
               formNoPreset: "YCGF-PZZX-202609",
               refType: "STORE",
               refId: stores[0]?.code || "BX-01",
-              conclusions: [
-                "温度 4.2℃，湿度 65%，冷风循环正常",
-                "温度 4.5℃，湿度 68%，控温稳定",
-                "温度 4.0℃，湿度 62%，运行良好",
-                "温度超标 (>6℃)，制冷循环异常，已报修",
-              ],
             }}
             triggerLabel="登记保鲜巡检 (202609)"
           />
@@ -389,7 +416,6 @@ export default async function ColdStoragePage({
                 </tr>
               ) : (
                 qcRecords.map((qc) => {
-                  const isQualified = qc.result === "QUALIFIED";
                   return (
                     <tr key={qc.id} className="hover:bg-muted/40 transition-colors">
                       <td className="px-3 py-2.5 font-mono font-bold text-foreground whitespace-nowrap">
@@ -404,26 +430,23 @@ export default async function ColdStoragePage({
                         {qc.conclusion || "正常"}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] gap-1 ${
-                            isQualified
-                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                              : "bg-destructive/10 text-destructive border-destructive/20"
-                          }`}
-                        >
-                          {isQualified ? (
-                            <>
-                              <ShieldCheck className="size-3" />
-                              合格
-                            </>
-                          ) : (
-                            <>
-                              <AlertTriangle className="size-3" />
-                              异常
-                            </>
-                          )}
-                        </Badge>
+                        {qc.result === "UNQUALIFIED" || qc.conclusion === "不合格" ? (
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-destructive/10 text-destructive border-destructive/20">
+                            <AlertTriangle className="size-3" /> 不合格
+                          </Badge>
+                        ) : qc.result === "RECTIFYING" || qc.conclusion === "待整改" || qc.conclusion?.includes("整改") ? (
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                            <AlertTriangle className="size-3" /> 待整改
+                          </Badge>
+                        ) : qc.result === "EXCEPTION" ? (
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-destructive/10 text-destructive border-destructive/20">
+                            <AlertTriangle className="size-3" /> {qc.conclusion || "异常"}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                            <ShieldCheck className="size-3" /> 合格
+                          </Badge>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap">
                         {formatShortDateTime(qc.checkTime)}

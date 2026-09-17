@@ -142,7 +142,7 @@ async function main() {
       },
     });
     const channel = await prisma.channel.create({
-      data: { code: `CH-TAG-${suffix}`, name: `蟹扣出库回归渠道-${suffix}` },
+      data: { name: `蟹扣出库回归渠道-${suffix}` },
     });
     const store = await prisma.store.create({
       data: { code: `ST-TAG-${suffix}`, name: `蟹扣出库回归门店-${suffix}`, channelId: channel.id },
@@ -192,7 +192,7 @@ async function main() {
     await prisma.sortTask.deleteMany({ where: { code: { startsWith: `FJR-TAG-${suffix}` } } }).catch(() => {});
     await prisma.sortMachine.deleteMany({ where: { code: { startsWith: `FJ-TAG-${suffix}` } } }).catch(() => {});
     await prisma.store.deleteMany({ where: { code: { startsWith: `ST-TAG-${suffix}` } } }).catch(() => {});
-    await prisma.channel.deleteMany({ where: { code: { startsWith: `CH-TAG-${suffix}` } } }).catch(() => {});
+    await prisma.channel.deleteMany({ where: { name: `蟹扣出库回归渠道-${suffix}` } }).catch(() => {});
     await prisma.coldStore.deleteMany({ where: { code: { startsWith: `BX-TAG-${suffix}` } } }).catch(() => {});
     await prisma.bundleLine.deleteMany({ where: { bundleBatch: { sourceBatchId: batch.id } } }).catch(() => {});
     await prisma.bundleBatch.deleteMany({ where: { sourceBatchId: batch.id } }).catch(() => {});

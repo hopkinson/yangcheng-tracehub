@@ -72,7 +72,7 @@ async function run() {
   console.log("  ✔ 刚上传批次品控状态验证为 PENDING (待检测)");
 
   // 2. 通过统一 QC 留痕分别录入农残与试吃，批次状态应同步合格/不合格
-  console.log("▶ [步骤 2] 校验统一 QC 留痕会同步批次快检/抽检状态");
+  console.log("▶ [步骤 2] 校验统一 QC 留痕会同步批次快检/抽检状态 (合格/不合格/待整改)");
   const quickRes = await createQCRecordAction({
     cat: "QUICK_CHECK",
     formNo: "YCGF-PZZX-202601",
@@ -80,7 +80,7 @@ async function run() {
     refId: batch.code,
     title: `${batch.code} 农残快速检测`,
     checkTime: new Date().toISOString(),
-    conclusion: "全部指标符合要求，未检出违禁药物",
+    conclusion: "合格",
     uploader: admin.fullName,
     fileUrl: "/uploads/reports/test-quick-check.pdf",
     fileName: "阳澄湖大闸蟹农药残留快速检测合格单.pdf",
@@ -92,8 +92,8 @@ async function run() {
     refId: batch.code,
     title: `${batch.code} 品质抽检与试吃`,
     checkTime: new Date().toISOString(),
-    conclusion: "品质抽检异常，需复核或整改",
-    reason: "试吃发现异常，安排复核",
+    conclusion: "不合格",
+    reason: "试吃发现异味或死蟹超标，判定不合格拦截",
     uploader: admin.fullName,
     fileUrl: "/uploads/reports/test-sample-check.jpg",
     fileName: "品质抽检试吃记录表.jpg",
@@ -107,7 +107,24 @@ async function run() {
   assert.strictEqual(batch.sampleCheck, "UNQUALIFIED", "异常抽检试吃应同步为 UNQUALIFIED (不合格)");
   assert.strictEqual(batch.quickCheckUrl, "/uploads/reports/test-quick-check.pdf");
   assert.strictEqual(batch.sampleCheckUrl, "/uploads/reports/test-sample-check.jpg");
-  console.log("  ✔ QC 留痕成功同步批次合格/不合格状态并绑定报告");
+  console.log("  ✔ QC 留痕成功同步批次合格与不合格状态并绑定报告");
+
+  // 2.1 进一步校验“待整改”结论流转
+  const rectifyRes = await createQCRecordAction({
+    cat: "TASTE_CHECK",
+    formNo: "YCGF-PZZX-202602",
+    refType: "BATCH",
+    refId: batch.code,
+    title: `${batch.code} 品质抽检整改`,
+    checkTime: new Date().toISOString(),
+    conclusion: "待整改",
+    reason: "口感偏差需暂养吐沙24小时后复检",
+    uploader: admin.fullName,
+  });
+  assert.strictEqual(rectifyRes.success, true);
+  batch = await prisma.batch.findUniqueOrThrow({ where: { id: batchId } });
+  assert.strictEqual(batch.sampleCheck, "RECTIFYING", "待整改结论应同步批次状态为 RECTIFYING (待整改)");
+  console.log("  ✔ QC 留痕成功同步批次 RECTIFYING (待整改) 状态");
 
   // 3. 在入库时直接携带品控报告上传：状态应直接为 QUALIFIED 并附带报告
   console.log("▶ [步骤 3] 校验入池时直接携带品控报告登记入库");

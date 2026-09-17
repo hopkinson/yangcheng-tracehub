@@ -157,43 +157,35 @@ export function FarmerDialog({
   }
 
   async function onSubmit(data: FarmerFormValues) {
-    const enclosureCodes = normalizeEnclosureCodes(data.enclosuresStr.split(/[,，\s]+/));
-
     setLoading(true);
     try {
-      if (isEditing && farmer) {
-        await updateFarmerAction({
-          id: farmer.id,
-          name: data.name,
-          area: Number(data.area),
-          creditRating: data.creditRating,
-          status: data.status,
-          enclosureCodes,
-          contractName: data.contractName,
-          contractUrl: data.contractUrl,
-          userId,
-        });
-        toast.success("养殖户档案及额度更新成功！");
-      } else {
-        await createFarmerAction({
-          name: data.name,
-          area: Number(data.area),
-          creditRating: data.creditRating,
-          enclosureCodes,
-          contractName: data.contractName,
-          contractUrl: data.contractUrl,
-          userId,
-        });
-        toast.success("签约养殖户建档成功！");
+      const payload = {
+        name: data.name,
+        area: Number(data.area),
+        creditRating: data.creditRating,
+        enclosureCodes: normalizeEnclosureCodes(data.enclosuresStr.split(/[,，\s]+/)),
+        contractName: data.contractName,
+        contractUrl: data.contractUrl,
+        userId,
+      };
+
+      const res = isEditing && farmer
+        ? await updateFarmerAction({ id: farmer.id, status: data.status, ...payload })
+        : await createFarmerAction(payload);
+
+      if (!res.success) {
+        if (res.error.includes("围网编号")) {
+          form.setError("enclosuresStr", { message: res.error });
+        } else {
+          toast.error(res.error);
+        }
+        return;
       }
+
+      toast.success(isEditing ? "养殖户档案及额度更新成功！" : "签约养殖户建档成功！");
       setOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "操作失败";
-      if (msg.includes("围网编号")) {
-        form.setError("enclosuresStr", { message: msg });
-      } else {
-        toast.error(msg);
-      }
+      toast.error(err instanceof Error ? err.message : "操作失败");
     } finally {
       setLoading(false);
     }

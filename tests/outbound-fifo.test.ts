@@ -15,7 +15,7 @@ async function main() {
     },
   });
   const channel = await prisma.channel.create({
-    data: { code: `CH-FIFO-${suffix}`, name: `FIFO测试渠道-${suffix}` },
+    data: { name: `FIFO测试渠道-${suffix}` },
   });
   const store = await prisma.store.create({
     data: { code: `ST-FIFO-${suffix}`, name: `FIFO测试门店-${suffix}`, channelId: channel.id },

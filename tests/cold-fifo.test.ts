@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import prisma from "../src/lib/prisma";
-import { createColdIntakeAction } from "../src/actions/production";
+import { createColdIntakeAction, createBatchColdIntakeAction } from "../src/actions/production";
 
 async function main() {
   const suffix = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -128,6 +128,8 @@ async function main() {
     },
   });
 
+  let laterTask2: any = null;
+
   try {
     const blockedByPendingSort = await createColdIntakeAction({
       storeId: store.id,
@@ -176,12 +178,51 @@ async function main() {
     });
     assert.equal(laterIntake._sum.count, 6, "并发入库后实际入库数不得超过分拣合格余量");
 
-    console.log("✓ 保鲜预冷原料批次 FIFO / 并发余量守恒测试通过");
+    // 测试批量多选入库与不拆分全额入库
+    laterTask2 = await prisma.sortTask.create({
+      data: {
+        code: `FJR-COLD-FIFO-${suffix}-B2`,
+        machineId: machine.id,
+        bundleBatchId: laterBundle.id,
+        gender: "FEMALE",
+        weightTier: "3.0两",
+        inputCount: 15,
+        qualifiedCount: 15,
+        status: "COMPLETED",
+        doneAt: new Date(),
+      },
+    });
+
+    // 1. 空选择拦截
+    const emptyBatchRes = await createBatchColdIntakeAction({
+      storeId: store.id,
+      sortTaskIds: [],
+      operator: "批量测试仓管",
+    });
+    assert.equal(emptyBatchRes.success, false, "空批次选择必须被拦截");
+
+    // 2. 批量多选入库 (laterTask 剩余 4 只 + laterTask2 全额 15 只 = 19 只)
+    const batchIntakeRes = await createBatchColdIntakeAction({
+      storeId: store.id,
+      sortTaskIds: [laterTask.id, laterTask2.id],
+      operator: "批量测试仓管",
+    });
+    assert.equal(batchIntakeRes.success, true, batchIntakeRes.message);
+
+    // 3. 再次尝试入库已入清批次必须被拦截
+    const duplicateBatchRes = await createBatchColdIntakeAction({
+      storeId: store.id,
+      sortTaskIds: [laterTask2.id],
+      operator: "批量测试仓管",
+    });
+    assert.equal(duplicateBatchRes.success, false, "已入清批次必须被拦截，不可重复入库");
+
+    console.log("✓ 保鲜预冷原料批次 FIFO / 并发余量守恒 / 批量多选不拆分入库测试通过");
   } finally {
     await prisma.coldLog.deleteMany({
-      where: { sortTaskId: { in: [earlyTask.id, laterTask.id] } },
+      where: { sortTaskId: { in: [earlyTask.id, laterTask.id, laterTask2.id] } },
     }).catch(() => {});
-    await prisma.sortTask.deleteMany({ where: { id: { in: [earlyTask.id, laterTask.id] } } }).catch(() => {});
+    await prisma.sortTask.deleteMany({ where: { id: { in: [earlyTask.id, laterTask.id, laterTask2.id] } } }).catch(() => {});
     await prisma.bundleBatch.deleteMany({ where: { id: { in: [earlyBundle.id, laterBundle.id] } } }).catch(() => {});
     await prisma.sortMachine.delete({ where: { id: machine.id } }).catch(() => {});
     await prisma.coldStore.delete({ where: { id: store.id } }).catch(() => {});

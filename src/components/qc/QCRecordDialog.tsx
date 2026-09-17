@@ -33,6 +33,8 @@ const formatInspectorName = (u: { fullName: string; role: string }) =>
 
 const getDefaultCheckTime = () => (getBeijingTimeString(new Date()) || "").slice(0, 16).replace(" ", "T");
 
+export const STANDARD_QC_CONCLUSIONS = ["合格", "不合格", "待整改"] as const;
+
 export interface QCConfig {
   cat: string;
   categoryLabel: string;
@@ -40,7 +42,8 @@ export interface QCConfig {
   formNoPreset?: string;
   refType: string;
   refId: string;
-  conclusions: string[];
+  conclusions?: string[];
+  refOptions?: Array<{ label: string; value: string }>;
 }
 
 export function QCRecordDialog({
@@ -74,16 +77,24 @@ export function QCRecordDialog({
     }
   }, [open, userList.length]);
 
+  const conclusionsList = config.conclusions && config.conclusions.length > 0
+    ? config.conclusions
+    : STANDARD_QC_CONCLUSIONS;
+
+  const [selectedRefId, setSelectedRefId] = useState(config.refId || config.refOptions?.[0]?.value || "");
+
   const [formNo, setFormNo] = useState(config.formNoPreset || "");
   const [checkTime, setCheckTime] = useState(getDefaultCheckTime);
-  const [conclusion, setConclusion] = useState(config.conclusions[0] || "全部项目合格，环境正常");
+  const [conclusion, setConclusion] = useState(conclusionsList[0] || "合格");
   const [reason, setReason] = useState("");
   const [fileUrl, setFileUrl] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const isPdf = fileName.toLowerCase().endsWith(".pdf");
 
-  const isExceptionConclusion = /异常|暂停|待整改|存在问题|不合格/.test(conclusion);
+  const isUnqualified = conclusion === "不合格";
+  const isRectifying = conclusion === "待整改";
+  const isExceptionConclusion = isUnqualified || isRectifying;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -112,8 +123,20 @@ export function QCRecordDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const targetRefId = selectedRefId || config.refId;
+    if (!targetRefId) {
+      toast.error("请选择或指定关联对象！");
+      return;
+    }
+
     if (isExceptionConclusion && !reason.trim()) {
-      toast.error("结论判定为异常时，必须填写整改原因说明！");
+      toast.error(
+        isUnqualified
+          ? "结论判定为不合格时，必须填写不合格原因与处置说明！"
+          : isRectifying
+          ? "结论判定为待整改时，必须填写问题详情与整改要求说明！"
+          : "结论判定为异常时，必须填写整改原因说明！"
+      );
       return;
     }
 
@@ -122,7 +145,7 @@ export function QCRecordDialog({
         cat: config.cat,
         formNo,
         refType: config.refType,
-        refId: config.refId,
+        refId: targetRefId,
         title: config.defaultTitle,
         checkTime,
         conclusion,
@@ -145,7 +168,10 @@ export function QCRecordDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (nextOpen) setCheckTime(getDefaultCheckTime());
+        if (nextOpen) {
+          setCheckTime(getDefaultCheckTime());
+          setSelectedRefId(config.refId || config.refOptions?.[0]?.value || "");
+        }
         setOpen(nextOpen);
       }}
     >
@@ -166,7 +192,7 @@ export function QCRecordDialog({
             {config.categoryLabel}留痕上传
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            关联对象：<span className="font-mono font-bold text-foreground">{config.refId}</span> · 强制填报实际巡检时间以暴露后填补录问题。
+            关联对象：<span className="font-mono font-bold text-foreground">{selectedRefId || config.refId || "待选择"}</span> · 强制填报实际巡检时间以暴露后填补录问题。
           </DialogDescription>
         </DialogHeader>
 
@@ -177,6 +203,24 @@ export function QCRecordDialog({
               {config.defaultTitle}
             </div>
           </div>
+
+          {config.refOptions && config.refOptions.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-primary">关联对象/批次 (必选)</Label>
+              <Select value={selectedRefId} onValueChange={setSelectedRefId}>
+                <SelectTrigger className="h-8 text-xs font-mono">
+                  <SelectValue placeholder="请选择关联对象" />
+                </SelectTrigger>
+                <SelectContent>
+                  {config.refOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value} className="text-xs font-mono">
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
@@ -230,7 +274,7 @@ export function QCRecordDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {config.conclusions.map((c, idx) => (
+                  {conclusionsList.map((c, idx) => (
                     <SelectItem key={idx} value={c} className="text-xs">
                       {c}
                     </SelectItem>
@@ -241,15 +285,37 @@ export function QCRecordDialog({
           </div>
 
           {isExceptionConclusion && (
-            <div className="space-y-1 p-2.5 rounded bg-destructive/10 border border-destructive/30">
-              <Label className="text-xs font-semibold text-destructive flex items-center gap-1">
+            <div
+              className={cn(
+                "space-y-1 p-2.5 rounded border",
+                isRectifying
+                  ? "bg-amber-500/10 border-amber-500/30"
+                  : "bg-destructive/10 border-destructive/30"
+              )}
+            >
+              <Label
+                className={cn(
+                  "text-xs font-semibold flex items-center gap-1",
+                  isRectifying ? "text-amber-600 dark:text-amber-400" : "text-destructive"
+                )}
+              >
                 <AlertTriangle className="size-3.5" />
-                异常原因与整改说明 (异常必填)
+                {isUnqualified
+                  ? "不合格原因与处置说明 (必填)"
+                  : isRectifying
+                  ? "问题详情与整改要求说明 (必填)"
+                  : "异常原因与整改说明 (异常必填)"}
               </Label>
               <Textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="例如：氨氮 0.28mg/L 超标，已启动应急换水并复检..."
+                placeholder={
+                  isUnqualified
+                    ? "请说明指标严重不合格或超标详情，以及退回/拦截处理措施..."
+                    : isRectifying
+                    ? "请说明现场发现的问题或偏差，以及具体整改要求与复查安排..."
+                    : "例如：指标超标或环境异常，已启动应急措施并复检..."
+                }
                 className="text-xs h-16 resize-none font-mono"
               />
             </div>

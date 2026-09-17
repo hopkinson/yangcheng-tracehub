@@ -68,14 +68,14 @@ export function MultiSpecIntakeDialog({
   // 明细行 (默认匹配空暂养池)
   const emptyPools = pools.filter((p) => p.liveCount === 0);
   const [items, setItems] = useState<
-    Array<{ poolId: string; gender: string; weightTier: string; weight: number; inPoolCount: number }>
+    Array<{ poolId: string; gender: string; weightTier: string; weight: number | string; inPoolCount: number | string }>
   >([
     { poolId: emptyPools[0]?.id || "", gender: "MALE", weightTier: "4.0两", weight: 450.0, inPoolCount: 1500 },
     { poolId: emptyPools[1]?.id || "", gender: "FEMALE", weightTier: "3.5两", weight: 380.0, inPoolCount: 1500 },
   ]);
 
   const handleAddItem = () => {
-    const usedPoolIds = new Set(items.map((it) => it.poolId));
+    const usedPoolIds = new Set(items.map((it) => it.poolId).filter(Boolean));
     const nextEmptyPool = emptyPools.find((p) => !usedPoolIds.has(p.id));
     setItems([
       ...items,
@@ -83,8 +83,8 @@ export function MultiSpecIntakeDialog({
         poolId: nextEmptyPool?.id || "",
         gender: "MALE",
         weightTier: "3.5两",
-        weight: 300.0,
-        inPoolCount: 1000,
+        weight: "",
+        inPoolCount: "",
       },
     ]);
   };
@@ -97,6 +97,22 @@ export function MultiSpecIntakeDialog({
     setItems(
       items.map((it, i) => (i === idx ? { ...it, [field]: val } : it))
     );
+  };
+
+  const handleNumberChange = (idx: number, field: "weight" | "inPoolCount", rawVal: string) => {
+    handleItemChange(idx, field, rawVal ? rawVal.replace(/^0+(?=\d)/, "") : "");
+  };
+
+  const handlePoolChange = (idx: number, newPoolId: string) => {
+    const conflictIdx = items.findIndex((it, i) => i !== idx && it.poolId === newPoolId);
+    setItems((prev) =>
+      prev.map((it, i) => (i === idx ? { ...it, poolId: newPoolId } : i === conflictIdx ? { ...it, poolId: "" } : it))
+    );
+    if (conflictIdx !== -1) {
+      const targetPool = pools.find((p) => p.id === newPoolId);
+      const poolName = targetPool?.name || targetPool?.code || "暂养池";
+      toast.info(`已将 ${poolName} 分配至第 ${idx + 1} 行，原第 ${conflictIdx + 1} 行已置空，请重新选池`);
+    }
   };
 
   const totalCount = items.reduce((sum, it) => sum + (Number(it.inPoolCount) || 0), 0);
@@ -146,15 +162,17 @@ export function MultiSpecIntakeDialog({
     // 前端严格校验：所有明细行必须选择空池
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
+      const countNum = Number(it.inPoolCount) || 0;
+      const weightNum = Number(it.weight) || 0;
       if (!it.poolId) {
         toast.error(`第 ${i + 1} 行明细未选择暂养池，请选择空池`);
         return;
       }
-      if (!it.inPoolCount || it.inPoolCount <= 0) {
+      if (countNum <= 0) {
         toast.error(`第 ${i + 1} 行入池数量必须大于 0`);
         return;
       }
-      if (!Number.isFinite(it.weight) || it.weight <= 0) {
+      if (weightNum <= 0) {
         toast.error(`第 ${i + 1} 行重量必须大于 0`);
         return;
       }
@@ -179,7 +197,13 @@ export function MultiSpecIntakeDialog({
         escort,
         slipUrl: slipUrl || undefined,
         slipName: `${formNo}_码单原件.jpg`,
-        items,
+        items: items.map((it) => ({
+          poolId: it.poolId,
+          gender: it.gender,
+          weightTier: it.weightTier,
+          weight: Number(it.weight) || 0,
+          inPoolCount: Number(it.inPoolCount) || 0,
+        })),
         createdById: userId,
       });
 
@@ -244,12 +268,12 @@ export function MultiSpecIntakeDialog({
 
             <div className="space-y-1">
               <Label className="text-xs">车内温度 (℃)</Label>
-              <Input type="number" step="0.1" value={temp} onChange={(e) => setTemp(e.target.value)} className="h-8 text-xs font-mono" />
+              <Input type="number" step="0.1" value={temp} onChange={(e) => setTemp(e.target.value)} onFocus={(e) => e.target.select()} className="h-8 text-xs font-mono" />
             </div>
 
             <div className="space-y-1">
               <Label className="text-xs">车内湿度 (%)</Label>
-              <Input type="number" step="0.1" value={humidity} onChange={(e) => setHumidity(e.target.value)} className="h-8 text-xs font-mono" />
+              <Input type="number" step="0.1" value={humidity} onChange={(e) => setHumidity(e.target.value)} onFocus={(e) => e.target.select()} className="h-8 text-xs font-mono" />
             </div>
 
             <div className="space-y-1 flex flex-col justify-end">
@@ -295,9 +319,11 @@ export function MultiSpecIntakeDialog({
 
             <div className="space-y-2 pt-1">
               {items.map((item, idx) => {
-                const expectedCount = Invariants.estimateCrabCount(item.weight, item.weightTier);
-                const countDifference = expectedCount === null ? 0 : item.inPoolCount - expectedCount;
-                const deviationRate = expectedCount && item.inPoolCount > 0
+                const weightNum = Number(item.weight) || 0;
+                const countNum = Number(item.inPoolCount) || 0;
+                const expectedCount = Invariants.estimateCrabCount(weightNum, item.weightTier);
+                const countDifference = expectedCount === null ? 0 : countNum - expectedCount;
+                const deviationRate = expectedCount && countNum > 0
                   ? Math.abs(countDifference) / expectedCount
                   : 0;
                 const hasLargeDeviation = deviationRate > 0.1;
@@ -337,7 +363,8 @@ export function MultiSpecIntakeDialog({
                       step="0.1"
                       min="0.1"
                       value={item.weight}
-                      onChange={(e) => handleItemChange(idx, "weight", parseFloat(e.target.value) || 0)}
+                      onChange={(e) => handleNumberChange(idx, "weight", e.target.value)}
+                      onFocus={(e) => e.target.select()}
                       placeholder="重量(斤)"
                       className="h-7 text-xs font-mono text-right"
                     />
@@ -349,28 +376,37 @@ export function MultiSpecIntakeDialog({
                       min="1"
                       step="1"
                       value={item.inPoolCount}
-                      onChange={(e) => handleItemChange(idx, "inPoolCount", parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) => handleNumberChange(idx, "inPoolCount", e.target.value)}
+                      onFocus={(e) => e.target.select()}
                       placeholder="只数"
                       className="h-7 text-xs font-mono text-right font-bold"
                     />
                   </div>
 
                   <div className="col-span-3">
-                    <Select value={item.poolId} onValueChange={(v) => handleItemChange(idx, "poolId", v)}>
-                      <SelectTrigger className="h-7 text-xs font-mono">
-                        <SelectValue placeholder="选入池" />
+                    <Select value={item.poolId || undefined} onValueChange={(v) => handlePoolChange(idx, v)}>
+                      <SelectTrigger
+                        className={`h-7 text-xs font-mono ${
+                          !item.poolId
+                            ? "border-amber-500/80 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                            : ""
+                        }`}
+                      >
+                        <SelectValue placeholder="请选入池" />
                       </SelectTrigger>
                       <SelectContent>
                         {pools.map((p) => {
                           const isOccupied = p.liveCount > 0;
-                          const otherRowConflict = items.some(
-                            (other, oIdx) => oIdx !== idx && other.poolId === p.id
-                          );
-                          const isDisabled = isOccupied || otherRowConflict;
+                          const conflictIdx = items.findIndex((other, oIdx) => oIdx !== idx && other.poolId === p.id);
+                          const suffix = isOccupied
+                            ? `(在养${p.liveCount}只 · 不可选)`
+                            : conflictIdx !== -1
+                            ? `(第${conflictIdx + 1}行已选 · 选后原行变空)`
+                            : "(空池)";
 
                           return (
-                            <SelectItem key={p.id} value={p.id} disabled={isDisabled} className="text-xs font-mono">
-                              {p.name || p.code} {isOccupied ? `(在养${p.liveCount}只 · 不可选)` : otherRowConflict ? "(本单已选 · 不可选)" : "(空池)"}
+                            <SelectItem key={p.id} value={p.id} disabled={isOccupied} className="text-xs font-mono">
+                              {p.name || p.code} {suffix}
                             </SelectItem>
                           );
                         })}
@@ -388,11 +424,11 @@ export function MultiSpecIntakeDialog({
 
                   {expectedCount !== null && (
                     <div className={`col-span-12 text-right text-[11px] ${hasLargeDeviation ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                      理论参考：{item.weight.toLocaleString()} 斤按 {item.weightTier}/只约 {expectedCount.toLocaleString()} 只
-                      {item.inPoolCount > 0 && countDifference !== 0 && (
+                      理论参考：{weightNum.toLocaleString()} 斤按 {item.weightTier}/只约 {expectedCount.toLocaleString()} 只
+                      {countNum > 0 && countDifference !== 0 && (
                         <>；当前{countDifference > 0 ? "多" : "少"} {Math.abs(countDifference).toLocaleString()} 只（偏差 {(deviationRate * 100).toFixed(1)}%）</>
                       )}
-                      {item.inPoolCount > 0 && countDifference === 0 && "；当前填写一致"}
+                      {countNum > 0 && countDifference === 0 && "；当前填写一致"}
                     </div>
                   )}
                 </div>

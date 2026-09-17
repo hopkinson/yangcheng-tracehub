@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Invariants } from "../src/lib/invariants";
 import { findDuplicateEnclosureCodes, normalizeEnclosureCodes } from "../src/lib/enclosures";
-import { releasePoolSpecLockIfEmpty } from "../src/lib/holding-pool";
+import { releasePoolSpecLockIfEmpty, summarizeBatchItems } from "../src/lib/holding-pool";
 
 console.log("🦀 启动阳澄大闸蟹溯源系统 —— PRD V2.1 数量闭环与卡控规则自动化单元测试...\n");
 
@@ -449,8 +449,60 @@ async function testPoolSpecLockRelease() {
   console.log("  ✔ 在池归零解除锁定、仍有活蟹保持锁定测试通过\n");
 }
 
+function testBatchLifecycleLoss() {
+  console.log("▶ [Test 17] 批次全环节生命周期损耗汇聚 (暂养+捆扎+分拣+冷库)");
+  const mockBatch = {
+    inPoolCount: 1000,
+    lossCount: 10,
+    bundleBatches: [
+      {
+        status: "COMPLETED",
+        lossCount: 8,
+        sortTasks: [
+          {
+            status: "COMPLETED",
+            lossCount: 5,
+            coldLogs: [
+              {
+                outboundLosses: [{ count: 3 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const res = Invariants.calculateBatchLifecycleLoss(mockBatch);
+  assert.equal(res.holdingLoss, 10);
+  assert.equal(res.bundlingLoss, 8);
+  assert.equal(res.sortingLoss, 5);
+  assert.equal(res.coldLoss, 3);
+  assert.equal(res.totalLoss, 26);
+  assert.equal(res.totalLossRate, 2.6);
+  assert.equal(res.isLossOverLimit, false);
+  console.log("  ✔ 全环节损耗跨链聚合计算测试通过\n");
+}
+
+testBatchLifecycleLoss();
+
+{
+  console.log("▶ [Test 18] 多规格批次仅在全部明细归零后完成日结");
+  const partial = summarizeBatchItems([
+    { inPoolCount: 100, outPoolCount: 0, lossCount: 100 },
+    { inPoolCount: 80, outPoolCount: 30, lossCount: 0 },
+  ]);
+  assert.deepEqual(partial, { inPoolCount: 180, outPoolCount: 30, lossCount: 100, remaining: 50 });
+  const closed = summarizeBatchItems([
+    { inPoolCount: 100, outPoolCount: 0, lossCount: 100 },
+    { inPoolCount: 80, outPoolCount: 30, lossCount: 50 },
+  ]);
+  assert.equal(closed.remaining, 0);
+  console.log("  ✔ 多规格部分清池与全部归零汇总测试通过\n");
+}
+
 testPoolSpecLockRelease()
-  .then(() => console.log("🎉 全部 16 项 PRD V2.1 核心卡控规则测试 100% 通过！"))
+  .then(() => console.log("🎉 全部 18 项 PRD V2.1 核心卡控规则测试 100% 通过！"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

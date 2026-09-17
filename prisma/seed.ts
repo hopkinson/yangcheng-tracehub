@@ -77,7 +77,6 @@ async function main() {
   // 3. 山姆会员店渠道与门店主档
   const sams = await prisma.channel.create({
     data: {
-      code: "SAMS",
       name: "山姆会员商店 (专属配载)",
       stores: {
         create: [

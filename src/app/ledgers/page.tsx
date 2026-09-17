@@ -1068,7 +1068,11 @@ export default async function LedgersPage({
               QC_CATEGORY_LABELS[q.cat] || q.cat,
               q.refId,
               q.title,
-              q.result === "QUALIFIED" ? "合格" : "异常",
+              q.result === "QUALIFIED" || q.conclusion === "合格"
+                ? "合格"
+                : q.result === "RECTIFYING" || q.conclusion === "待整改" || q.conclusion?.includes("整改")
+                ? "待整改"
+                : "不合格",
               q.uploader,
             ])}
             total={qcRecords.length}
@@ -1099,7 +1103,6 @@ export default async function LedgersPage({
                   </TableRow>
                 ) : (
                   pagedQCRecords.map((q) => {
-                    const isException = q.result === "EXCEPTION";
                     return (
                       <TableRow key={q.id} className="hover:bg-muted/40 transition-colors">
                         <TableCell className="font-mono text-xs">
@@ -1112,12 +1115,20 @@ export default async function LedgersPage({
                         <TableCell className="font-mono text-xs">{q.refId}</TableCell>
                         <TableCell className="text-xs font-medium">{q.title}</TableCell>
                         <TableCell>
-                          {isException ? (
+                          {q.result === "UNQUALIFIED" || q.conclusion === "不合格" ? (
                             <Badge variant="destructive" className="text-[10px] py-0">
-                              <AlertTriangle className="size-3 mr-0.5" /> 异常
+                              <AlertTriangle className="size-3 mr-0.5" /> 不合格
+                            </Badge>
+                          ) : q.result === "RECTIFYING" || q.conclusion === "待整改" || q.conclusion?.includes("整改") ? (
+                            <Badge variant="outline" className="text-amber-600 border-amber-500/30 bg-amber-500/10 text-[10px] py-0">
+                              <AlertTriangle className="size-3 mr-0.5" /> 待整改
+                            </Badge>
+                          ) : q.result === "EXCEPTION" ? (
+                            <Badge variant="destructive" className="text-[10px] py-0">
+                              <AlertTriangle className="size-3 mr-0.5" /> {q.conclusion || "异常"}
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px] py-0">
+                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 bg-emerald-500/10 text-[10px] py-0">
                               <CheckCircle2 className="size-3 mr-0.5" /> 合格
                             </Badge>
                           )}

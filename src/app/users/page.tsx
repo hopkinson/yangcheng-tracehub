@@ -31,7 +31,7 @@ export default async function UsersPage() {
       orderBy: { createdAt: "asc" },
     }),
     prisma.channel.findMany({
-      orderBy: { code: "asc" },
+      orderBy: { createdAt: "asc" },
     }),
     getApprovalSetting(),
   ]);

@@ -60,11 +60,10 @@ async function runE2EWorkflowTests() {
       });
     }
 
-    let samChannel = await prisma.channel.findFirst({ where: { code: "SAMS" } });
+    let samChannel = await prisma.channel.findFirst({ where: { name: "山姆会员商店" } });
     if (!samChannel) {
       samChannel = await prisma.channel.create({
         data: {
-          code: "SAMS",
           name: "山姆会员商店",
         },
       });

@@ -86,6 +86,10 @@ export function BundleBatchDialog({
       )
     : [];
   const visiblePools = pools.filter((pool) => pool.batchId === selectedBatchId);
+  const selectablePools = visiblePools.filter((pool) => pool.liveCount > 0);
+  const isAllSelected = selectablePools.length > 0 && selectedPools.length === selectablePools.length;
+  const isIndeterminate = selectedPools.length > 0 && !isAllSelected;
+
   const currentTag = availableTagClaims.find((tag) => tag.id === selectedTagId);
   const availableTags = currentTag?.availableCount ?? 0;
   const totalCrabs = selectedPools.reduce((acc, cur) => acc + (cur.count || 0), 0);
@@ -108,6 +112,21 @@ export function BundleBatchDialog({
     }
     setOpen(nextOpen);
   };
+
+  const handleToggleSelectAll = () =>
+    setSelectedPools(
+      isAllSelected
+        ? []
+        : selectablePools.map(
+            (p) =>
+              selectedPools.find((s) => s.poolId === p.id) ?? {
+                poolId: p.id,
+                gender: p.currentGender || "MALE",
+                weightTier: p.currentWeightTier || "4.0两",
+                count: p.liveCount,
+              }
+          )
+    );
 
   const handleTogglePool = (pool: PoolOption) => {
     if (pool.liveCount <= 0) return;
@@ -292,6 +311,24 @@ export function BundleBatchDialog({
                 {selectedPools.length > 0 ? `已选 ${selectedPools.length} 个暂养池来源` : "仅显示当前原料批次库存"}
               </span>
             </div>
+
+            {selectablePools.length > 0 && (
+              <label className="flex items-center gap-2 px-2 pt-0.5 text-xs cursor-pointer select-none text-muted-foreground hover:text-foreground">
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = isIndeterminate;
+                  }}
+                  onChange={handleToggleSelectAll}
+                  className="size-3.5 accent-primary cursor-pointer"
+                />
+                <span className="font-medium text-foreground">全选</span>
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  ({selectedPools.length}/{selectablePools.length})
+                </span>
+              </label>
+            )}
 
             <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
               {visiblePools.length === 0 ? (

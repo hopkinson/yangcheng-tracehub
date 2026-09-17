@@ -248,6 +248,23 @@ B0003\t上海浦东店\t3133\t20\t\t\t80\t\t100\t\t50\t\t20261011`;
   console.log("  ✔ 紧凑规格表头无漏单，订单号与逐行日期保留\n");
 }
 
+// 8.1 山姆会员店导入模板：发货日期位于规格列之前
+{
+  console.log("▶ [Test 8.1] 山姆会员店模板列顺序解析");
+  const samText = `订单号\t门店名称\t门店编号\t发货日期\t2.5母\t3.5公\t3.0母\t4.0公\t3.5母\t4.5公\t4.0母\t5.0公
+B0001\t浦东店\tST-02\t20260917\t50\t50\t100\t100\t\t\t`;
+
+  const parsed = Invariants.parseOrderImportText(samText, "STORE");
+
+  assert.equal(parsed.length, 4, "山姆模板应按四个非零规格拆分");
+  assert.equal(parsed.reduce((sum, order) => sum + order.count, 0), 300, "山姆模板数量必须完整解析");
+  assert.equal(parsed[0].orderNo, "B0001");
+  assert.equal(parsed[0].storeCode, "ST-02");
+  assert.equal(parsed[0].deliveryDate, "2026-09-17");
+
+  console.log("  ✔ 山姆会员店模板列顺序解析正常\n");
+}
+
 // 9. 用户真实 Excel 导入报障场景回归测试 (Excel 常见美式短日期 9/8/26 与表头过滤)
 {
   console.log("▶ [Test 9] 用户真实场景：Excel 常见短日期 9/8/26 解析与提货单号表头过滤");

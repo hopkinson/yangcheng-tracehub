@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { getBeijingDateStr } from "@/lib/utils";
 import { batchEditFormSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
 import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
+import { assertDailyCloseOpen } from "@/actions/daily-close";
 
 const MULTI_SPEC_WEIGHT_TIERS = new Set<string>([
   "2.5两",
@@ -33,6 +34,7 @@ export async function createBatchAction(data: {
   reportName?: string;
 }) {
   const operator = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  await assertDailyCloseOpen("POOL");
   return await prisma.$transaction(async (tx) => {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
@@ -182,6 +184,7 @@ export async function createMultiSpecBatchAction(data: {
 }) {
   try {
     await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+    await assertDailyCloseOpen("POOL");
 
     const batch = await prisma.$transaction(async (tx) => {
       const farmer = await tx.farmer.findUniqueOrThrow({

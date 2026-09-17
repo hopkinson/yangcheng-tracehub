@@ -10,20 +10,24 @@ export async function checkEnclosureCodesAction(data: {
   enclosureCodes: string[];
   excludeFarmerId?: string;
 }) {
-  await requireRole(["FARMER_ADMIN", "ADMIN"]);
+  try {
+    await requireRole(["FARMER_ADMIN", "ADMIN"]);
 
-  const enclosureCodes = Array.from(new Set(normalizeEnclosureCodes(data.enclosureCodes)));
-  if (enclosureCodes.length === 0) return { conflicts: [] as string[] };
+    const enclosureCodes = Array.from(new Set(normalizeEnclosureCodes(data.enclosureCodes)));
+    if (enclosureCodes.length === 0) return { conflicts: [] as string[] };
 
-  const conflicts = await prisma.enclosure.findMany({
-    where: {
-      code: { in: enclosureCodes },
-      ...(data.excludeFarmerId ? { farmerId: { not: data.excludeFarmerId } } : {}),
-    },
-    select: { code: true },
-  });
+    const conflicts = await prisma.enclosure.findMany({
+      where: {
+        code: { in: enclosureCodes },
+        ...(data.excludeFarmerId ? { farmerId: { not: data.excludeFarmerId } } : {}),
+      },
+      select: { code: true },
+    });
 
-  return { conflicts: conflicts.map((item) => item.code) };
+    return { conflicts: conflicts.map((item) => item.code) };
+  } catch {
+    return { conflicts: [] as string[] };
+  }
 }
 
 export async function createFarmerAction(data: {
@@ -36,63 +40,66 @@ export async function createFarmerAction(data: {
   contractUrl?: string;
   userId: string;
 }) {
-  await requireRole(["FARMER_ADMIN", "ADMIN"]);
   try {
+    await requireRole(["FARMER_ADMIN", "ADMIN"]);
     return await prisma.$transaction(async (tx) => {
-    const currentYear = new Date().getFullYear();
-    const enclosureCodes = normalizeEnclosureCodes(data.enclosureCodes);
-    const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
-    if (duplicateCodes.length > 0) {
-      throw new Error(`围网编号重复：${duplicateCodes.join("、")}`);
-    }
-    if (enclosureCodes.length === 0) {
-      throw new Error("请至少填写一个有效的围网编号");
-    }
+      const currentYear = new Date().getFullYear();
+      const enclosureCodes = normalizeEnclosureCodes(data.enclosureCodes);
+      const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
+      if (duplicateCodes.length > 0) {
+        return { success: false as const, error: `围网编号重复：${duplicateCodes.join("、")}` };
+      }
+      if (enclosureCodes.length === 0) {
+        return { success: false as const, error: "请至少填写一个有效的围网编号" };
+      }
 
-    const count = await tx.farmer.count({ where: { year: currentYear } });
-    const code = `JD-${currentYear}-${String(count + 1).padStart(3, "0")}`;
-    const quota = Math.round(data.area * 600);
+      const count = await tx.farmer.count({ where: { year: currentYear } });
+      const code = `JD-${currentYear}-${String(count + 1).padStart(3, "0")}`;
+      const quota = Math.round(data.area * 600);
 
-    const farmer = await tx.farmer.create({
-      data: {
-        code,
-        name: data.name,
-        phone: data.phone || "",
-        farmType: "LAKE_CRAB",
-        year: currentYear,
-        area: data.area,
-        quota,
-        creditRating: data.creditRating || "A",
-        status: "ACTIVE",
-        contractName: data.contractName,
-        contractUrl: data.contractUrl,
-        enclosures: {
-          create: enclosureCodes.map((code) => ({ code })),
+      const farmer = await tx.farmer.create({
+        data: {
+          code,
+          name: data.name,
+          phone: data.phone || "",
+          farmType: "LAKE_CRAB",
+          year: currentYear,
+          area: data.area,
+          quota,
+          creditRating: data.creditRating || "A",
+          status: "ACTIVE",
+          contractName: data.contractName,
+          contractUrl: data.contractUrl,
+          enclosures: {
+            create: enclosureCodes.map((code) => ({ code })),
+          },
         },
-      },
-      include: { enclosures: true },
-    });
+        include: { enclosures: true },
+      });
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: data.userId,
-        action: "CREATE_FARMER",
-        entityType: "FARMER",
-        entityId: farmer.id,
-        details: JSON.stringify({ code: farmer.code, name: farmer.name, quota: farmer.quota }),
-      },
-    });
+      await tx.auditLog.create({
+        data: {
+          operatorId: data.userId,
+          action: "CREATE_FARMER",
+          entityType: "FARMER",
+          entityId: farmer.id,
+          details: JSON.stringify({ code: farmer.code, name: farmer.name, quota: farmer.quota }),
+        },
+      });
 
-    revalidatePath("/farmers");
-    revalidatePath("/batches");
-    revalidatePath("/ledgers");
-    return farmer;
+      revalidatePath("/farmers");
+      revalidatePath("/batches");
+      revalidatePath("/ledgers");
+      return { success: true as const, data: farmer };
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new Error("围网编号已被其他养殖户使用，请更换编号");
+      return { success: false as const, error: "围网编号已被其他养殖户使用，请更换编号" };
     }
-    throw error;
+    return {
+      success: false as const,
+      error: error instanceof Error ? error.message : "创建养殖户档案失败",
+    };
   }
 }
 
@@ -108,83 +115,86 @@ export async function updateFarmerAction(data: {
   contractUrl?: string;
   userId: string;
 }) {
-  await requireRole(["FARMER_ADMIN", "ADMIN"]);
   try {
+    await requireRole(["FARMER_ADMIN", "ADMIN"]);
     return await prisma.$transaction(async (tx) => {
-    const quota = Math.round(data.area * 600);
-    const enclosureCodes = normalizeEnclosureCodes(data.enclosureCodes);
-    const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
-    if (duplicateCodes.length > 0) {
-      throw new Error(`围网编号重复：${duplicateCodes.join("、")}`);
-    }
-    if (enclosureCodes.length === 0) {
-      throw new Error("请至少填写一个有效的围网编号");
-    }
+      const quota = Math.round(data.area * 600);
+      const enclosureCodes = normalizeEnclosureCodes(data.enclosureCodes);
+      const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
+      if (duplicateCodes.length > 0) {
+        return { success: false as const, error: `围网编号重复：${duplicateCodes.join("、")}` };
+      }
+      if (enclosureCodes.length === 0) {
+        return { success: false as const, error: "请至少填写一个有效的围网编号" };
+      }
 
-    const existingEnclosures = await tx.enclosure.findMany({
-      where: { farmerId: data.id },
-      include: { batches: true },
-    });
-
-    const newCodes = enclosureCodes;
-
-    // 找出可以安全删除的（未被任何批次引用的旧围网且不在新列表中）
-    const toDelete = existingEnclosures.filter(
-      (e) => !newCodes.includes(e.code.trim().toUpperCase()) && e.batches.length === 0
-    );
-    if (toDelete.length > 0) {
-      await tx.enclosure.deleteMany({
-        where: { id: { in: toDelete.map((e) => e.id) } },
+      const existingEnclosures = await tx.enclosure.findMany({
+        where: { farmerId: data.id },
+        include: { batches: true },
       });
-    }
 
-    // 找出需要新增的围网
-    const existingCodes = new Set(existingEnclosures.map((e) => e.code.trim().toUpperCase()));
-    const toCreate = newCodes.filter((code) => !existingCodes.has(code));
-    if (toCreate.length > 0) {
-      await tx.enclosure.createMany({
-        data: toCreate.map((code) => ({
-          code,
-          farmerId: data.id,
-        })),
+      const newCodes = enclosureCodes;
+
+      // 找出可以安全删除的（未被任何批次引用的旧围网且不在新列表中）
+      const toDelete = existingEnclosures.filter(
+        (e) => !newCodes.includes(e.code.trim().toUpperCase()) && e.batches.length === 0
+      );
+      if (toDelete.length > 0) {
+        await tx.enclosure.deleteMany({
+          where: { id: { in: toDelete.map((e) => e.id) } },
+        });
+      }
+
+      // 找出需要新增的围网
+      const existingCodes = new Set(existingEnclosures.map((e) => e.code.trim().toUpperCase()));
+      const toCreate = newCodes.filter((code) => !existingCodes.has(code));
+      if (toCreate.length > 0) {
+        await tx.enclosure.createMany({
+          data: toCreate.map((code) => ({
+            code,
+            farmerId: data.id,
+          })),
+        });
+      }
+
+      const farmer = await tx.farmer.update({
+        where: { id: data.id },
+        data: {
+          name: data.name,
+          phone: data.phone,
+          farmType: "LAKE_CRAB",
+          area: data.area,
+          quota,
+          creditRating: data.creditRating,
+          status: data.status,
+          contractName: data.contractName,
+          contractUrl: data.contractUrl,
+        },
+        include: { enclosures: true },
       });
-    }
 
-    const farmer = await tx.farmer.update({
-      where: { id: data.id },
-      data: {
-        name: data.name,
-        phone: data.phone,
-        farmType: "LAKE_CRAB",
-        area: data.area,
-        quota,
-        creditRating: data.creditRating,
-        status: data.status,
-        contractName: data.contractName,
-        contractUrl: data.contractUrl,
-      },
-      include: { enclosures: true },
-    });
+      await tx.auditLog.create({
+        data: {
+          operatorId: data.userId,
+          action: "UPDATE_FARMER",
+          entityType: "FARMER",
+          entityId: farmer.id,
+          details: JSON.stringify({ code: farmer.code, quota: farmer.quota, status: farmer.status }),
+        },
+      });
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: data.userId,
-        action: "UPDATE_FARMER",
-        entityType: "FARMER",
-        entityId: farmer.id,
-        details: JSON.stringify({ code: farmer.code, quota: farmer.quota, status: farmer.status }),
-      },
-    });
-
-    revalidatePath("/farmers");
-    revalidatePath("/batches");
-    revalidatePath("/ledgers");
-    return farmer;
+      revalidatePath("/farmers");
+      revalidatePath("/batches");
+      revalidatePath("/ledgers");
+      return { success: true as const, data: farmer };
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new Error("围网编号已被其他养殖户使用，请更换编号");
+      return { success: false as const, error: "围网编号已被其他养殖户使用，请更换编号" };
     }
-    throw error;
+    return {
+      success: false as const,
+      error: error instanceof Error ? error.message : "更新养殖户档案失败",
+    };
   }
 }

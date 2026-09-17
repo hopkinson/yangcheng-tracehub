@@ -10,7 +10,7 @@ import { updateBatchAction } from "@/actions/batches";
 import { batchEditFormSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 
 function getValues(batch: any): BatchEditFormValues {
@@ -57,6 +57,10 @@ export function BatchEditDialog({ batch, trigger }: { batch: any; trigger: React
     }
   }
 
+  const watchedItems = form.watch("items") || [];
+  const totalWeight = watchedItems.reduce((sum, it) => sum + (Number(it?.weight) || 0), 0);
+  const totalCount = watchedItems.reduce((sum, it) => sum + (Number(it?.inPoolCount) || 0), 0);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -77,63 +81,146 @@ export function BatchEditDialog({ batch, trigger }: { batch: any; trigger: React
               <FormField control={form.control} name="formNo" render={({ field }) => (
                 <FormItem>
                   <FormLabel>纸质入库码单表号</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
+                  <FormControl><Input className="h-8 font-mono text-xs" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="escort" render={({ field }) => (
                 <FormItem>
                   <FormLabel>跟车押运员</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
+                  <FormControl><Input className="h-8 text-xs" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="temp" render={({ field }) => (
                 <FormItem>
                   <FormLabel>车内温度（℃）</FormLabel>
-                  <FormControl><Input type="number" step="0.1" {...field} /></FormControl>
+                  <FormControl><Input type="number" step="0.1" className="h-8 font-mono text-xs" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="humidity" render={({ field }) => (
                 <FormItem>
                   <FormLabel>车内湿度（%）</FormLabel>
-                  <FormControl><Input type="number" step="0.1" {...field} /></FormControl>
+                  <FormControl><Input type="number" step="0.1" className="h-8 font-mono text-xs" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
             </div>
 
-            <div className="flex flex-col gap-3 border rounded-lg p-3">
-              {sourceItems.map((item: any, index: number) => {
-                const flowedCount = (item.outPoolCount || 0) + (item.lossCount || 0);
-                const isLegacy = !batch.items?.length;
-                return (
-                  <div key={item.id} className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b last:border-0 pb-3 last:pb-0">
-                    <div className="sm:col-span-2 text-sm font-medium">
-                      {item.pool?.code || batch.pool?.code} · {item.gender === "FEMALE" ? "母蟹" : "公蟹"} {item.weightTier}
-                    </div>
-                    <FormField control={form.control} name={`items.${index}.weight`} render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>重量（斤）</FormLabel>
-                        <FormControl><Input type="number" min={isLegacy ? "0" : "0.1"} step="0.1" disabled={isLegacy} {...field} /></FormControl>
-                        {isLegacy && <FormDescription>旧版单规格批次未记录重量</FormDescription>}
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name={`items.${index}.inPoolCount`} render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>入池数量（只）</FormLabel>
-                        <FormControl><Input type="number" min={Math.max(1, flowedCount)} step="1" {...field} /></FormControl>
-                        <FormDescription>
-                          {flowedCount > 0 ? `已绑扎/起池及损耗共 ${flowedCount} 只，修改后不能低于此数` : "该明细尚未影响下游"}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  </div>
-                );
-              })}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-foreground">
+                  入池规格与暂养明细（共 {sourceItems.length} 项）
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  暂养池与规格属于追溯核心，不可在此修改
+                </span>
+              </div>
+
+              <div className="border rounded-lg overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-muted/50 text-muted-foreground border-b font-mono text-[11px]">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">暂养仓位 · 规格档位</th>
+                      <th className="px-3 py-2 font-medium text-right w-[110px]">重量（斤）</th>
+                      <th className="px-3 py-2 font-medium text-right w-[110px]">入池数量（只）</th>
+                      <th className="px-3 py-2 font-medium text-left w-[180px]">流转约束 / 说明</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {sourceItems.map((item: any, index: number) => {
+                      const flowedCount = (item.outPoolCount || 0) + (item.lossCount || 0);
+                      const isLegacy = !batch.items?.length;
+                      const isFemale = item.gender === "FEMALE";
+
+                      return (
+                        <tr key={item.id} className="hover:bg-muted/20">
+                          <td className="px-3 py-2 align-middle">
+                            <div className="font-mono font-bold text-foreground text-xs">
+                              {item.pool?.code || batch.pool?.code || "—"}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              <span className={isFemale ? "text-rose-600 dark:text-rose-400 font-medium" : "text-sky-600 dark:text-sky-400 font-medium"}>
+                                {isFemale ? "母蟹" : "公蟹"}
+                              </span>{" "}
+                              <span className="font-mono">{item.weightTier || batch.weightTier || ""}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <FormField
+                              control={form.control}
+                              name={`items.${index}.weight`}
+                              render={({ field }) => (
+                                <FormItem className="space-y-0.5">
+                                  <FormLabel className="sr-only">重量（斤）</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      min={isLegacy ? "0" : "0.1"}
+                                      step="0.1"
+                                      disabled={isLegacy}
+                                      className="h-8 text-xs font-mono text-right w-full"
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                  <FormMessage className="text-[11px]" />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <FormField
+                              control={form.control}
+                              name={`items.${index}.inPoolCount`}
+                              render={({ field }) => (
+                                <FormItem className="space-y-0.5">
+                                  <FormLabel className="sr-only">入池数量（只）</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      min={Math.max(1, flowedCount)}
+                                      step="1"
+                                      className="h-8 text-xs font-mono text-right font-bold w-full"
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                  <FormMessage className="text-[11px]" />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2 align-middle text-[11px]">
+                            {isLegacy ? (
+                              <span className="text-muted-foreground">旧版单规格批次未记录重量</span>
+                            ) : flowedCount > 0 ? (
+                              <span className="text-amber-600 dark:text-amber-400 font-mono">
+                                已流转 {flowedCount} 只（不可低于此数）
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">该明细尚未影响下游</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-muted/30 border-t font-mono text-xs">
+                    <tr>
+                      <td className="px-3 py-2 font-medium text-muted-foreground">合计</td>
+                      <td className="px-3 py-2 text-right font-bold text-foreground">
+                        {totalWeight.toFixed(1)} 斤
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold text-primary">
+                        {totalCount} 只
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground text-[11px]">
+                        共 {sourceItems.length} 档规格
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t">

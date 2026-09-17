@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShoppingCart,
   Layers,
@@ -30,6 +31,9 @@ import { Input } from "@/components/ui/input";
 import { FadeIn, PulseBadge, StaggerContainer, AnimatedNumber } from "@/components/motion/MotionWrapper";
 import { cn, formatTime, formatDate } from "@/lib/utils";
 import { getTenant } from "@/config/tenant";
+import { completeDailyCloseAction, type DailyCloseType } from "@/actions/daily-close";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { toast } from "sonner";
 
 export interface DashboardProps {
   metrics: {
@@ -65,6 +69,9 @@ export interface DashboardProps {
     activeColdStoresCount: number;
     totalColdStockCount: number;
     isClosingTime: boolean;
+    poolCloseCompleted: boolean;
+    coldCloseCompleted: boolean;
+    canCloseDaily: boolean;
     // 8. 出库
     todayOutboundOrdersCount: number;
     todayOutboundTotalCount: number;
@@ -122,6 +129,24 @@ const DEFAULT_POOL_TEMPS: Record<string, number> = {
 
 export function OverviewDashboard({ metrics, activePools, qcRecords, businessAlerts }: DashboardProps) {
   const isMaoshi = getTenant().id === "maoshi";
+  const router = useRouter();
+  const [closingType, setClosingType] = useState<DailyCloseType | null>(null);
+  const [closing, setClosing] = useState(false);
+
+  const confirmDailyClose = async () => {
+    if (!closingType) return;
+    setClosing(true);
+    try {
+      await completeDailyCloseAction(closingType);
+      toast.success(closingType === "POOL" ? "今日清池日结已完成" : "今日清库日结已完成");
+      setClosingType(null);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "日结确认失败");
+    } finally {
+      setClosing(false);
+    }
+  };
 
   // -------------------------------------------------------------
   // ③ 温度状态管理（种子默认值）
@@ -268,19 +293,23 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
 
     // 4. 品控巡检
     qcRecords.forEach((q) => {
-      if (q.result === "EXCEPTION") {
+      const isUnqualified = q.result === "UNQUALIFIED" || q.conclusion === "不合格";
+      const isRectifying = q.result === "RECTIFYING" || q.conclusion === "待整改";
+      const isException = q.result === "EXCEPTION";
+
+      if (isUnqualified || isRectifying || isException) {
         const isResolved =
           (q.conclusion && (q.conclusion.includes("已整改") || q.conclusion.includes("已完成") || q.conclusion.includes("已闭环"))) ||
           false;
 
         list.push({
           id: `qc-${q.id}`,
-          level: isResolved ? "WARNING" : "SEVERE",
+          level: isUnqualified ? "SEVERE" : (isResolved ? "WARNING" : (isRectifying ? "WARNING" : "SEVERE")),
           category: "QC",
           catLabel: QC_CAT_MAP[q.cat]?.label || "品控巡检",
           target: q.refId,
           title: q.title,
-          reason: q.reason || q.conclusion || "指标异常需核查",
+          reason: q.reason || q.conclusion || (isUnqualified ? "指标不合格需拦截" : "待整改需复查"),
           time: formatTime(q.checkTime),
         });
       }
@@ -321,7 +350,8 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
     qcRecords.forEach((q) => {
       if (!counts[q.cat]) counts[q.cat] = { total: 0, exceptions: 0 };
       counts[q.cat].total += 1;
-      if (q.result === "EXCEPTION") counts[q.cat].exceptions += 1;
+      const isAbnormal = q.result === "UNQUALIFIED" || q.result === "RECTIFYING" || q.result === "EXCEPTION" || q.conclusion === "不合格" || q.conclusion === "待整改";
+      if (isAbnormal) counts[q.cat].exceptions += 1;
     });
     return [
       "POOL_INSPECT",
@@ -604,10 +634,23 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                       <ArrowRight className="size-3" />
                     </span>
                   </Link>
-                ) : (
+                ) : metrics.poolCloseCompleted ? (
                   <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
                     <span>今日已清池</span>
                     <CheckCircle2 className="size-3.5" />
+                  </div>
+                ) : metrics.canCloseDaily ? (
+                  <button
+                    type="button"
+                    onClick={() => setClosingType("POOL")}
+                    className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium"
+                  >
+                    <span>确认今日空池并日结</span>
+                    <ArrowRight className="size-3" />
+                  </button>
+                ) : (
+                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground">
+                    待仓库管理员确认日结
                   </div>
                 )
               ) : (
@@ -720,7 +763,15 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 </div>
               </div>
               {metrics.isClosingTime ? (
-                metrics.totalColdStockCount > 0 ? (
+                metrics.pendingOutboundOrdersCount > 0 ? (
+                  <Link href="/approvals" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-destructive flex items-center justify-between font-medium">
+                    <span>先处理待审核出库</span>
+                    <span className="font-mono flex items-center gap-1">
+                      {metrics.pendingOutboundOrdersCount} 笔
+                      <ArrowRight className="size-3" />
+                    </span>
+                  </Link>
+                ) : metrics.totalColdStockCount > 0 ? (
                   <Link href="/outbound#closing" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
                     <span>晚间待清库</span>
                     <span className="font-mono flex items-center gap-1">
@@ -728,10 +779,23 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                       <ArrowRight className="size-3" />
                     </span>
                   </Link>
-                ) : (
+                ) : metrics.coldCloseCompleted ? (
                   <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
                     <span>今日已清库</span>
                     <CheckCircle2 className="size-3.5" />
+                  </div>
+                ) : metrics.canCloseDaily ? (
+                  <button
+                    type="button"
+                    onClick={() => setClosingType("COLD")}
+                    className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium"
+                  >
+                    <span>确认今日空库并日结</span>
+                    <ArrowRight className="size-3" />
+                  </button>
+                ) : (
+                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground">
+                    待仓库管理员确认日结
                   </div>
                 )
               ) : (
@@ -1101,6 +1165,18 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
           </FadeIn>
         </div>
       </div>
+      <ConfirmDialog
+        open={closingType !== null}
+        onOpenChange={(open) => !open && setClosingType(null)}
+        title={closingType === "POOL" ? "确认今日清池日结" : "确认今日清库日结"}
+        description={closingType === "POOL"
+          ? "系统将再次核验全部暂养池账面存活为 0，并记录今日清池完成凭证。"
+          : "系统将再次核验无待审核出库且冷库可发库存为 0，并记录今日清库完成凭证。"}
+        confirmText="确认完成日结"
+        variant="default"
+        loading={closing}
+        onConfirm={confirmDailyClose}
+      />
     </StaggerContainer>
   );
 }

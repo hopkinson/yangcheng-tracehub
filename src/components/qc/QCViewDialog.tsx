@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileSearch, Clock, AlertTriangle, CheckCircle2, ExternalLink, Download, FileWarning, FileText } from "lucide-react";
-import { getPreviewFileUrl, formatDateTime } from "@/lib/utils";
+import { getPreviewFileUrl, formatDateTime, cn } from "@/lib/utils";
 
 export function QCViewDialog({
   record,
@@ -42,7 +42,9 @@ export function QCViewDialog({
 
   const checkDateStr = formatDateTime(record.checkTime);
   const uploadDateStr = formatDateTime(record.uploadTime);
-  const isException = record.result === "EXCEPTION" || record.result === "UNQUALIFIED";
+  const isUnqualified = record.result === "UNQUALIFIED" || record.conclusion === "不合格";
+  const isRectifying = record.result === "RECTIFYING" || record.conclusion === "待整改" || record.conclusion?.includes("整改");
+  const isException = record.result === "EXCEPTION";
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (o) setImageError(false); setOpen(o); }}>
@@ -86,12 +88,30 @@ export function QCViewDialog({
 
           {/* 结论与原因 */}
           <div className="p-3 rounded border bg-card text-xs space-y-1">
-            <div className="font-medium text-foreground">
-              检查结论：<span className={isException ? "text-destructive font-bold" : "text-emerald-600"}>{record.conclusion || "合格"}</span>
+            <div className="font-medium text-foreground flex items-center gap-1.5">
+              <span>检查结论：</span>
+              {isUnqualified ? (
+                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                  不合格
+                </Badge>
+              ) : isRectifying ? (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-600 border-amber-500/30">
+                  待整改
+                </Badge>
+              ) : isException ? (
+                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                  {record.conclusion || "异常"}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                  {record.conclusion || "合格"}
+                </Badge>
+              )}
             </div>
             {record.reason && (
-              <div className="text-destructive text-[11px] font-mono pt-1 border-t">
-                异常整改原因：{record.reason}
+              <div className={cn("text-[11px] font-mono pt-1 border-t", isUnqualified ? "text-destructive" : isRectifying ? "text-amber-600 dark:text-amber-400" : "text-destructive")}>
+                {isUnqualified ? "不合格原因说明：" : isRectifying ? "待整改说明与要求：" : "异常整改原因："}
+                {record.reason}
               </div>
             )}
           </div>

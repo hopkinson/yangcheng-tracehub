@@ -37,11 +37,6 @@ const WATER_QC_PRESET = {
   defaultTitle: "暂养水质监测记录",
   formNoPreset: "YCGF-PZZX-202605",
   refType: "POOL",
-  conclusions: [
-    "符合暂养水质卫生要求 (水温21.2℃, 溶氧7.5mg/L, 氨氮0.12mg/L)",
-    "水温偏高 (>24℃)，已开启水循环制冷",
-    "氨氮 0.28mg/L 超标，已启动换水并安排复检",
-  ],
 };
 
 const INSPECT_QC_PRESET = {
@@ -50,11 +45,6 @@ const INSPECT_QC_PRESET = {
   defaultTitle: "暂养巡检记录",
   formNoPreset: "YCGF-PZZX-202604",
   refType: "POOL",
-  conclusions: [
-    "全部项目合格，暂养环境正常",
-    "存在轻微异常，已整改，可正常暂养",
-    "问题未解决，暂停该池暂养，限期整改",
-  ],
 };
 
 export default async function PoolsPage({
@@ -714,13 +704,17 @@ export default async function PoolsPage({
                               </span>
                             </TableCell>
                             <TableCell>
-                              {isException ? (
+                              {record.result === "UNQUALIFIED" || record.conclusion === "不合格" ? (
                                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                                  异常/需整改
+                                  不合格
                                 </Badge>
-                              ) : record.conclusion?.includes("整改") ? (
+                              ) : record.result === "RECTIFYING" || record.conclusion === "待整改" || record.conclusion?.includes("整改") ? (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-600 border-amber-500/30">
-                                  已整改合格
+                                  待整改
+                                </Badge>
+                              ) : record.result === "EXCEPTION" ? (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                  {record.conclusion || "异常"}
                                 </Badge>
                               ) : (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/30">

@@ -64,7 +64,7 @@ export default async function FarmersPage({
       (sum, b) => sum + b.outboundOrders.reduce((s, o) => s + o.outboundCount, 0),
       0
     );
-    const remainingQuota = Math.max(0, f.quota - cumulativeInPool);
+    const remainingQuota = Math.max(0, f.quota - cumulativeClaimed);
     return {
       ...f,
       cumulativeInPool,
@@ -142,7 +142,7 @@ export default async function FarmersPage({
                   <TableRow className="bg-muted/40">
                     <TableHead className="w-[200px]">养殖户主档与类型</TableHead>
                     <TableHead className="w-[160px]">养殖水域与面积</TableHead>
-                    <TableHead className="min-w-[240px]">年度额度与入池余量水位</TableHead>
+                    <TableHead className="min-w-[240px]">年度蟹扣余额与申领</TableHead>
                     <TableHead className="w-[120px]">合作状态</TableHead>
                     <TableHead className="text-right w-[140px]">操作</TableHead>
                   </TableRow>
@@ -212,7 +212,7 @@ export default async function FarmersPage({
                           </div>
                         </TableCell>
 
-                        {/* 3. 年度额度与在池余量 */}
+                        {/* 3. 年度蟹扣余额与申领 */}
                         <TableCell>
                           <div className="flex flex-col gap-1.5 min-w-[180px]">
                             <div className="flex items-baseline justify-between gap-2">
@@ -231,7 +231,7 @@ export default async function FarmersPage({
                                 />
                               </div>
                               <span className="font-mono text-[10px] text-muted-foreground shrink-0">
-                                {farmer.cumulativeInPool.toLocaleString()} / {farmer.quota.toLocaleString()}
+                                {farmer.cumulativeClaimed.toLocaleString()} / {farmer.quota.toLocaleString()}
                               </span>
                             </div>
                           </div>

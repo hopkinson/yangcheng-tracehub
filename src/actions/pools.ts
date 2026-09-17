@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Invariants } from "@/lib/invariants";
-import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
+import { releasePoolSpecLockIfEmpty, summarizeBatchItems } from "@/lib/holding-pool";
 
 export async function createPoolAction(data: { name: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
@@ -104,7 +104,7 @@ export async function clearPoolAction(data: { poolId: string; reason: string; us
       include: {
         batches: {
           where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
-          include: { lossRecords: true },
+          include: { lossRecords: true, items: true },
         },
         batchItems: {
           where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
@@ -114,7 +114,7 @@ export async function clearPoolAction(data: { poolId: string; reason: string; us
 
     let totalClearedCrabs = 0;
 
-    for (const b of pool.batches) {
+    for (const b of pool.batches.filter((batch) => batch.items.length === 0)) {
       const live = b.inPoolCount - b.outPoolCount - b.lossCount;
       const cumulativeLoss = b.lossCount + Math.max(0, live);
       if (live > 0) {
@@ -135,10 +135,40 @@ export async function clearPoolAction(data: { poolId: string; reason: string; us
       await tx.batch.update({ where: { id: b.id }, data: { lossCount: cumulativeLoss, status: "COMPLETED" } });
     }
 
+    const affectedBatchIds = new Set<string>();
     for (const item of pool.batchItems) {
       const itemLive = item.inPoolCount - item.outPoolCount - item.lossCount;
       if (itemLive > 0) {
+        totalClearedCrabs += itemLive;
+        affectedBatchIds.add(item.batchId);
         await tx.batchItem.update({ where: { id: item.id }, data: { lossCount: item.inPoolCount - item.outPoolCount } });
+      }
+    }
+
+    for (const batchId of affectedBatchIds) {
+      const batch = await tx.batch.findUniqueOrThrow({ where: { id: batchId }, include: { items: true } });
+      const { outPoolCount, lossCount, remaining } = summarizeBatchItems(batch.items);
+      const clearedInThisPool = pool.batchItems
+        .filter((item) => item.batchId === batchId)
+        .reduce((sum, item) => sum + Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount), 0);
+
+      await tx.batch.update({
+        where: { id: batchId },
+        data: { outPoolCount, lossCount, status: remaining === 0 ? "COMPLETED" : "PARTIALLY_OUTBOUND" },
+      });
+      if (clearedInThisPool > 0) {
+        await tx.lossRecord.create({
+          data: {
+            batchId,
+            bookInPool: clearedInThisPool,
+            physicalCount: 0,
+            lossCount: clearedInThisPool,
+            cumulativeLoss: lossCount,
+            lossRate: batch.inPoolCount > 0 ? Number(((lossCount / batch.inPoolCount) * 100).toFixed(2)) : 0,
+            reason: data.reason || "批次出库完毕，清池盘点结算归零",
+            inspectorId: data.userId,
+          },
+        });
       }
     }
 
@@ -301,4 +331,3 @@ export async function registerPoolLossAction(data: {
     return { success: true, record, updatedBatch, pool };
   });
 }
-

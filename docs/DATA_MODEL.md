@@ -268,8 +268,7 @@ model TagClaim {
 // -------------------------------------------------------------
 model Channel {
   id              String          @id @default(cuid())
-  code            String          @unique // 如 SAMS, HEMA
-  name            String          // 如 山姆会员店
+  name            String          @unique // 如 山姆会员店
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 

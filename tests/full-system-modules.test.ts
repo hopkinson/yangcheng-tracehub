@@ -23,7 +23,6 @@ async function runFullSystemTests() {
   const testBundleBatchCode = `KZD-ALL-${uid}`;
   const testTagClaimCode = `XK-ALL-${uid}`;
   const testOutboundCode = `CK-ALL-${uid}`;
-  const testChannelCode = `SAMS-ALL-${uid}`;
   const testStoreCode = `ST-ALL-${uid}`;
 
   try {
@@ -382,7 +381,6 @@ async function runFullSystemTests() {
     // 准备渠道与门店
     const channel = await prisma.channel.create({
       data: {
-        code: testChannelCode,
         name: `山姆会员专属冷链渠道-${uid}`,
       },
     });

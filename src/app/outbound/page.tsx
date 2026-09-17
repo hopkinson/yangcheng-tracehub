@@ -474,14 +474,12 @@ export default async function OutboundPage({
                   label: "包装巡检",
                   title: "大闸蟹礼盒包装与封签巡检记录表",
                   form: "YCGF-PZZX-202610",
-                  conclusions: ["内衬冰袋完好，封签完整，扣带防伪齿无松脱", "包装破损/冰袋漏液，已安排重新装箱整改"],
                 },
                 {
                   cat: "VEHICLE_INSPECT",
                   label: "车辆检查",
                   title: "冷链运输车辆出车前车况与温度检查表",
                   form: "YCGF-PZZX-202611",
-                  conclusions: ["车厢预冷至 4.0℃，制冷机组运转正常，消杀记录完备", "车厢温度偏高 (>8℃)，制冷异常，禁止发车"],
                 },
               ].map((c) => (
                 <QCRecordDialog
@@ -493,7 +491,6 @@ export default async function OutboundPage({
                     formNoPreset: c.form,
                     refType: "OUTBOUND",
                     refId: orders[0]?.code || "CK-GENERAL",
-                    conclusions: c.conclusions,
                   }}
                   triggerLabel={`登记${c.label}`}
                 />
@@ -537,15 +534,35 @@ export default async function OutboundPage({
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            variant={qc.result === "QUALIFIED" ? "default" : "destructive"}
-                            className={cn(
-                              "text-[10px] py-0 h-4 font-normal",
-                              qc.result === "QUALIFIED" && "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                            )}
-                          >
-                            {qc.result === "QUALIFIED" ? "合格" : "异常整改"}
-                          </Badge>
+                          {qc.result === "UNQUALIFIED" || qc.conclusion === "不合格" ? (
+                            <Badge
+                              variant="destructive"
+                              className="text-[10px] py-0 h-4 font-normal"
+                            >
+                              不合格
+                            </Badge>
+                          ) : qc.result === "RECTIFYING" || qc.conclusion === "待整改" || qc.conclusion?.includes("整改") ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] py-0 h-4 font-normal bg-amber-500/10 text-amber-600 border-amber-500/30"
+                            >
+                              待整改
+                            </Badge>
+                          ) : qc.result === "EXCEPTION" ? (
+                            <Badge
+                              variant="destructive"
+                              className="text-[10px] py-0 h-4 font-normal"
+                            >
+                              {qc.conclusion || "异常"}
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] py-0 h-4 font-normal bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                            >
+                              合格
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">{qc.uploader}</TableCell>
                         <TableCell className="font-mono text-[11px] text-muted-foreground">

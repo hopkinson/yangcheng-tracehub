@@ -36,7 +36,7 @@ export function StoreDialog({
   userId,
 }: {
   store?: StoreData;
-  channels: Array<{ id: string; name: string; code: string }>;
+  channels: Array<{ id: string; name: string }>;
   userId: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -59,7 +59,7 @@ export function StoreDialog({
       if (isEditing && store) {
         await updateStoreAction({
           id: store.id,
-          code: data.code ?? "",
+          code: data.code,
           name: data.name.trim(),
           channelId: data.channelId,
           isActive: data.isActive,
@@ -68,6 +68,7 @@ export function StoreDialog({
         toast.success("门店档案已更新！");
       } else {
         await createStoreAction({
+          code: data.code,
           name: data.name.trim(),
           channelId: data.channelId,
           userId,
@@ -125,21 +126,19 @@ export function StoreDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 py-2">
-            {isEditing && (
-              <FormField
-                control={form.control}
-                name="code"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>门店编号</FormLabel>
-                    <FormControl>
-                      <Input className="font-mono" placeholder="如：ST-02" required maxLength={30} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            <FormField
+              control={form.control}
+              name="code"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>门店编号</FormLabel>
+                  <FormControl>
+                    <Input className="font-mono" placeholder="如：SAMS-02" required maxLength={30} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
@@ -170,7 +169,7 @@ export function StoreDialog({
                     <SelectContent>
                       {channels.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.name} ({c.code})
+                          {c.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

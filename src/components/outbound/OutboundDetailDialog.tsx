@@ -112,7 +112,7 @@ export function OutboundDetailDialog({
               <span className="font-mono text-muted-foreground">{formatDateTime(order.createdAt)}</span>
             </div>
             <div>
-              <span className="text-[11px] text-muted-foreground block">物流总状态</span>
+              <span className="text-[11px] text-muted-foreground block">{isStore ? "配送方式" : "物流单号"}</span>
               <span className="font-mono font-medium truncate block" title={order.logisticsNo || ""}>
                 {order.logisticsNo || (isStore ? "门店自配" : "发货后回填")}
               </span>

@@ -31,7 +31,7 @@ export default async function StoresPage({
       orderBy: { code: "asc" },
     }),
     prisma.channel.findMany({
-      orderBy: { code: "asc" },
+      orderBy: { createdAt: "asc" },
       include: {
         _count: {
           select: {

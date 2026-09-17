@@ -37,7 +37,6 @@ import { Building2, Plus, Trash2, Loader2 } from "lucide-react";
 
 export interface ChannelItem {
   id: string;
-  code: string;
   name: string;
   _count?: {
     stores: number;
@@ -60,7 +59,6 @@ export function ChannelManagerDialog({
   const form = useForm<ChannelFormValues>({
     resolver: zodResolver(channelFormSchema),
     defaultValues: {
-      code: "",
       name: "",
     },
   });
@@ -69,12 +67,11 @@ export function ChannelManagerDialog({
     setSubmitting(true);
     try {
       await createChannelAction({
-        code: data.code.trim(),
         name: data.name.trim(),
         userId,
       });
       toast.success(`销售渠道【${data.name}】创建成功！`);
-      form.reset({ code: "", name: "" });
+      form.reset({ name: "" });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "创建渠道失败";
       toast.error(msg);
@@ -123,7 +120,7 @@ export function ChannelManagerDialog({
           渠道管理 ({channels.length})
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Building2 className="size-5 text-primary" />
@@ -141,31 +138,13 @@ export function ChannelManagerDialog({
             <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
               <FormField
                 control={form.control}
-                name="code"
-                render={({ field }) => (
-                  <FormItem className="w-full sm:w-1/3 space-y-1">
-                    <FormLabel className="text-xs">渠道编码</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="如 SAMS, HEMA"
-                        className="h-9 uppercase font-mono text-sm"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage className="text-xs" />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
                 name="name"
                 render={({ field }) => (
-                  <FormItem className="w-full sm:w-1/2 space-y-1">
+                  <FormItem className="w-full sm:flex-1 space-y-1">
                     <FormLabel className="text-xs">渠道全称</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="如 商超零售渠道、餐饮连锁渠道"
+                        placeholder="如 山姆会员商店、盒马鲜生、餐饮连锁渠道"
                         className="h-9 text-sm"
                         {...field}
                       />
@@ -188,16 +167,15 @@ export function ChannelManagerDialog({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="w-[120px]">渠道编码</TableHead>
                 <TableHead>渠道全称</TableHead>
-                <TableHead className="w-[110px] text-center">关联门店数</TableHead>
+                <TableHead className="w-[120px] text-center">关联门店数</TableHead>
                 <TableHead className="w-[80px] text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {channels.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-sm">
+                  <TableCell colSpan={3} className="text-center py-6 text-muted-foreground text-sm">
                     暂无销售渠道，请在上方录入创建
                   </TableCell>
                 </TableRow>
@@ -207,9 +185,6 @@ export function ChannelManagerDialog({
                   const isBusy = deletingId === channel.id;
                   return (
                     <TableRow key={channel.id}>
-                      <TableCell className="font-mono font-medium text-xs">
-                        <Badge variant="outline">{channel.code}</Badge>
-                      </TableCell>
                       <TableCell className="font-medium text-sm">
                         {channel.name}
                       </TableCell>
@@ -249,7 +224,7 @@ export function ChannelManagerDialog({
         open={!!confirmChannel}
         onOpenChange={(open) => !open && setConfirmChannel(null)}
         title="确认删除销售渠道"
-        description={`确定要删除渠道【${confirmChannel?.name} (${confirmChannel?.code})】吗？\n\n注意：此操作不可撤销。`}
+        description={`确定要删除渠道【${confirmChannel?.name}】吗？\n\n注意：此操作不可撤销。`}
         confirmText="确认删除"
         loading={!!deletingId}
         onConfirm={handleConfirmDelete}

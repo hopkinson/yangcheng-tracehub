@@ -77,14 +77,12 @@ export function OrderImportDialog() {
         ]
       );
     } else {
-      downloadExcelTemplate(
-        `${getTenant().storeLabel}订单导入模板.xlsx`,
-        ["订单号", "门店名称", "门店编号", "2.5母", "3.5公", "3.0母", "4.0公", "3.5母", "4.5公", "4.0母", "5.0公", "合计", "发货日期"],
-        [
-          ["B0001", "上海宝山店", "3131", 50, 100, "", "", "", 50, "", 60, 260, "20261011"],
-          ["B0002", "上海嘉定店", "3132", "", 50, 100, "", 50, "", 30, 20, 250, "20261011"],
-        ]
-      );
+      const link = document.createElement("a");
+      link.href = "/templates/山姆会员店订单导入模板.xlsx";
+      link.download = "山姆会员店订单导入模板.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     }
   };
 
@@ -135,7 +133,7 @@ export function OrderImportDialog() {
               className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
             >
               <Download className="size-3.5" />
-              下载标准模板
+              下载{activeTab === "CARD" ? "蟹卡" : "山姆会员店订单"}模板
             </Button>
           </div>
           <DialogDescription className="text-xs text-muted-foreground">

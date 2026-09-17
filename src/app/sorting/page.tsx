@@ -3,8 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SortTaskDialog } from "@/components/sorting/SortTaskDialog";
-import { CompleteSortDialog } from "@/components/sorting/CompleteSortDialog";
-import { SortTaskActions } from "@/components/sorting/SortTaskActions";
+import { SortTaskTable } from "@/components/sorting/SortTaskTable";
 import { SortMachineDialog } from "@/components/sorting/SortMachineDialog";
 import { MachineCardActions } from "@/components/sorting/MachineCardActions";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
@@ -29,10 +28,6 @@ const QC_PRESETS = {
     defaultTitle: "分拣设备精度校验记录",
     formNoPreset: "YCGF-PZZX-202607",
     refType: "MACHINE" as const,
-    conclusions: [
-      "50g/150g/200g 标准砝码校验误差均 <= +-1.5g，准予开机",
-      "校验误差超限 (>+-3.0g)，需停机校正重新标定",
-    ],
   },
   inspect: {
     cat: "SORT_INSPECT" as const,
@@ -41,11 +36,6 @@ const QC_PRESETS = {
     formNoPreset: "YCGF-PZZX-202608",
     refType: "WORKSHOP" as const,
     refId: "FJ-WORKSHOP",
-    conclusions: [
-      "分拣规格精准，落料无卡顿，品质抽检全部合格",
-      "发现规格混入超标，已停机重新校验标定",
-      "分拣破损率偏高，已通知班组检查落料斜槽",
-    ],
   },
 };
 
@@ -387,136 +377,21 @@ export default async function SortingPage() {
         <TabsContent value="tasks" className="m-0 space-y-4">
           <Card className="border-border/80 shadow-xs">
             <CardHeader className="py-3 px-4 border-b bg-muted/30 flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Scale className="size-4 text-primary" />
-            <CardTitle className="text-sm font-semibold">
-              分拣称重任务台账（共 {tasks.length} 笔）
-            </CardTitle>
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            分拣合格数实时计入冷库可出库库存
-          </span>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1160px] text-xs text-left">
-            <thead className="bg-muted/40 text-muted-foreground border-b font-mono text-[11px]">
-              <tr>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[140px]">任务号 (FJR)</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[110px]">作业设备</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[130px]">原料批次</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[130px]">来源捆扎批次</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[90px]">规格</th>
-                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[85px]">投入 (只)</th>
-                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[85px]">合格 (只)</th>
-                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[80px]">损耗 (只)</th>
-                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[80px]">损耗率</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[90px]">状态</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap w-[95px]">作业时间</th>
-                <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[115px]">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {tasks.length === 0 ? (
-                <tr>
-                  <td colSpan={12} className="text-center py-8 text-muted-foreground">
-                    暂无分拣任务，请点击右上角「新建分拣任务 (FJR)」
-                  </td>
-                </tr>
-              ) : (
-                tasks.map((task: any) => {
-                  const isCompleted = task.status === "COMPLETED";
-                  const isHighLoss = isCompleted && task.lossRate > 5.0;
-
-                  return (
-                    <tr key={task.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-3 py-2 font-mono font-medium text-foreground whitespace-nowrap">
-                        {task.code}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="font-mono text-foreground font-medium">{task.machine.code}</div>
-                        <div className="text-[11px] text-muted-foreground truncate max-w-[120px]" title={task.machine.name}>
-                          {task.machine.name}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-foreground whitespace-nowrap">
-                        {task.bundleBatch.sourceBatch?.code || "—"}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-foreground whitespace-nowrap">
-                        <div>{task.bundleBatch.code}</div>
-                        <span className="text-muted-foreground text-[11px] font-sans block">
-                          {task.bundleBatch.group.name}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
-                            task.gender === "FEMALE"
-                              ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                              : "bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                          }`}
-                        >
-                          {task.gender === "FEMALE" ? "母" : "公"} {task.weightTier}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-right text-foreground whitespace-nowrap">
-                        {task.inputCount.toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-right text-foreground font-medium whitespace-nowrap">
-                        {isCompleted ? task.qualifiedCount.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-right text-muted-foreground whitespace-nowrap">
-                        {isCompleted ? task.lossCount.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-right whitespace-nowrap">
-                        {isCompleted ? (
-                          <span
-                            className={
-                              isHighLoss ? "text-destructive font-semibold bg-destructive/10 px-1 py-0.5 rounded" : "text-muted-foreground"
-                            }
-                          >
-                            {task.lossRate}%{isHighLoss && " ⚠️"}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/40">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {isCompleted ? (
-                          <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
-                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                            已完成
-                          </span>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5 text-[10px]"
-                          >
-                            <Clock className="size-3 mr-1" /> 待分拣
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                        {formatShortDateTime(task.doneAt ?? task.date)}
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        <SortTaskActions
-                          taskId={task.id}
-                          code={task.code}
-                          status={task.status}
-                          inputCount={task.inputCount}
-                          spec={task.weightTier}
-                          gender={task.gender}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </TabsContent>
+              <div className="flex items-center gap-2">
+                <Scale className="size-4 text-primary" />
+                <CardTitle className="text-sm font-semibold">
+                  分拣称重任务台账（共 {tasks.length} 笔）
+                </CardTitle>
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                分拣合格数实时计入冷库可出库库存
+              </span>
+            </CardHeader>
+            <div className="p-3">
+              <SortTaskTable tasks={tasks} />
+            </div>
+          </Card>
+        </TabsContent>
 
     {/* Tab 3: 品控留痕记录区 (校准与巡检台账) */}
     <TabsContent value="qc" className="m-0 space-y-4">
@@ -595,9 +470,20 @@ export default async function SortingPage() {
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{qc.uploader}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        {isExp ? (
+                        {qc.result === "UNQUALIFIED" || qc.conclusion === "不合格" ? (
                           <Badge variant="destructive" className="text-[10px]">
-                            <AlertTriangle className="size-3 mr-1" /> 异常/需整改
+                            <AlertTriangle className="size-3 mr-1" /> 不合格
+                          </Badge>
+                        ) : qc.result === "RECTIFYING" || qc.conclusion === "待整改" || qc.conclusion?.includes("整改") ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[10px]"
+                          >
+                            <AlertTriangle className="size-3 mr-1" /> 待整改
+                          </Badge>
+                        ) : qc.result === "EXCEPTION" ? (
+                          <Badge variant="destructive" className="text-[10px]">
+                            <AlertTriangle className="size-3 mr-1" /> {qc.conclusion || "异常"}
                           </Badge>
                         ) : (
                           <Badge

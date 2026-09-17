@@ -4,22 +4,20 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export async function createChannelAction(data: { code: string; name: string; userId: string }) {
+export async function createChannelAction(data: { name: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
 
-  const cleanCode = data.code.trim().toUpperCase();
   const cleanName = data.name.trim();
 
   const existing = await prisma.channel.findUnique({
-    where: { code: cleanCode },
+    where: { name: cleanName },
   });
   if (existing) {
-    throw new Error(`渠道编码【${cleanCode}】已存在，请使用其他编码`);
+    throw new Error(`渠道名称【${cleanName}】已存在，请使用其他名称`);
   }
 
   const channel = await prisma.channel.create({
     data: {
-      code: cleanCode,
       name: cleanName,
     },
   });
@@ -30,7 +28,7 @@ export async function createChannelAction(data: { code: string; name: string; us
       action: "CREATE_CHANNEL",
       entityType: "CHANNEL",
       entityId: channel.id,
-      details: JSON.stringify({ code: channel.code, name: channel.name }),
+      details: JSON.stringify({ name: channel.name }),
     },
   });
 
@@ -62,7 +60,7 @@ export async function deleteChannelAction(data: { id: string; userId: string }) 
       action: "DELETE_CHANNEL",
       entityType: "CHANNEL",
       entityId: channel.id,
-      details: JSON.stringify({ code: channel.code, name: channel.name }),
+      details: JSON.stringify({ name: channel.name }),
     },
   });
 

@@ -542,10 +542,6 @@ export default async function BundlingPage({
                 formNoPreset: "YCGF-PZZX-202606",
                 refType: "WORKSHOP",
                 refId: "BZ-WORKSHOP",
-                conclusions: [
-                  "全部合格，正常作业放行",
-                  "存在问题，暂停整改",
-                ],
               }}
               triggerLabel="登记捆扎巡检"
             />
@@ -598,11 +594,35 @@ export default async function BundlingPage({
                         </div>
                       </td>
                       <td className="px-3 py-2">
-                        {isException ? (
+                        {qc.result === "UNQUALIFIED" || qc.conclusion === "不合格" ? (
                           <div className="space-y-0.5">
                             <Badge variant="destructive" className="text-[10px]">
                               <AlertTriangle className="size-3 mr-1 shrink-0" />
-                              {qc.conclusion || "存在问题，暂停整改"}
+                              不合格
+                            </Badge>
+                            {qc.reason && (
+                              <div className="text-[10px] text-destructive leading-tight">
+                                原因: {qc.reason}
+                              </div>
+                            )}
+                          </div>
+                        ) : qc.result === "RECTIFYING" || qc.conclusion === "待整改" || qc.conclusion?.includes("整改") ? (
+                          <div className="space-y-0.5">
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[10px]">
+                              <AlertTriangle className="size-3 mr-1 shrink-0" />
+                              待整改
+                            </Badge>
+                            {qc.reason && (
+                              <div className="text-[10px] text-amber-600 dark:text-amber-400 leading-tight">
+                                说明: {qc.reason}
+                              </div>
+                            )}
+                          </div>
+                        ) : qc.result === "EXCEPTION" ? (
+                          <div className="space-y-0.5">
+                            <Badge variant="destructive" className="text-[10px]">
+                              <AlertTriangle className="size-3 mr-1 shrink-0" />
+                              {qc.conclusion || "异常"}
                             </Badge>
                             {qc.reason && (
                               <div className="text-[10px] text-destructive leading-tight">
@@ -613,7 +633,7 @@ export default async function BundlingPage({
                         ) : (
                           <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]">
                             <CheckCircle2 className="size-3 mr-1 shrink-0" />
-                            {qc.conclusion || "全部合格，正常作业放行"}
+                            合格
                           </Badge>
                         )}
                       </td>

@@ -14,6 +14,7 @@ import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
 import { BatchEditDialog } from "@/components/batches/BatchEditDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import Link from "next/link";
 import {
   MoreHorizontal,
   FileText,
@@ -22,6 +23,7 @@ import {
   History,
   Trash2,
   Pencil,
+  ClipboardList,
 } from "lucide-react";
 import { deleteBatchAction } from "@/actions/batches";
 import { toast } from "sonner";
@@ -109,6 +111,17 @@ export function BatchRowActions({
               </DropdownMenuItem>
             }
           />
+
+          {/* 品控台账 */}
+          <DropdownMenuItem asChild>
+            <Link
+              href={`/batches?tab=qc&batch=${batch.code}`}
+              className="flex items-center cursor-pointer"
+            >
+              <ClipboardList className="size-3.5 mr-2 text-primary" />
+              <span>查阅品控台账</span>
+            </Link>
+          </DropdownMenuItem>
 
           {/* 风控冻结 / 解冻 */}
           {!isCompleted && isQaOrAdmin && (
