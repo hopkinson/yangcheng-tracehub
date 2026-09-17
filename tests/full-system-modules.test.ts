@@ -482,9 +482,9 @@ async function runFullSystemTests() {
     console.log(`  ✔ 品控特批记录留痕归档成功 (特批流水号: ${specialApproval.id})\n`);
 
     // -------------------------------------------------------------------------
-    // 模块 13: 八本核心台账数据守恒穿透 (Eight Master Ledgers)
+    // 模块 13: 全链路核心台账数据守恒穿透
     // -------------------------------------------------------------------------
-    console.log("▶ [模块 13] 数量守恒硬约束与八本核心台账数据穿透核对");
+    console.log("▶ [模块 13] 数量守恒硬约束与全链路核心台账数据穿透核对");
     // 13.1 养殖户台账
     const fLedger = await prisma.farmer.findUniqueOrThrow({
       where: { id: farmer.id },
@@ -512,7 +512,7 @@ async function runFullSystemTests() {
       where: { id: outboundOrder.id },
     });
     assert.equal(oLedger.outboundCount, oLedger.channelOrderCount, "出库数必须等于渠道订单数");
-    console.log(`  ✔ 八本台账守恒硬约束穿透核对 100% 成立！(当前批次在池存活: ${bookInPool} 只)\n`);
+    console.log(`  ✔ 全链路台账守恒硬约束穿透核对 100% 成立！(当前批次在池存活: ${bookInPool} 只)\n`);
 
     // -------------------------------------------------------------------------
     // 模块 14: 山姆渠道反向溯源与可信穿透 (Reverse Traceability)
@@ -594,7 +594,7 @@ async function runFullSystemTests() {
       { path: "/tags", name: "蟹扣领用与日清日结", auth: true, expected: 200 },
       { path: "/outbound", name: "出库审批与物流回填", auth: true, expected: 200 },
       { path: "/approvals", name: "品控审批与特批中心", auth: true, expected: 200 },
-      { path: "/ledgers", name: "八本核心台账审计", auth: true, expected: 200 },
+      { path: "/ledgers", name: "全链路核心台账审计", auth: true, expected: 200 },
       { path: "/trace", name: "山姆渠道反向溯源", auth: true, expected: 200 },
       { path: "/stores", name: "渠道与门店档案配置", auth: true, expected: 200 },
       { path: "/users", name: "组织架构与权限管理", auth: true, expected: 200 },

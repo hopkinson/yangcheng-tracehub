@@ -2,61 +2,64 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ExportLedgerButton } from "@/components/ledgers/ExportLedgerButton";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
-import { QCViewDialog } from "@/components/qc/QCViewDialog";
+import { LedgerTabCarousel } from "@/components/ledgers/LedgerTabCarousel";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import {
-  Building2,
-  Tag,
-  Waves,
-  Layers3,
-  Scale,
-  ThermometerSnowflake,
-  Truck,
-  CheckCircle2,
-  AlertTriangle,
-  FileCheck,
-  ShieldCheck,
-} from "lucide-react";
+import { FileCheck } from "lucide-react";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
-import { formatDate, formatDateTime, formatShortDateTime, formatISODate } from "@/lib/utils";
+import { cn, formatDate, formatTime } from "@/lib/utils";
+import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 
+type ExportValue = string | number;
+type ExportSection = { title?: string; headers: string[]; rows: ExportValue[][] };
+
+type LedgerCardSectionProps = {
+  title: string;
+  sheetName: string;
+  exportFilename: string;
+  exportHeaders: string[];
+  exportRows: ExportValue[][];
+  exportSections?: ExportSection[];
+  children: ReactNode;
+  total: number;
+  page: number;
+  pageSize: number;
+  pageParam: string;
+  pageSizeParam: string;
+};
+
 function LedgerCardSection({
   title,
+  sheetName,
   exportFilename,
   exportHeaders,
   exportRows,
+  exportSections,
   children,
   total,
   page,
   pageSize,
   pageParam,
   pageSizeParam,
-}: {
-  title: string;
-  exportFilename: string;
-  exportHeaders: string[];
-  exportRows: (string | number)[][];
-  children: React.ReactNode;
-  total: number;
-  page: number;
-  pageSize: number;
-  pageParam: string;
-  pageSizeParam: string;
-}) {
+}: LedgerCardSectionProps) {
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-2">
         <CardTitle className="text-base font-semibold">{title}</CardTitle>
-        <ExportLedgerButton filename={exportFilename} headers={exportHeaders} rows={exportRows} />
+        <ExportLedgerButton
+          filename={exportFilename}
+          sheetName={sheetName}
+          headers={exportHeaders}
+          rows={exportRows}
+          sections={exportSections}
+        />
       </CardHeader>
-      <CardContent>
-        <div className="rounded-md border overflow-x-auto">{children}</div>
+      <CardContent className="flex flex-col gap-3">
+        {children}
         <DataTablePagination
           total={total}
           page={page}
@@ -66,6 +69,51 @@ function LedgerCardSection({
         />
       </CardContent>
     </Card>
+  );
+}
+
+function LedgerTable({
+  headers,
+  rows,
+  emptyText,
+}: {
+  headers: string[];
+  rows: ReactNode[][];
+  emptyText: string;
+}) {
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-max">
+        <TableHeader>
+          <TableRow>
+            {headers.map((header) => (
+              <TableHead key={header} className="whitespace-nowrap text-xs">
+                {header}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={headers.length} className="py-8 text-center text-xs text-muted-foreground">
+                {emptyText}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((row, rowIndex) => (
+              <TableRow key={rowIndex} className="hover:bg-muted/40">
+                {row.map((cell, cellIndex) => (
+                  <TableCell key={cellIndex} className="whitespace-nowrap text-xs">
+                    {cell}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -84,77 +132,68 @@ const QC_CATEGORY_LABELS: Record<string, string> = {
   SHIP_LOG: "12. 成品发货台账",
 };
 
-const getContractNo = (f: { code: string; contractName?: string | null }) =>
-  f.contractName || `HT-2026-${f.code.replace(/\D/g, "").padStart(3, "0")}`;
+const SPEC_MATRIX = [
+  { header: "2.5母", gender: "FEMALE", weightTier: "2.5两" },
+  { header: "3.5公", gender: "MALE", weightTier: "3.5两" },
+  { header: "3.0母", gender: "FEMALE", weightTier: "3.0两" },
+  { header: "4.0公", gender: "MALE", weightTier: "4.0两" },
+  { header: "3.5母", gender: "FEMALE", weightTier: "3.5两" },
+  { header: "4.5公", gender: "MALE", weightTier: "4.5两" },
+  { header: "4.0母", gender: "FEMALE", weightTier: "4.0两" },
+  { header: "5.0公", gender: "MALE", weightTier: "5.0两" },
+  { header: "5.0母", gender: "FEMALE", weightTier: "5.0两" },
+  { header: "6.0公", gender: "MALE", weightTier: "6.0两" },
+] as const;
+
+const genderText = (gender?: string | null) => (gender === "FEMALE" ? "母" : gender === "MALE" ? "公" : "—");
+const specText = (gender?: string | null, weightTier?: string | null) =>
+  gender && weightTier ? `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier}` : "—";
+const weightNumber = (weightTier?: string | null) => {
+  const value = Number.parseFloat(String(weightTier || "").replace("两", ""));
+  return Number.isFinite(value) ? value : "—";
+};
+const rateText = (loss: number, total: number) => (total > 0 ? `${((loss / total) * 100).toFixed(2)}%` : "0.00%");
+const qcText = (value?: string | null) =>
+  value === "QUALIFIED" ? "合格" : value === "RECTIFYING" ? "待整改" : value === "UNQUALIFIED" ? "不合格" : "—";
+const orderStatusText = (status: string) => (status === "SHIPPED" ? "已发货" : "待发货");
+const outboundTypeText = (type: string) => (type === "CRAB_CARD" ? "蟹卡提货" : "门店订单");
+const claimStatusText = (status: string) =>
+  status === "APPROVED" ? "已通过" : status === "REJECTED" ? "已驳回" : "待审核";
+const cooperationText = (status: string) =>
+  status === "ACTIVE" ? "合作中" : status === "SUSPENDED" ? "暂停合作" : status === "TERMINATED" ? "已终止" : status;
+const normalizeWeightTier = (value: string) => {
+  const n = Number.parseFloat(value.replace("两", ""));
+  return Number.isFinite(n) ? `${n.toFixed(1)}两` : value;
+};
+
+function paginate<T>(rows: T[], page: number, pageSize: number) {
+  return rows.slice((page - 1) * pageSize, page * pageSize);
+}
 
 export default async function LedgersPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    date?: string;
-    cat?: string;
-    page?: string;
-    pageSize?: string;
-    qcPage?: string;
-    qcPageSize?: string;
-    l1Page?: string;
-    l1PageSize?: string;
-    l2Page?: string;
-    l2PageSize?: string;
-    l3Page?: string;
-    l3PageSize?: string;
-    l4Page?: string;
-    l4PageSize?: string;
-    l5Page?: string;
-    l5PageSize?: string;
-    l6Page?: string;
-    l6PageSize?: string;
-    l7Page?: string;
-    l7PageSize?: string;
-  }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const [currentUser, params] = await Promise.all([
-    getCurrentUser(),
-    searchParams,
-  ]);
+  const [currentUser, params] = await Promise.all([getCurrentUser(), searchParams]);
   const selectedDateStr = params.date?.trim();
   const selectedCat = params.cat?.trim();
+  const parsePositive = (value?: string, fallback = 1) => Math.max(1, Number(value) || fallback);
+  const pageFor = (index: number) => parsePositive(params[`l${index}Page`]);
+  const pageSizeFor = (index: number) => parsePositive(params[`l${index}PageSize`], 10);
 
-  const parseP = (val?: string, def = 1) => Math.max(1, Number(val) || def);
-  const page = parseP(params.page);
-  const pageSize = parseP(params.pageSize, 10);
-  const qcPage = parseP(params.qcPage, page);
-  const qcPageSize = parseP(params.qcPageSize, pageSize);
-  const l1Page = parseP(params.l1Page, page);
-  const l1PageSize = parseP(params.l1PageSize, pageSize);
-  const l2Page = parseP(params.l2Page, page);
-  const l2PageSize = parseP(params.l2PageSize, pageSize);
-  const l3Page = parseP(params.l3Page, page);
-  const l3PageSize = parseP(params.l3PageSize, pageSize);
-  const l4Page = parseP(params.l4Page, page);
-  const l4PageSize = parseP(params.l4PageSize, pageSize);
-  const l5Page = parseP(params.l5Page, page);
-  const l5PageSize = parseP(params.l5PageSize, pageSize);
-  const l6Page = parseP(params.l6Page, page);
-  const l6PageSize = parseP(params.l6PageSize, pageSize);
-  const l7Page = parseP(params.l7Page, page);
-  const l7PageSize = parseP(params.l7PageSize, pageSize);
-
-  let dateFilter: { gte: Date; lte: Date } | undefined = undefined;
+  let dateFilter: { gte: Date; lte: Date } | undefined;
   if (selectedDateStr) {
     try {
       const parsed = parseISO(selectedDateStr);
-      dateFilter = {
-        gte: startOfDay(parsed),
-        lte: endOfDay(parsed),
-      };
+      dateFilter = { gte: startOfDay(parsed), lte: endOfDay(parsed) };
     } catch {}
   }
 
   const isChannelViewer = currentUser?.role === "CHANNEL_VIEWER";
+  const channelId = currentUser?.channelId;
 
-  const [farmers, rawTagClaims, batches, bundleBatches, sortTasks, coldLogs, outboundOrders, qcRecords] = await Promise.all([
-    // 台账一 · 管源头：养殖户主档（不随日期过滤）
+  const [farmers, rawTagClaims, batches, bundleBatches, sortTasks, coldLogs, outboundOrders, qcRecords, orders, allApprovedOutboundLines] = await Promise.all([
     isChannelViewer
       ? []
       : prisma.farmer.findMany({
@@ -165,52 +204,29 @@ export default async function LedgersPage({
           },
           orderBy: { code: "asc" },
         }),
-
-    // 台账二 · 管身份：蟹扣领用流水（含驳回与申请复核人）
     isChannelViewer
       ? []
       : prisma.tagClaim.findMany({
           where: dateFilter ? { claimDate: dateFilter } : undefined,
           include: {
-            farmer: {
-              include: {
-                batches: true,
-                tagClaims: { where: { status: "APPROVED" } },
-              },
-            },
+            farmer: { include: { tagClaims: { where: { status: "APPROVED" } } } },
             applicant: true,
             approver: true,
           },
           orderBy: { claimDate: "desc" },
         }),
-
-    // 台账三 · 管流转：暂养池出入库与损耗流水
     isChannelViewer
       ? []
       : prisma.batch.findMany({
-          where: dateFilter
-            ? {
-                OR: [
-                  { inPoolTime: dateFilter },
-                  { lossRecords: { some: { inventoryDate: dateFilter } } },
-                  { outboundOrders: { some: { createdAt: dateFilter, status: "APPROVED" } } },
-                ],
-              }
-            : undefined,
+          where: dateFilter ? { inPoolTime: dateFilter } : undefined,
           include: {
             farmer: true,
-            pool: true,
             enclosure: true,
-            bundleBatches: { include: { group: true } },
-            outboundOrders: {
-              where: { status: "APPROVED" },
-              include: { store: true },
-            },
+            pool: true,
+            items: { include: { pool: true } },
           },
           orderBy: { inPoolTime: "desc" },
         }),
-
-    // 台账四 · 捆扎作业
     isChannelViewer
       ? []
       : prisma.bundleBatch.findMany({
@@ -223,8 +239,6 @@ export default async function LedgersPage({
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
-
-    // 台账五 · 分拣作业
     isChannelViewer
       ? []
       : prisma.sortTask.findMany({
@@ -235,48 +249,45 @@ export default async function LedgersPage({
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
-
-    // 台账六 · 保鲜预冷库存
     isChannelViewer
       ? []
       : prisma.coldLog.findMany({
           where: dateFilter ? { createdAt: dateFilter } : undefined,
           include: {
             store: true,
-            sortTask: {
-              include: { bundleBatch: { include: { sourceBatch: true } } },
-            },
-            outboundLines: {
-              where: { outboundOrder: { status: { not: "REJECTED" } } },
-            },
+            sortTask: { include: { bundleBatch: { include: { sourceBatch: true } } } },
+            outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
             outboundLosses: true,
           },
           orderBy: { createdAt: "desc" },
         }),
-
-    // 台账七 · 管去向：出库与订单台账（回溯完整生产链与物流）
     prisma.outboundOrder.findMany({
       where: {
-        ...(isChannelViewer && currentUser?.channelId ? { channelId: currentUser.channelId } : {}),
+        status: { not: "REJECTED" },
+        ...(isChannelViewer ? { channelId: channelId || "__NO_CHANNEL__" } : {}),
         ...(dateFilter ? { createdAt: dateFilter } : {}),
       },
       include: {
-        batch: {
-          include: {
-            farmer: true,
-            pool: true,
-            enclosure: true,
-          },
-        },
         store: true,
         channel: true,
         applicant: true,
         approver: true,
         lines: {
           include: {
+            order: true,
             coldLog: {
               include: {
-                sortTask: { include: { bundleBatch: { include: { sourceBatch: true } } } },
+                store: true,
+                sortTask: {
+                  include: {
+                    bundleBatch: {
+                      include: {
+                        sourceBatch: { include: { farmer: true, enclosure: true, pool: true } },
+                        lines: { include: { pool: true } },
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -284,8 +295,6 @@ export default async function LedgersPage({
       },
       orderBy: { createdAt: "desc" },
     }),
-
-    // 台账八 · 管过程：12类品控记录表
     prisma.qCRecord.findMany({
       where: {
         ...(selectedCat ? { cat: selectedCat } : {}),
@@ -293,858 +302,526 @@ export default async function LedgersPage({
       },
       orderBy: { checkTime: "desc" },
     }),
+    prisma.order.findMany({
+      where: {
+        ...(dateFilter ? { deliveryDate: dateFilter } : {}),
+        ...(isChannelViewer
+          ? {
+              outboundLines: {
+                some: { outboundOrder: { channelId: channelId || "__NO_CHANNEL__", status: { not: "REJECTED" } } },
+              },
+            }
+          : {}),
+      },
+      include: {
+        outboundLines: {
+          where: { outboundOrder: { status: { not: "REJECTED" } } },
+          include: {
+            outboundOrder: { include: { store: true, channel: true } },
+            coldLog: {
+              include: {
+                sortTask: {
+                  include: {
+                    bundleBatch: { include: { sourceBatch: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ deliveryDate: "desc" }, { importTime: "desc" }],
+    }),
+    isChannelViewer
+      ? []
+      : prisma.outboundLine.findMany({
+          where: { outboundOrder: { status: "APPROVED" } },
+          include: {
+            coldLog: {
+              include: {
+                sortTask: {
+                  include: {
+                    bundleBatch: { include: { sourceBatch: { include: { farmer: true } } } },
+                  },
+                },
+              },
+            },
+          },
+        }),
   ]);
 
-  // 预计算台账二衍生字段
-  const tagClaims = rawTagClaims.map((c) => {
-    const isRejected = c.status === "REJECTED";
-    const cumulativeBound = c.farmer.tagClaims.reduce((sum, cl) => sum + cl.boundCount, 0);
-    const remainingQuota = Math.max(0, c.farmer.quota - cumulativeBound);
-    const balanceDiff = c.claimCount - c.boundCount - c.returnedCount - c.scrappedCount;
-    return { ...c, isRejected, cumulativeBound, remainingQuota, balanceDiff };
+  const shippedByFarmer = new Map<string, number>();
+  for (const line of allApprovedOutboundLines) {
+    const farmerId = line.coldLog.sortTask.bundleBatch.sourceBatch.farmer.id;
+    shippedByFarmer.set(farmerId, (shippedByFarmer.get(farmerId) || 0) + line.count);
+  }
+
+  const farmerRows = farmers.map((farmer) => {
+    const cumulativeBound = farmer.tagClaims.reduce((sum, claim) => sum + claim.boundCount, 0);
+    const cumulativeScrapped = farmer.tagClaims.reduce((sum, claim) => sum + claim.scrappedCount, 0);
+    const cumulativeReturned = farmer.tagClaims.reduce((sum, claim) => sum + claim.returnedCount, 0);
+    const cumulativeInPool = farmer.batches.reduce((sum, batch) => sum + batch.inPoolCount, 0);
+    const cumulativeOutbound = shippedByFarmer.get(farmer.id) || 0;
+    const exportRow: ExportValue[] = [
+      farmer.code,
+      farmer.name,
+      farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹",
+      farmer.enclosures.map((item) => item.code).join(", ") || "—",
+      farmer.area,
+      farmer.quota,
+      cumulativeInPool,
+      cumulativeBound,
+      cumulativeScrapped,
+      cumulativeReturned,
+      cumulativeOutbound,
+      Math.max(0, farmer.quota - cumulativeBound),
+      farmer.creditRating || "A",
+      cooperationText(farmer.status),
+      farmer.contractUrl || farmer.contractName || "—",
+    ];
+    const displayRow: ReactNode[] = [...exportRow];
+    if (farmer.contractUrl) {
+      displayRow[14] = (
+        <a href={farmer.contractUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+          {farmer.contractName || "查看附件"}
+        </a>
+      );
+    }
+    return { exportRow, displayRow };
   });
 
-  const paginate = <T,>(arr: T[], p: number, s: number) => arr.slice((p - 1) * s, p * s);
-  const pagedFarmers = paginate(farmers, l1Page, l1PageSize);
-  const pagedTagClaims = paginate(tagClaims, l2Page, l2PageSize);
-  const pagedBatches = paginate(batches, l3Page, l3PageSize);
-  const pagedBundleBatches = paginate(bundleBatches, l4Page, l4PageSize);
-  const pagedSortTasks = paginate(sortTasks, l5Page, l5PageSize);
-  const pagedColdLogs = paginate(coldLogs, l6Page, l6PageSize);
-  const pagedOutboundOrders = paginate(outboundOrders, l7Page, l7PageSize);
-  const pagedQCRecords = paginate(qcRecords, qcPage, qcPageSize);
+  const rawMaterialRows = batches.flatMap((batch) => {
+    const items = batch.items.length
+      ? batch.items
+      : [{
+          id: `${batch.id}-fallback`,
+          gender: batch.gender,
+          weightTier: batch.weightTier,
+          weight: 0,
+          inPoolCount: batch.inPoolCount,
+          outPoolCount: batch.outPoolCount,
+          lossCount: batch.lossCount,
+          pool: batch.pool,
+        }];
+    return items.map((item) => {
+      const exportRow: ExportValue[] = [
+        formatDate(batch.inPoolTime),
+        formatTime(batch.inPoolTime),
+        batch.code,
+        batch.farmer.name,
+        weightNumber(item.weightTier),
+        genderText(item.gender),
+        item.inPoolCount,
+        item.weight,
+        item.pool.name || item.pool.code,
+        item.pool.code,
+        Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
+        item.outPoolCount,
+        item.lossCount,
+        rateText(item.lossCount, item.inPoolCount),
+        qcText(batch.quickCheck),
+        qcText(batch.sampleCheck),
+        batch.escort || "—",
+      ];
+      return { exportRow, displayRow: exportRow as ReactNode[] };
+    });
+  });
+
+  const tagClaimRows = rawTagClaims.map((claim) => {
+    const isRejected = claim.status === "REJECTED";
+    const cumulativeBound = claim.farmer.tagClaims.reduce((sum, item) => sum + item.boundCount, 0);
+    const balanceDiff = claim.claimCount - claim.boundCount - claim.returnedCount - claim.scrappedCount;
+    const exportRow: ExportValue[] = [
+      formatDate(claim.claimDate),
+      formatTime(claim.claimDate),
+      claim.code || "—",
+      claim.farmer.name,
+      isRejected ? 0 : claim.claimCount,
+      isRejected ? 0 : claim.boundCount,
+      isRejected ? 0 : claim.returnedCount,
+      isRejected ? 0 : claim.scrappedCount,
+      isRejected ? 0 : balanceDiff,
+      isRejected ? "已驳回" : claim.isBalanced ? "已轧平" : "未轧平",
+      isRejected ? 0 : cumulativeBound,
+      isRejected ? claim.farmer.quota : Math.max(0, claim.farmer.quota - cumulativeBound),
+      claim.applicant?.fullName || "—",
+      claim.approver?.fullName || "—",
+      claimStatusText(claim.status),
+    ];
+    return { exportRow, displayRow: exportRow as ReactNode[] };
+  });
+
+  const holdingPoolRows = batches.flatMap((batch) => {
+    const groups = new Map<string, { poolName: string; poolCode: string; inCount: number; outCount: number; lossCount: number }>();
+    const items = batch.items.length
+      ? batch.items
+      : [{ pool: batch.pool, inPoolCount: batch.inPoolCount, outPoolCount: batch.outPoolCount, lossCount: batch.lossCount }];
+    for (const item of items) {
+      const current = groups.get(item.pool.code) || {
+        poolName: item.pool.name || item.pool.code,
+        poolCode: item.pool.code,
+        inCount: 0,
+        outCount: 0,
+        lossCount: 0,
+      };
+      current.inCount += item.inPoolCount;
+      current.outCount += item.outPoolCount;
+      current.lossCount += item.lossCount;
+      groups.set(item.pool.code, current);
+    }
+    return Array.from(groups.values()).map((group) => {
+      const exportRow: ExportValue[] = [
+        formatDate(batch.inPoolTime),
+        formatTime(batch.inPoolTime),
+        group.poolName,
+        group.poolCode,
+        batch.code,
+        batch.farmer.name,
+        batch.enclosure?.code || "—",
+        group.inCount,
+        group.outCount,
+        Math.max(0, group.inCount - group.outCount - group.lossCount),
+        group.lossCount,
+        rateText(group.lossCount, group.inCount),
+      ];
+      return { exportRow, displayRow: exportRow as ReactNode[] };
+    });
+  });
+
+  const bundlingRows = bundleBatches.flatMap((batch) => {
+    const lines = batch.lines.length
+      ? batch.lines
+      : [{
+          id: `${batch.id}-fallback`,
+          pool: null,
+          gender: null,
+          weightTier: null,
+          count: batch.inputCount,
+          qualifiedCount: batch.qualifiedCount,
+          lossCount: batch.lossCount,
+        }];
+    return lines.map((line) => {
+      const qualified = batch.status === "COMPLETED" ? line.qualifiedCount ?? Math.max(0, line.count - (line.lossCount ?? 0)) : 0;
+      const loss = batch.status === "COMPLETED" ? line.lossCount ?? Math.max(0, line.count - qualified) : 0;
+      const exportRow: ExportValue[] = [
+        formatDate(batch.date),
+        formatTime(batch.doneAt || batch.createdAt),
+        batch.code,
+        batch.group.name,
+        batch.group.code,
+        batch.sourceBatch.code,
+        batch.tagClaim.code || "—",
+        batch.ropeBatch,
+        batch.tagClaim.farmer.name,
+        line.pool?.name || "—",
+        line.pool?.code || "—",
+        specText(line.gender, line.weightTier),
+        batch.status === "COMPLETED" ? "已完成" : "捆扎中",
+        genderText(line.gender),
+        line.count,
+        qualified,
+        loss,
+        rateText(loss, line.count),
+      ];
+      return { exportRow, displayRow: exportRow as ReactNode[] };
+    });
+  });
+
+  const sortingRows = sortTasks.map((task) => {
+    const exportRow: ExportValue[] = [
+      formatDate(task.date),
+      formatTime(task.doneAt || task.createdAt),
+      task.code,
+      task.machine.name || "—",
+      task.machine.code,
+      task.bundleBatch.sourceBatch.code,
+      task.bundleBatch.code,
+      specText(task.gender, task.weightTier),
+      genderText(task.gender),
+      task.status === "COMPLETED" ? "已完成" : "待分拣",
+      task.inputCount,
+      task.status === "COMPLETED" ? task.qualifiedCount : 0,
+      task.status === "COMPLETED" ? task.lossCount : 0,
+      task.status === "COMPLETED" ? rateText(task.lossCount, task.inputCount) : "—",
+    ];
+    return { exportRow, displayRow: exportRow as ReactNode[] };
+  });
+
+  const coldRows = coldLogs.map((log) => {
+    const shipped = log.outboundLines.reduce((sum, line) => sum + line.count, 0);
+    const loss = log.outboundLosses.reduce((sum, item) => sum + item.count, 0);
+    const exportRow: ExportValue[] = [
+      formatDate(log.createdAt),
+      formatTime(log.createdAt),
+      log.code,
+      log.store.name || "—",
+      log.store.code,
+      log.sortTask.bundleBatch.sourceBatch.code,
+      log.sortTask.bundleBatch.code,
+      log.sortTask.code,
+      specText(log.sortTask.gender, log.sortTask.weightTier),
+      log.count,
+      shipped,
+      loss,
+      Math.max(0, log.count - shipped - loss),
+      log.operator,
+    ];
+    return { exportRow, displayRow: exportRow as ReactNode[] };
+  });
+
+  const outboundHeaderRows = outboundOrders.map((order) => {
+    const exportRow: ExportValue[] = [
+      formatDate(order.createdAt),
+      formatTime(order.createdAt),
+      order.code,
+      outboundTypeText(order.type),
+      order.outboundCount,
+      order.transportCompany || (order.logisticsNo === "门店冷链专车自配" ? order.logisticsNo : "—"),
+      order.contactName || "—",
+      order.contactPhone || "—",
+      order.applicant?.fullName || "—",
+      order.approver?.fullName || "—",
+    ];
+    return { exportRow, displayRow: exportRow as ReactNode[] };
+  });
+
+  const outboundMatrixRows = outboundOrders.map((order) => {
+    const counts = new Map<string, number>();
+    for (const line of order.lines) {
+      const key = `${line.gender}_${normalizeWeightTier(line.weightTier)}`;
+      counts.set(key, (counts.get(key) || 0) + line.count);
+    }
+    const destination = order.type === "CRAB_CARD" ? "蟹卡宅配" : `${order.channel.name} / ${order.store.name}`;
+    return [
+      order.code,
+      destination,
+      ...SPEC_MATRIX.map((item) => counts.get(`${item.gender}_${item.weightTier}`) || 0),
+      order.outboundCount,
+    ] as ExportValue[];
+  });
+
+  const outboundDetailRows = outboundOrders.flatMap((order) =>
+    order.lines.map((line) => {
+      const bundle = line.coldLog.sortTask.bundleBatch;
+      const sourceBatch = bundle.sourceBatch;
+      const sourcePools = bundle.lines
+        .filter((item) => item.gender === line.gender && normalizeWeightTier(item.weightTier) === normalizeWeightTier(line.weightTier))
+        .map((item) => item.pool.code);
+      const exportRow: ExportValue[] = [
+        formatDate(order.createdAt),
+        formatTime(order.createdAt),
+        order.code,
+        sourceBatch.code,
+        bundle.code,
+        line.coldLog.sortTask.code,
+        line.coldLog.code,
+        specText(line.gender, line.weightTier),
+        genderText(line.gender),
+        line.count,
+        Array.from(new Set(sourcePools)).join(", ") || sourceBatch.pool.code || "—",
+        sourceBatch.farmer.name,
+        sourceBatch.enclosure?.code || "—",
+      ];
+      return { exportRow, displayRow: exportRow as ReactNode[] };
+    })
+  );
+
+  const qcRows = qcRecords.map((record) => {
+    const result =
+      record.result === "QUALIFIED" || record.conclusion === "合格"
+        ? "合格"
+        : record.result === "RECTIFYING" || record.conclusion?.includes("整改")
+          ? "待整改"
+          : record.result === "UNQUALIFIED" || record.conclusion === "不合格"
+            ? "不合格"
+            : record.conclusion || "异常";
+    const attachment = record.fileUrl || record.fileName || "—";
+    const exportRow: ExportValue[] = [
+      formatDate(record.checkTime),
+      formatTime(record.checkTime),
+      record.code,
+      QC_CATEGORY_LABELS[record.cat] || record.cat,
+      record.formNo || "—",
+      record.uploader || "—",
+      result,
+      record.reason || "—",
+      attachment,
+      record.uploader || "—",
+    ];
+    const displayRow: ReactNode[] = [...exportRow];
+    if (record.fileUrl) {
+      displayRow[8] = (
+        <a href={record.fileUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+          {record.fileName || "查看附件"}
+        </a>
+      );
+    }
+    return { exportRow, displayRow };
+  });
+
+  const storeOrderRows = orders
+    .filter((order) => order.type === "STORE_ORDER")
+    .flatMap((order) => {
+      const lines = order.outboundLines.length ? order.outboundLines : [null];
+      return lines.map((line) => {
+        const task = line?.coldLog.sortTask;
+        const bundle = task?.bundleBatch;
+        const exportRow: ExportValue[] = [
+          formatDate(order.deliveryDate),
+          order.code,
+          formatDate(order.importTime),
+          formatTime(order.importTime),
+          order.orderNo,
+          order.storeName || line?.outboundOrder.store.name || "—",
+          specText(order.gender, order.weightTier),
+          genderText(order.gender),
+          line?.count ?? order.count,
+          orderStatusText(order.status),
+          line?.outboundOrder.code || "—",
+          bundle?.sourceBatch.code || "—",
+          bundle?.code || "—",
+          task?.code || "—",
+          line?.coldLog.code || "—",
+          line?.waybillNo || line?.outboundOrder.logisticsNo || "—",
+        ];
+        return { exportRow, displayRow: exportRow as ReactNode[] };
+      });
+    });
+
+  const crabCardRows = orders
+    .filter((order) => order.type === "CRAB_CARD")
+    .flatMap((order) => {
+      const lines = order.outboundLines.length ? order.outboundLines : [null];
+      return lines.map((line) => {
+        const exportRow: ExportValue[] = [
+          formatDate(order.deliveryDate),
+          order.code,
+          formatDate(order.importTime),
+          formatTime(order.importTime),
+          order.orderNo,
+          order.specModel || "—",
+          specText(order.gender, order.weightTier),
+          genderText(order.gender),
+          line?.count ?? order.count,
+          orderStatusText(order.status),
+          line?.outboundOrder.code || "—",
+          line?.expressCompany || line?.outboundOrder.transportCompany || "—",
+          line?.waybillNo || "—",
+          line?.waybillNo ? "—" : line?.outboundOrder.logisticsNo || "—",
+        ];
+        return { exportRow, displayRow: exportRow as ReactNode[] };
+      });
+    });
+
+  const headers = {
+    l1: ["编号", "姓名", "养殖类型", "围网", "面积(亩)", "年度额度(只)", "累计入池(只)", "累计领扣(只)", "累计作废", "累计回退", "累计出库(只)", "额度结余(只)", "信用评级", "合作状态", "合同附件"],
+    l2: ["入库日期", "入库时间", "原料批次", "养殖户", "规格(两)", "公母", "只数", "斤数", "池名", "池号", "在池", "发货", "累计损耗", "损耗率", "农残快检", "品质抽检", "跟车员"],
+    l3: ["申领日期", "申领时间", "蟹扣批次", "蟹扣养殖户", "申领数", "完成绑扎", "退回", "作废", "差额", "轧平校验", "累计绑扎", "剩余额度", "申请人", "复核人", "审核状态"],
+    l4: ["入池日期", "入池时间", "池名", "池号", "原料批次", "养殖户", "围网", "入池数量", "绑扎数量", "在池数量", "损耗(只)", "损耗率"],
+    l5: ["捆扎日期", "捆扎时间", "捆扎批次", "班组", "班组编号", "原料批次", "蟹扣批次", "蟹绳批次", "养殖户", "池名", "池号", "规格", "状态", "公母", "初始捆扎只数", "捆扎完成只数", "损耗", "损耗率"],
+    l6: ["分拣日期", "分拣时间", "分拣批次", "设备名", "设备编号", "原料批次", "绑扎批次", "规格", "公母", "状态", "投入(只)", "合格(只)", "损耗(只)", "损耗率"],
+    l7: ["日期", "入库时间", "入库单号", "库名", "库位", "原料批次", "捆扎批次", "分拣任务", "规格", "入库(只)", "已发货(只)", "发货损耗(只)", "当前余量", "经手人"],
+    l8: ["出库日期", "出库时间", "出库批次", "出库类型", "合计数量(只)", "承运物流公司", "联系人", "联系方式", "出库申请人", "复核人"],
+    l9: ["出库日期", "出库时间", "CK 单号", "原料批次", "捆扎批次", "分拣任务", "预冷单", "规格", "公母", "数量(只)", "来源池", "养殖户", "围网"],
+    l10: ["记录日期", "记录时间", "记录编号", "记录类型", "表格编号", "质检人员", "结论", "异常原因", "附件", "记录人"],
+    l11: ["发货日期", "订单号(SO)", "导入日期", "导入时间", "原始单号", "门店", "规格", "公母", "只数", "订单状态", "出库单(CK)", "原料批次", "捆扎批次", "分拣任务", "预冷单", "物流单号"],
+    l12: ["发货日期", "订单号(SO)", "导入日期", "导入时间", "原始单号(KK)", "规格型号（原始）", "拆分规格", "公母", "只数", "订单状态", "出库单(CK)", "快递公司", "物流单号", "备注"],
+  };
+
+  const ledgers = [
+    { key: "ledger1", no: 1, label: "01 养殖户主档", title: "01 养殖户主档", sheet: "01 养殖户主档", headers: headers.l1, rows: farmerRows, empty: "暂无养殖户主档数据" },
+    { key: "ledger2", no: 2, label: "02 原料批次", title: "02 原料批次台账", sheet: "02 原料批次台账", headers: headers.l2, rows: rawMaterialRows, empty: "暂无原料批次数据" },
+    { key: "ledger3", no: 3, label: "03 蟹扣领用", title: "03 蟹扣领用台账", sheet: "03 蟹扣领用台账", headers: headers.l3, rows: tagClaimRows, empty: "暂无蟹扣领用数据" },
+    { key: "ledger4", no: 4, label: "04 暂养池流水", title: "04 暂养池流水", sheet: "04 暂养池流水", headers: headers.l4, rows: holdingPoolRows, empty: "暂无暂养池流水" },
+    { key: "ledger5", no: 5, label: "05 捆扎作业", title: "05 捆扎作业台账", sheet: "05 捆扎作业台账", headers: headers.l5, rows: bundlingRows, empty: "暂无捆扎作业数据" },
+    { key: "ledger6", no: 6, label: "06 分拣作业", title: "06 分拣作业台账", sheet: "06 分拣作业台账", headers: headers.l6, rows: sortingRows, empty: "暂无分拣作业数据" },
+    { key: "ledger7", no: 7, label: "07 保鲜预冷", title: "07 保鲜预冷台账", sheet: "07 保鲜预冷台账", headers: headers.l7, rows: coldRows, empty: "暂无保鲜预冷数据" },
+    { key: "ledger8", no: 8, label: "08 出库单", title: "08 出库单", sheet: "08 出库单", headers: headers.l8, rows: outboundHeaderRows, empty: "暂无出库单数据" },
+    { key: "ledger9", no: 9, label: "09 出库明细", title: "09 出库明细", sheet: "09 出库明细", headers: headers.l9, rows: outboundDetailRows, empty: "暂无出库明细" },
+    { key: "ledger10", no: 10, label: "10 品控记录", title: "10 品控记录表", sheet: "10 品控记录表", headers: headers.l10, rows: qcRows, empty: "暂无品控记录" },
+    { key: "ledger11", no: 11, label: "11 门店订单", title: "11 门店订单台账", sheet: "11 门店订单台账", headers: headers.l11, rows: storeOrderRows, empty: "暂无门店订单数据" },
+    { key: "ledger12", no: 12, label: "12 蟹卡提货", title: "12 蟹卡提货台账", sheet: "12 蟹卡提货台账", headers: headers.l12, rows: crabCardRows, empty: "暂无蟹卡提货数据" },
+  ];
+
+  const validTab = params.tab && ledgers.some((l) => l.key === params.tab) ? params.tab : "ledger1";
+  const totalLedgerRecords = ledgers.reduce((acc, l) => acc + l.rows.length, 0);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
             <FileCheck className="size-6 text-primary" />
-            合规台账（八本账）
+            全链路合规台账
           </h1>
-          <p className="text-xs text-muted-foreground mt-1">
-            按「源头 · 身份 · 暂养 · 捆扎 · 分拣 · 预冷 · 去向 · 品控」全链条闭环核销与合规存证
+          <p className="mt-1 text-xs text-muted-foreground">
+            全链路 12 张业务台账（共 {totalLedgerRecords} 条合规流水），支持各环节穿透追溯与原样数据导出。
           </p>
         </div>
         <LedgerDateFilter selectedDate={selectedDateStr} />
       </div>
 
-        <Tabs defaultValue="ledger1" className="flex flex-col gap-4">
-          <div className="w-full overflow-x-auto">
-          <TabsList className="grid min-w-[1280px] grid-cols-8">
-          <TabsTrigger value="ledger1" className="flex items-center gap-1.5 text-xs">
-            <Building2 className="size-3.5" />
-            一 · 养殖户与围网 ({farmers.length})
-          </TabsTrigger>
-          <TabsTrigger value="ledger2" className="flex items-center gap-1.5 text-xs">
-            <Tag className="size-3.5" />
-            二 · 蟹扣领用 ({tagClaims.length})
-          </TabsTrigger>
-          <TabsTrigger value="ledger3" className="flex items-center gap-1.5 text-xs">
-            <Waves className="size-3.5" />
-            三 · 暂养池出入库 ({batches.length})
-          </TabsTrigger>
-          <TabsTrigger value="ledger4" className="flex items-center gap-1.5 text-xs">
-            <Layers3 className="size-3.5" />
-            四 · 捆扎作业 ({bundleBatches.length})
-          </TabsTrigger>
-          <TabsTrigger value="ledger5" className="flex items-center gap-1.5 text-xs">
-            <Scale className="size-3.5" />
-            五 · 分拣作业 ({sortTasks.length})
-          </TabsTrigger>
-          <TabsTrigger value="ledger6" className="flex items-center gap-1.5 text-xs">
-            <ThermometerSnowflake className="size-3.5" />
-            六 · 保鲜预冷 ({coldLogs.length})
-          </TabsTrigger>
-          <TabsTrigger value="ledger7" className="flex items-center gap-1.5 text-xs">
-            <Truck className="size-3.5" />
-            七 · 出库与订单 ({outboundOrders.length})
-          </TabsTrigger>
-          <TabsTrigger value="qcLedger" className="flex items-center gap-1.5 text-xs">
-            <ShieldCheck className="size-3.5" />
-            八 · 品控记录表 ({qcRecords.length})
-          </TabsTrigger>
-        </TabsList>
-          </div>
+      <Tabs defaultValue={validTab} className="flex flex-col gap-4">
+        <LedgerTabCarousel
+          ledgers={ledgers.map((l) => ({
+            key: l.key,
+            no: l.no,
+            label: l.label,
+            count: l.rows.length,
+          }))}
+        />
 
-        {/* 1. 台账一 · 养殖户与围网（管源头） */}
-        <TabsContent value="ledger1">
-          <LedgerCardSection
-            title="台账一 · 养殖户与围网（管源头 · 主档档案）"
-            exportFilename="阳澄股份_台账一_养殖户与围网主档"
-            exportHeaders={["编号", "姓名", "电话", "类型", "围网", "面积(亩)", "合同号", "信用评级"]}
-            exportRows={farmers.map((f) => [
-              f.code,
-              f.name,
-              f.phone,
-              f.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹",
-              f.enclosures.map((e) => e.code).join(", ") || "—",
-              f.area,
-              getContractNo(f),
-              f.creditRating || "A",
-            ])}
-            total={farmers.length}
-            page={l1Page}
-            pageSize={l1PageSize}
-            pageParam="l1Page"
-            pageSizeParam="l1PageSize"
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">编号</TableHead>
-                  <TableHead className="w-[110px]">姓名</TableHead>
-                  <TableHead className="w-[130px]">电话</TableHead>
-                  <TableHead className="w-[90px]">类型</TableHead>
-                  <TableHead className="w-[120px]">围网</TableHead>
-                  <TableHead className="w-[100px]">面积</TableHead>
-                  <TableHead className="min-w-[150px]">合同号</TableHead>
-                  <TableHead className="w-[100px]">信用评级</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {farmers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      暂无养殖户主档数据
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pagedFarmers.map((f) => (
-                    <TableRow key={f.id} className="hover:bg-muted/40 transition-colors">
-                      <TableCell className="font-mono font-medium text-xs">{f.code}</TableCell>
-                      <TableCell className="font-medium text-xs">{f.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{f.phone}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs py-0">
-                          {f.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {f.enclosures.map((e) => e.code).join(", ") || "—"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{f.area} 亩</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {getContractNo(f)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={f.creditRating === "A" ? "default" : "secondary"}
-                          className="text-xs py-0 font-mono"
-                        >
-                          {f.creditRating || "A"} 级
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
+        {ledgers.map((ledger) => {
+          const page = pageFor(ledger.no);
+          const pageSize = pageSizeFor(ledger.no);
+          const pagedRows = paginate(ledger.rows, page, pageSize);
+          const exportRows = ledger.rows.map((row) => row.exportRow);
+          const isOutboundHeader = ledger.no === 8;
+          const matrixHeaders = ["出库批次", "礼卡/门店名称", ...SPEC_MATRIX.map((item) => item.header), "合计"];
+          const pagedOutboundMatrixRows = isOutboundHeader ? paginate(outboundMatrixRows, page, pageSize) : [];
+          const exportSections = isOutboundHeader
+            ? [
+                { headers: ledger.headers, rows: exportRows },
+                { title: "成品出库规格矩阵", headers: matrixHeaders, rows: outboundMatrixRows },
+              ]
+            : undefined;
 
-        {/* 2. 台账二 · 蟹扣领用（管身份） */}
-        <TabsContent value="ledger2">
-          <LedgerCardSection
-            title="台账二 · 蟹扣领用（管身份 · 申领、完成绑扎与日结轧平）"
-            exportFilename={`阳澄股份_台账二_蟹扣领用_${selectedDateStr || "全量"}`}
-            exportHeaders={[
-              "日期",
-              "XK 号",
-              "养殖户",
-              "申领数",
-              "完成绑扎",
-              "退回",
-              "作废",
-              "差额",
-              "轧平状态",
-              "累计绑扎",
-              "剩余额度",
-              "申请人",
-              "复核人",
-            ]}
-            exportRows={tagClaims.map((c) => [
-              formatISODate(c.claimDate),
-              c.code || "—",
-              c.farmer.name,
-              c.isRejected ? "—（已驳回）" : c.claimCount,
-              c.isRejected ? "—" : c.boundCount,
-              c.isRejected ? "—" : c.returnedCount,
-              c.isRejected ? "—" : c.scrappedCount,
-              c.isRejected ? "—" : c.balanceDiff,
-              c.isRejected ? "已驳回" : c.isBalanced ? "已轧平" : "未轧平",
-              c.isRejected ? "—" : c.cumulativeBound,
-              c.isRejected ? "—" : c.remainingQuota,
-              c.applicant?.fullName || "—",
-              c.isRejected ? "—（已驳回）" : c.approver?.fullName || "—",
-            ])}
-            total={tagClaims.length}
-            page={l2Page}
-            pageSize={l2PageSize}
-            pageParam="l2Page"
-            pageSizeParam="l2PageSize"
-          >
-            <Table className="min-w-[1500px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[110px]">日期</TableHead>
-                  <TableHead className="w-[130px]">XK 号</TableHead>
-                  <TableHead className="w-[130px]">养殖户</TableHead>
-                  <TableHead className="w-[110px]">申领数</TableHead>
-                  <TableHead className="w-[100px]">完成绑扎</TableHead>
-                  <TableHead className="w-[80px]">退回</TableHead>
-                  <TableHead className="w-[80px]">作废</TableHead>
-                  <TableHead className="w-[80px]">差额</TableHead>
-                  <TableHead className="w-[100px]">轧平状态</TableHead>
-                  <TableHead className="w-[100px]">累计绑扎</TableHead>
-                  <TableHead className="w-[100px]">剩余额度</TableHead>
-                  <TableHead className="w-[100px]">申请人</TableHead>
-                  <TableHead className="w-[100px]">复核人</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tagClaims.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
-                      暂无蟹扣领用流水记录
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pagedTagClaims.map((c) => (
-                    <TableRow key={c.id} className="hover:bg-muted/40 transition-colors">
-                      <TableCell className="font-mono text-xs">{formatDate(c.claimDate)}</TableCell>
-                      <TableCell className="font-mono font-medium text-xs">
-                        {c.code || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="font-medium">{c.farmer.name}</span>
-                        <span className="text-[10px] text-muted-foreground ml-1">({c.farmer.code})</span>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? (
-                          <Badge variant="destructive" className="text-[10px] py-0">
-                            —（已驳回）
-                          </Badge>
-                        ) : (
-                          <span className="font-bold text-primary">
-                            {c.claimCount.toLocaleString()} 只
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? "—" : `${c.boundCount.toLocaleString()} 只`}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? "—" : `${c.returnedCount.toLocaleString()} 只`}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? "—" : `${c.scrappedCount.toLocaleString()} 只`}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? "—" : `${c.balanceDiff.toLocaleString()} 只`}
-                      </TableCell>
-                      <TableCell>
-                        {c.isRejected ? (
-                          <Badge variant="destructive" className="text-[10px] py-0">已驳回</Badge>
-                        ) : c.isBalanced ? (
-                          <Badge variant="outline" className="text-[10px] py-0">已轧平</Badge>
-                        ) : (
-                          <Badge variant="destructive" className="text-[10px] py-0">未轧平</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? "—" : `${c.cumulativeBound.toLocaleString()} 只`}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.isRejected ? "—" : `${c.remainingQuota.toLocaleString()} 只`}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {c.applicant?.fullName || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {c.isRejected ? (
-                          <span className="text-destructive text-xs">已驳回</span>
-                        ) : (
-                          c.approver?.fullName || "—"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
-
-        {/* 3. 台账三 · 暂养池出入库（管流转） */}
-        <TabsContent value="ledger3">
-          {(() => {
-            const getBatchFlow = (b: any) => {
-              const kzd = Array.from(new Set(b.bundleBatches?.map((batch: any) => batch.code).filter(Boolean)));
-              const grp = Array.from(new Set(b.bundleBatches?.map((batch: any) => batch.group?.name).filter(Boolean)));
-              return {
-                dest: kzd.length > 0 ? kzd.join(", ") : (b.outboundOrders?.map((o: any) => o.code).join(", ") || "—"),
-                target: grp.length > 0 ? grp.join(", ") : (Array.from(new Set(b.outboundOrders?.map((o: any) => o.store?.name))).join(", ") || "—"),
-              };
-            };
-            return (
+          return (
+            <TabsContent key={ledger.key} value={ledger.key}>
               <LedgerCardSection
-                title="台账三 · 暂养池出入库（管流转 · 批次入出池与损耗推导）"
-                exportFilename={`阳澄股份_台账三_暂养池出入库_${selectedDateStr || "全量"}`}
-                exportHeaders={[
-                  "日期",
-                  "YL 批次",
-                  "暂养池",
-                  "养殖户",
-                  "围网",
-                  "入池数",
-                  "出池数",
-                  "损耗数",
-                  "出池去向(捆扎批次)",
-                  "作业班组/去向",
-                ]}
-                exportRows={batches.map((b) => {
-                  const flow = getBatchFlow(b);
-                  return [
-                    formatISODate(b.inPoolTime),
-                    b.code,
-                    b.pool.name ? `${b.pool.name} (${b.pool.code})` : b.pool.code,
-                    b.farmer.name,
-                    b.enclosure?.code || "—",
-                    b.inPoolCount,
-                    b.outPoolCount,
-                    b.lossCount,
-                    flow.dest,
-                    flow.target,
-                  ];
-                })}
-                total={batches.length}
-                page={l3Page}
-                pageSize={l3PageSize}
-                pageParam="l3Page"
-                pageSizeParam="l3PageSize"
+                title={ledger.title}
+                sheetName={ledger.sheet}
+                exportFilename={`阳澄股份_${ledger.sheet}_${selectedDateStr || "全量"}`}
+                exportHeaders={ledger.headers}
+                exportRows={exportRows}
+                exportSections={exportSections}
+                total={ledger.rows.length}
+                page={page}
+                pageSize={pageSize}
+                pageParam={`l${ledger.no}Page`}
+                pageSizeParam={`l${ledger.no}PageSize`}
               >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[100px]">日期</TableHead>
-                      <TableHead className="w-[120px]">YL 批次</TableHead>
-                      <TableHead className="w-[150px]">暂养池</TableHead>
-                      <TableHead className="w-[100px]">养殖户</TableHead>
-                      <TableHead className="w-[80px]">围网</TableHead>
-                      <TableHead className="w-[90px]">入池数</TableHead>
-                      <TableHead className="w-[90px]">出池数</TableHead>
-                      <TableHead className="w-[90px]">损耗数</TableHead>
-                      <TableHead className="min-w-[130px]">出池去向 (捆扎批次)</TableHead>
-                      <TableHead className="min-w-[140px]">作业班组 / 去向</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {batches.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                          暂无暂养池出入库记录
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      pagedBatches.map((b) => {
-                        const flow = getBatchFlow(b);
-                        return (
-                          <TableRow key={b.id} className="hover:bg-muted/40 transition-colors">
-                            <TableCell className="font-mono text-xs">{formatDate(b.inPoolTime)}</TableCell>
-                            <TableCell className="font-mono font-medium text-xs">{b.code}</TableCell>
-                            <TableCell className="text-xs">
-                              <div className="font-medium">{b.pool.name || b.pool.code}</div>
-                              {b.pool.name && <div className="font-mono text-[10px] text-muted-foreground">{b.pool.code}</div>}
-                            </TableCell>
-                            <TableCell className="text-xs font-medium">{b.farmer.name}</TableCell>
-                            <TableCell className="font-mono text-xs">{b.enclosure?.code || "—"}</TableCell>
-                            <TableCell className="font-mono text-xs font-medium">{b.inPoolCount} 只</TableCell>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{b.outPoolCount} 只</TableCell>
-                            <TableCell className="font-mono text-xs text-amber-600 dark:text-amber-400">
-                              {b.lossCount} 只
-                            </TableCell>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {flow.dest}
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {flow.target !== "—" ? (
-                                <span className="text-foreground">{flow.target}</span>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
+                <div className="flex flex-col gap-4">
+                  <LedgerTable
+                    headers={ledger.headers}
+                    rows={pagedRows.map((row) => row.displayRow)}
+                    emptyText={ledger.empty}
+                  />
+                  {isOutboundHeader && outboundMatrixRows.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <div className="text-xs font-medium text-muted-foreground">成品出库规格矩阵</div>
+                      <LedgerTable
+                        headers={matrixHeaders}
+                        rows={pagedOutboundMatrixRows as ReactNode[][]}
+                        emptyText="暂无出库规格汇总"
+                      />
+                    </div>
+                  )}
+                </div>
               </LedgerCardSection>
-            );
-          })()}
-        </TabsContent>
-
-        {/* 4. 台账四 · 捆扎作业 */}
-        <TabsContent value="ledger4">
-          <LedgerCardSection
-            title="台账四 · 捆扎作业（投入、合格、损耗与蟹扣核销）"
-            exportFilename={`阳澄股份_台账四_捆扎作业_${selectedDateStr || "全量"}`}
-            exportHeaders={["日期", "KZD 批次", "YL 批次", "XK 号", "养殖户", "班组", "蟹绳批次", "投入数", "合格数", "损耗数", "状态"]}
-            exportRows={bundleBatches.map((b) => [
-              formatISODate(b.date),
-              b.code,
-              b.sourceBatch.code,
-              b.tagClaim.code || "—",
-              b.tagClaim.farmer.name,
-              b.group.name,
-              b.ropeBatch,
-              b.inputCount || b.lines.reduce((sum, line) => sum + line.count, 0),
-              b.status === "COMPLETED" ? b.qualifiedCount : "—",
-              b.status === "COMPLETED" ? b.lossCount : "—",
-              b.status === "COMPLETED" ? "已完成" : "捆扎中",
-            ])}
-            total={bundleBatches.length}
-            page={l4Page}
-            pageSize={l4PageSize}
-            pageParam="l4Page"
-            pageSizeParam="l4PageSize"
-          >
-            <Table className="min-w-[1250px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>日期</TableHead>
-                  <TableHead>KZD 批次</TableHead>
-                  <TableHead>YL 批次</TableHead>
-                  <TableHead>XK 号</TableHead>
-                  <TableHead>养殖户</TableHead>
-                  <TableHead>班组</TableHead>
-                  <TableHead>蟹绳批次</TableHead>
-                  <TableHead>投入数</TableHead>
-                  <TableHead>合格数</TableHead>
-                  <TableHead>损耗数</TableHead>
-                  <TableHead>状态</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagedBundleBatches.length === 0 ? (
-                  <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">暂无捆扎作业记录</TableCell></TableRow>
-                ) : pagedBundleBatches.map((b) => {
-                  const inputCount = b.inputCount || b.lines.reduce((sum, line) => sum + line.count, 0);
-                  return (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-mono text-xs">{formatDate(b.date)}</TableCell>
-                      <TableCell className="font-mono font-medium text-xs">{b.code}</TableCell>
-                      <TableCell className="font-mono text-xs">{b.sourceBatch.code}</TableCell>
-                      <TableCell className="font-mono text-xs">{b.tagClaim.code || "—"}</TableCell>
-                      <TableCell className="text-xs">{b.tagClaim.farmer.name}</TableCell>
-                      <TableCell className="text-xs">{b.group.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{b.ropeBatch}</TableCell>
-                      <TableCell className="font-mono text-xs">{inputCount.toLocaleString()} 只</TableCell>
-                      <TableCell className="font-mono text-xs">{b.status === "COMPLETED" ? `${b.qualifiedCount.toLocaleString()} 只` : "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{b.status === "COMPLETED" ? `${b.lossCount.toLocaleString()} 只` : "—"}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-[10px] py-0">{b.status === "COMPLETED" ? "已完成" : "捆扎中"}</Badge></TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
-
-        {/* 5. 台账五 · 分拣作业 */}
-        <TabsContent value="ledger5">
-          <LedgerCardSection
-            title="台账五 · 分拣作业（规格、合格数与损耗核算）"
-            exportFilename={`阳澄股份_台账五_分拣作业_${selectedDateStr || "全量"}`}
-            exportHeaders={["日期", "FJR 任务", "KZD 批次", "YL 批次", "设备", "规格", "投入数", "合格数", "损耗数", "损耗率", "状态"]}
-            exportRows={sortTasks.map((t) => [
-              formatISODate(t.date),
-              t.code,
-              t.bundleBatch.code,
-              t.bundleBatch.sourceBatch.code,
-              t.machine.code,
-              `${t.gender === "FEMALE" ? "母蟹" : "公蟹"} ${t.weightTier}`,
-              t.inputCount,
-              t.status === "COMPLETED" ? t.qualifiedCount : "—",
-              t.status === "COMPLETED" ? t.lossCount : "—",
-              t.status === "COMPLETED" ? `${t.lossRate}%` : "—",
-              t.status === "COMPLETED" ? "已完成" : "待分拣",
-            ])}
-            total={sortTasks.length}
-            page={l5Page}
-            pageSize={l5PageSize}
-            pageParam="l5Page"
-            pageSizeParam="l5PageSize"
-          >
-            <Table className="min-w-[1400px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>日期</TableHead>
-                  <TableHead>FJR 任务</TableHead>
-                  <TableHead>KZD 批次</TableHead>
-                  <TableHead>YL 批次</TableHead>
-                  <TableHead>设备</TableHead>
-                  <TableHead>规格</TableHead>
-                  <TableHead>投入数</TableHead>
-                  <TableHead>合格数</TableHead>
-                  <TableHead>损耗数</TableHead>
-                  <TableHead>损耗率</TableHead>
-                  <TableHead>状态</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagedSortTasks.length === 0 ? (
-                  <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">暂无分拣作业记录</TableCell></TableRow>
-                ) : pagedSortTasks.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-mono text-xs">{formatDate(t.date)}</TableCell>
-                    <TableCell className="font-mono font-medium text-xs">{t.code}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.bundleBatch.code}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.bundleBatch.sourceBatch.code}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.machine.code}</TableCell>
-                    <TableCell className="text-xs">{t.gender === "FEMALE" ? "母蟹" : "公蟹"} {t.weightTier}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.inputCount.toLocaleString()} 只</TableCell>
-                    <TableCell className="font-mono text-xs">{t.status === "COMPLETED" ? `${t.qualifiedCount.toLocaleString()} 只` : "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.status === "COMPLETED" ? `${t.lossCount.toLocaleString()} 只` : "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.status === "COMPLETED" ? `${t.lossRate}%` : "—"}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px] py-0">{t.status === "COMPLETED" ? "已完成" : "待分拣"}</Badge></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
-
-        {/* 6. 台账六 · 保鲜预冷 */}
-        <TabsContent value="ledger6">
-          <LedgerCardSection
-            title="台账六 · 保鲜预冷（入库、发货核减、损耗与实时余量）"
-            exportFilename={`阳澄股份_台账六_保鲜预冷_${selectedDateStr || "全量"}`}
-            exportHeaders={["日期", "CR 单号", "库位", "FJR 任务", "KZD 批次", "YL 批次", "规格", "入库数", "已发货", "发货损耗", "当前余量", "经手人"]}
-            exportRows={coldLogs.map((log) => {
-              const shipped = log.outboundLines.reduce((sum, line) => sum + line.count, 0);
-              const loss = log.outboundLosses.reduce((sum, row) => sum + row.count, 0);
-              return [
-                formatISODate(log.createdAt), log.code, log.store.code, log.sortTask.code,
-                log.sortTask.bundleBatch.code, log.sortTask.bundleBatch.sourceBatch.code,
-                `${log.sortTask.gender === "FEMALE" ? "母蟹" : "公蟹"} ${log.sortTask.weightTier}`,
-                log.count, shipped, loss, Math.max(0, log.count - shipped - loss), log.operator,
-              ];
-            })}
-            total={coldLogs.length}
-            page={l6Page}
-            pageSize={l6PageSize}
-            pageParam="l6Page"
-            pageSizeParam="l6PageSize"
-          >
-            <Table className="min-w-[1500px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>日期</TableHead>
-                  <TableHead>CR 单号</TableHead>
-                  <TableHead>库位</TableHead>
-                  <TableHead>FJR 任务</TableHead>
-                  <TableHead>KZD 批次</TableHead>
-                  <TableHead>YL 批次</TableHead>
-                  <TableHead>规格</TableHead>
-                  <TableHead>入库数</TableHead>
-                  <TableHead>已发货</TableHead>
-                  <TableHead>发货损耗</TableHead>
-                  <TableHead>当前余量</TableHead>
-                  <TableHead>经手人</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagedColdLogs.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">暂无保鲜预冷记录</TableCell></TableRow>
-                ) : pagedColdLogs.map((log) => {
-                  const shipped = log.outboundLines.reduce((sum, line) => sum + line.count, 0);
-                  const loss = log.outboundLosses.reduce((sum, row) => sum + row.count, 0);
-                  const available = Math.max(0, log.count - shipped - loss);
-                  return (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-mono text-xs">{formatDate(log.createdAt)}</TableCell>
-                      <TableCell className="font-mono font-medium text-xs">{log.code}</TableCell>
-                      <TableCell className="font-mono text-xs">{log.store.code}</TableCell>
-                      <TableCell className="font-mono text-xs">{log.sortTask.code}</TableCell>
-                      <TableCell className="font-mono text-xs">{log.sortTask.bundleBatch.code}</TableCell>
-                      <TableCell className="font-mono text-xs">{log.sortTask.bundleBatch.sourceBatch.code}</TableCell>
-                      <TableCell className="text-xs">{log.sortTask.gender === "FEMALE" ? "母蟹" : "公蟹"} {log.sortTask.weightTier}</TableCell>
-                      <TableCell className="font-mono text-xs">{log.count.toLocaleString()} 只</TableCell>
-                      <TableCell className="font-mono text-xs">{shipped.toLocaleString()} 只</TableCell>
-                      <TableCell className="font-mono text-xs">{loss.toLocaleString()} 只</TableCell>
-                      <TableCell className="font-mono font-medium text-xs">{available.toLocaleString()} 只</TableCell>
-                      <TableCell className="text-xs">{log.operator}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
-
-        {/* 7. 台账七 · 出库与订单（管去向） */}
-        <TabsContent value="ledger7">
-          <LedgerCardSection
-            title="台账七 · 出库与订单（管去向 · 成品核销与物流溯源）"
-            exportFilename={`阳澄股份_台账七_出库与订单_${selectedDateStr || "全量"}`}
-            exportHeaders={[
-              "出库日期",
-              "CK 单号",
-              "生产链路 (CR→FJR→KZD→YL)",
-              "分拣批次(FJR)",
-              "捆扎批次(KZD)",
-              "原料批次(YL)",
-              "类型",
-              "数量",
-              "对应池子",
-              "养殖户",
-              "围网",
-              "渠道/门店",
-              "物流单号",
-              "出库人",
-              "复核人",
-            ]}
-            exportRows={outboundOrders.map((o) => {
-              const lineage = Array.from(new Set(o.lines.map((line) =>
-                `${line.coldLog.code}→${line.coldLog.sortTask.code}→${line.coldLog.sortTask.bundleBatch.code}→${line.coldLog.sortTask.bundleBatch.sourceBatch.code}`
-              ))).join(", ") || "—";
-              const sortBatches = Array.from(new Set(o.lines.map((line) =>
-                line.coldLog.sortTask.code
-              ))).join(", ") || "—";
-              const bundleBatches = Array.from(new Set(o.lines.map((line) =>
-                line.coldLog.sortTask.bundleBatch.code
-              ))).join(", ") || "—";
-              const rawBatches = Array.from(new Set(o.lines.map((line) =>
-                line.coldLog.sortTask.bundleBatch.sourceBatch.code
-              ))).join(", ") || "—";
-              const waybills = o.lines
-                .map((l) => l.waybillNo)
-                .filter(Boolean)
-                .join(", ");
-              const logisticsDisplay =
-                o.logisticsNo || waybills || (o.lines.length > 0 ? `待回填 ${o.lines.length} 单` : "待回填");
-              return [
-                formatISODate(o.createdAt),
-                o.code,
-                lineage,
-                sortBatches,
-                bundleBatches,
-                rawBatches,
-                o.type === "STORE_ORDER" ? "门店订单" : "提蟹出库",
-                o.outboundCount,
-                o.batch?.pool?.code || "—",
-                o.batch?.farmer?.name || "—",
-                o.batch?.enclosure?.code || "—",
-                `${o.channel.name} / ${o.store.name}`,
-                logisticsDisplay,
-                o.applicant?.fullName || "—",
-                o.approver?.fullName || "—",
-              ];
-            })}
-            total={outboundOrders.length}
-            page={l7Page}
-            pageSize={l7PageSize}
-            pageParam="l7Page"
-            pageSizeParam="l7PageSize"
-          >
-            <Table className="min-w-[1500px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">出库日期</TableHead>
-                  <TableHead className="w-[120px]">CK 单号</TableHead>
-                  <TableHead className="min-w-[260px]">生产链路 (CR→FJR→KZD→YL)</TableHead>
-                  <TableHead className="min-w-[120px]">分拣批次(FJR)</TableHead>
-                  <TableHead className="min-w-[120px]">捆扎批次(KZD)</TableHead>
-                  <TableHead className="min-w-[120px]">原料批次(YL)</TableHead>
-                  <TableHead className="w-[90px]">类型</TableHead>
-                  <TableHead className="w-[90px]">数量</TableHead>
-                  <TableHead className="w-[80px]">对应池子</TableHead>
-                  <TableHead className="w-[90px]">养殖户</TableHead>
-                  <TableHead className="w-[70px]">围网</TableHead>
-                  <TableHead className="min-w-[140px]">渠道 / 门店</TableHead>
-                  <TableHead className="min-w-[140px]">物流单号</TableHead>
-                  <TableHead className="w-[90px]">出库人</TableHead>
-                  <TableHead className="w-[90px]">复核人</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {outboundOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={15} className="text-center py-8 text-muted-foreground">
-                      暂无出库与订单台账记录
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pagedOutboundOrders.map((o) => {
-                    const lineage = Array.from(new Set(o.lines.map((line) =>
-                      `${line.coldLog.code} → ${line.coldLog.sortTask.code} → ${line.coldLog.sortTask.bundleBatch.code} → ${line.coldLog.sortTask.bundleBatch.sourceBatch.code}`
-                    ))).join(", ") || "—";
-                    const sortBatches = Array.from(new Set(o.lines.map((line) =>
-                      line.coldLog.sortTask.code
-                    ))).join(", ") || "—";
-                    const bundleBatches = Array.from(new Set(o.lines.map((line) =>
-                      line.coldLog.sortTask.bundleBatch.code
-                    ))).join(", ") || "—";
-                    const rawBatches = Array.from(new Set(o.lines.map((line) =>
-                      line.coldLog.sortTask.bundleBatch.sourceBatch.code
-                    ))).join(", ") || "—";
-                    const waybills = o.lines
-                      .map((l) => l.waybillNo)
-                      .filter(Boolean)
-                      .join(", ");
-                    const hasPendingWaybills =
-                      !o.logisticsNo && o.lines.some((l) => !l.waybillNo);
-                    const logisticsText =
-                      o.logisticsNo || waybills || (o.lines.length > 0 ? `待回填 ${o.lines.length} 单` : "待回填");
-
-                    return (
-                      <TableRow key={o.id} className="hover:bg-muted/40 transition-colors">
-                        <TableCell className="font-mono text-xs">{formatDate(o.createdAt)}</TableCell>
-                        <TableCell className="font-mono font-medium text-xs">{o.code}</TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{lineage}</TableCell>
-                        <TableCell className="font-mono text-xs">{sortBatches}</TableCell>
-                        <TableCell className="font-mono text-xs">{bundleBatches}</TableCell>
-                        <TableCell className="font-mono text-xs">{rawBatches}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px] py-0">
-                            {o.type === "STORE_ORDER" ? "门店订单" : "提蟹出库"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono font-bold text-xs text-primary">
-                          {o.outboundCount.toLocaleString()} 只
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {o.batch?.pool?.code || "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">{o.batch?.farmer?.name || "—"}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {o.batch?.enclosure?.code || "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <span className="font-medium">{o.channel.name}</span>
-                          <span className="text-muted-foreground text-[10px] ml-1">· {o.store.name}</span>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {hasPendingWaybills ? (
-                            <span className="text-amber-600 dark:text-amber-400 font-sans text-xs">
-                              {logisticsText}
-                            </span>
-                          ) : (
-                            <span>{logisticsText}</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {o.applicant?.fullName || "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {o.status === "APPROVED" ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              {o.approver?.fullName || "已审"}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">待审</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
-
-        {/* 8. 台账八 · 品控记录表（管过程） */}
-        <TabsContent value="qcLedger">
-          <LedgerCardSection
-            title="台账八 · 品控记录表（管过程 · 12 类纸质品控电子化留痕与原件存证）"
-            exportFilename={`阳澄股份_台账八_品控记录表_${selectedDateStr || "全量"}`}
-            exportHeaders={["日期", "记录编号", "类型", "关联对象", "内容", "结果", "上传人"]}
-            exportRows={qcRecords.map((q) => [
-              formatDateTime(q.checkTime),
-              q.code,
-              QC_CATEGORY_LABELS[q.cat] || q.cat,
-              q.refId,
-              q.title,
-              q.result === "QUALIFIED" || q.conclusion === "合格"
-                ? "合格"
-                : q.result === "RECTIFYING" || q.conclusion === "待整改" || q.conclusion?.includes("整改")
-                ? "待整改"
-                : "不合格",
-              q.uploader,
-            ])}
-            total={qcRecords.length}
-            page={qcPage}
-            pageSize={qcPageSize}
-            pageParam="qcPage"
-            pageSizeParam="qcPageSize"
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">日期</TableHead>
-                  <TableHead className="w-[130px]">记录编号</TableHead>
-                  <TableHead className="min-w-[180px]">类型</TableHead>
-                  <TableHead className="w-[120px]">关联对象</TableHead>
-                  <TableHead className="min-w-[160px]">内容</TableHead>
-                  <TableHead className="w-[90px]">结果</TableHead>
-                  <TableHead className="w-[90px]">上传人</TableHead>
-                  <TableHead className="text-right w-[80px]">附件</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {qcRecords.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      暂无品控留痕记录
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pagedQCRecords.map((q) => {
-                    return (
-                      <TableRow key={q.id} className="hover:bg-muted/40 transition-colors">
-                        <TableCell className="font-mono text-xs">
-                          {formatShortDateTime(q.checkTime)}
-                        </TableCell>
-                        <TableCell className="font-mono font-medium text-xs">{q.code}</TableCell>
-                        <TableCell className="text-xs">
-                          {QC_CATEGORY_LABELS[q.cat] || q.cat}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{q.refId}</TableCell>
-                        <TableCell className="text-xs font-medium">{q.title}</TableCell>
-                        <TableCell>
-                          {q.result === "UNQUALIFIED" || q.conclusion === "不合格" ? (
-                            <Badge variant="destructive" className="text-[10px] py-0">
-                              <AlertTriangle className="size-3 mr-0.5" /> 不合格
-                            </Badge>
-                          ) : q.result === "RECTIFYING" || q.conclusion === "待整改" || q.conclusion?.includes("整改") ? (
-                            <Badge variant="outline" className="text-amber-600 border-amber-500/30 bg-amber-500/10 text-[10px] py-0">
-                              <AlertTriangle className="size-3 mr-0.5" /> 待整改
-                            </Badge>
-                          ) : q.result === "EXCEPTION" ? (
-                            <Badge variant="destructive" className="text-[10px] py-0">
-                              <AlertTriangle className="size-3 mr-0.5" /> {q.conclusion || "异常"}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 bg-emerald-500/10 text-[10px] py-0">
-                              <CheckCircle2 className="size-3 mr-0.5" /> 合格
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{q.uploader}</TableCell>
-                        <TableCell className="text-right">
-                          <QCViewDialog record={q} triggerText="查阅" />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </LedgerCardSection>
-        </TabsContent>
+            </TabsContent>
+          );
+        })}
       </Tabs>
     </div>
   );

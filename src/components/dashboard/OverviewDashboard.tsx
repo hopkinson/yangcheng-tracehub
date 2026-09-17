@@ -890,7 +890,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <div className="mt-2.5 pt-2 border-t flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>留痕机制：双时间戳自动上链不可篡改</span>
                   <Link href="/ledgers" className="text-primary hover:underline flex items-center gap-0.5 group">
-                    查看 8 本合规台账 <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform" />
+                    查看全链路合规台账 <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform" />
                   </Link>
                 </div>
               </CardContent>

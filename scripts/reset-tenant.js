@@ -67,15 +67,18 @@ async function main() {
 
   // 倒序清空所有业务表
   const models = [
-    "qCRecord", "specialApproval", "auditLog", "lossRecord",
-    "outboundLine", "outboundOrder", "order",
+    "qCRecord", "specialApproval", "auditLog", "inspectionReport", "lossRecord",
+    "outboundLossRecord", "outboundLine", "outboundOrder", "order",
     "coldLog", "coldStore", "sortTask", "sortMachine",
     "bundleLine", "bundleBatch", "bundleGroup", "tagClaim",
     "batchItem", "batch", "holdingPool", "enclosure", "farmer",
     "store", "channel", "user"
   ];
-  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"').catch(() => {});
-  for (const m of models) if (prisma[m]) await prisma[m].deleteMany().catch(() => {});
+  await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"');
+  for (const m of models) {
+    if (!prisma[m]) throw new Error(`未知 Prisma 模型: ${m}`);
+    await prisma[m].deleteMany();
+  }
 
   await prisma.$executeRawUnsafe(
     'INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole") VALUES (\'default\', \'FARMER_ADMIN\', \'QA_DIRECTOR\')'

@@ -3,42 +3,58 @@
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { getBeijingDateStr } from "@/lib/utils";
+import * as XLSX from "xlsx";
+
+type ExportValue = string | number;
+
+type ExportSection = {
+  title?: string;
+  headers: string[];
+  rows: ExportValue[][];
+};
 
 interface ExportLedgerButtonProps {
   filename: string;
-  headers: string[];
-  rows: (string | number)[][];
+  sheetName: string;
+  headers?: string[];
+  rows?: ExportValue[][];
+  sections?: ExportSection[];
   label?: string;
 }
 
 export function ExportLedgerButton({
   filename,
-  headers,
-  rows,
-  label = "导出台账 (CSV/Excel)",
+  sheetName,
+  headers = [],
+  rows = [],
+  sections,
+  label = "导出 Excel",
 }: ExportLedgerButtonProps) {
   function handleExport() {
-    const csvContent =
-      "\uFEFF" + // UTF-8 BOM for Excel Chinese compatibility
-      [
-        headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(","),
-        ...rows.map((row) =>
-          row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")
-        ),
-      ].join("\r\n");
+    const aoa: ExportValue[][] = [];
+    const exportSections = sections?.length ? sections : [{ headers, rows }];
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `${filename}_${getBeijingDateStr()}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    exportSections.forEach((section, index) => {
+      if (index > 0) aoa.push([]);
+      if (section.title) aoa.push([section.title]);
+      aoa.push(section.headers);
+      aoa.push(...section.rows);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet["!cols"] = Array.from({ length: Math.max(1, ...aoa.map((row) => row.length)) }, (_, colIndex) => ({
+      wch: Math.min(
+        32,
+        Math.max(
+          10,
+          ...aoa.map((row) => String(row[colIndex] ?? "").length + 2)
+        )
+      ),
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31));
+    XLSX.writeFile(workbook, `${filename}_${getBeijingDateStr()}.xlsx`);
   }
 
   return (
