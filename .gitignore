@@ -12,6 +12,7 @@
 /prisma/dev.db-journal
 /prisma/test.db
 /prisma/test.db-journal
+/prisma/*.bak*
 /dev.db
 /dev.db-journal
 
