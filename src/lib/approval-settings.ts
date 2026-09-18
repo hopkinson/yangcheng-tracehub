@@ -10,31 +10,14 @@ export interface ApprovalSettingValue {
   outboundRole: ApprovalRole;
 }
 
-async function createApprovalSettingTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ApprovalSetting" (
-      "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
-      "tagClaimRole" TEXT NOT NULL DEFAULT 'FARMER_ADMIN',
-      "outboundRole" TEXT NOT NULL DEFAULT 'QA_DIRECTOR'
-    )
-  `);
-}
-
 export async function getApprovalSetting(): Promise<ApprovalSettingValue> {
-  let rows: Array<{ tagClaimRole: string; outboundRole: string }>;
-  try {
-    rows = await prisma.$queryRaw`
-      SELECT "tagClaimRole", "outboundRole"
-      FROM "ApprovalSetting"
-      WHERE "id" = 'default'
-      LIMIT 1
-    `;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!message.includes("no such table") || !message.includes("ApprovalSetting")) throw error;
-    await createApprovalSettingTable();
-    rows = [];
-  }
+  // ponytail: 表由 prisma db push 按 schema 创建，不再运行期补建 —— 运行期 DDL 就是 schema 漂移的来源
+  const rows = await prisma.$queryRaw<Array<{ tagClaimRole: string; outboundRole: string }>>`
+    SELECT "tagClaimRole", "outboundRole"
+    FROM "ApprovalSetting"
+    WHERE "id" = 'default'
+    LIMIT 1
+  `;
   const setting = rows[0];
 
   return {
