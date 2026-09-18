@@ -235,6 +235,7 @@ async function testTagClaimSettlementRepro() {
     contactPhone: "13800000000",
     applicantId: admin.id,
   });
+  if (!outboundRes.success) throw new Error(outboundRes.message);
 
   console.log("Created Outbound Order:", outboundRes.code, "Total count:", outboundRes.outboundCount);
 

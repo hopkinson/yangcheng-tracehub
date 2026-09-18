@@ -238,6 +238,7 @@ async function runParityVerification() {
       contactPhone: "13800000000",
       applicantId: admin.id,
     });
+    if (!outboundOrder.success) throw new Error(outboundOrder.message);
 
     assert.ok(outboundOrder.id, "出库单创建成功");
     assert.equal(outboundOrder.outboundCount, 500, "出库只数 500 只");

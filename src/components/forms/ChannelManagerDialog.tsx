@@ -29,11 +29,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { createChannelAction, deleteChannelAction } from "@/actions/channels";
+import { createChannelAction, deleteChannelAction, updateChannelAction } from "@/actions/channels";
 import { channelFormSchema, type ChannelFormValues } from "@/lib/validations/schemas";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
-import { Building2, Plus, Trash2, Loader2 } from "lucide-react";
+import { Building2, Plus, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
 
 export interface ChannelItem {
   id: string;
@@ -55,6 +55,9 @@ export function ChannelManagerDialog({
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const form = useForm<ChannelFormValues>({
     resolver: zodResolver(channelFormSchema),
@@ -62,6 +65,45 @@ export function ChannelManagerDialog({
       name: "",
     },
   });
+
+  function handleStartEdit(channel: ChannelItem) {
+    setEditingId(channel.id);
+    setEditingName(channel.name);
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null);
+    setEditingName("");
+  }
+
+  async function handleSaveEdit(channelId: string, currentName: string) {
+    const parsed = channelFormSchema.safeParse({ name: editingName });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message || "渠道名称不合法");
+      return;
+    }
+    const cleanName = parsed.data.name;
+    if (cleanName === currentName) {
+      handleCancelEdit();
+      return;
+    }
+
+    setUpdatingId(channelId);
+    try {
+      await updateChannelAction({
+        id: channelId,
+        name: cleanName,
+        userId,
+      });
+      toast.success(`销售渠道已更新为【${cleanName}】`);
+      handleCancelEdit();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "修改渠道失败";
+      toast.error(msg);
+    } finally {
+      setUpdatingId(null);
+    }
+  }
 
   async function onSubmit(data: ChannelFormValues) {
     setSubmitting(true);
@@ -113,7 +155,15 @@ export function ChannelManagerDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(val) => {
+        setOpen(val);
+        if (!val) {
+          handleCancelEdit();
+        }
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline" className="flex items-center gap-2">
           <Building2 className="size-4" data-icon="inline-start" />
@@ -169,7 +219,7 @@ export function ChannelManagerDialog({
               <TableRow className="bg-muted/50">
                 <TableHead>渠道全称</TableHead>
                 <TableHead className="w-[120px] text-center">关联门店数</TableHead>
-                <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableHead className="w-[90px] text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -183,10 +233,31 @@ export function ChannelManagerDialog({
                 channels.map((channel) => {
                   const storeCount = channel._count?.stores ?? 0;
                   const isBusy = deletingId === channel.id;
+                  const isEditing = editingId === channel.id;
+                  const isUpdating = updatingId === channel.id;
                   return (
                     <TableRow key={channel.id}>
                       <TableCell className="font-medium text-sm">
-                        {channel.name}
+                        {isEditing ? (
+                          <Input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveEdit(channel.id, channel.name);
+                              } else if (e.key === "Escape") {
+                                handleCancelEdit();
+                              }
+                            }}
+                            autoFocus
+                            disabled={isUpdating}
+                            className="h-8 text-sm"
+                            placeholder="输入渠道名称"
+                          />
+                        ) : (
+                          channel.name
+                        )}
                       </TableCell>
                       <TableCell className="text-center font-mono text-xs">
                         {storeCount > 0 ? (
@@ -196,20 +267,63 @@ export function ChannelManagerDialog({
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                          disabled={isBusy}
-                          onClick={() => handleDelete(channel)}
-                          title="删除渠道"
-                        >
-                          {isBusy ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                        <div className="flex items-center justify-end gap-1">
+                          {isEditing ? (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-primary hover:text-primary/80"
+                                disabled={isUpdating || !editingName.trim()}
+                                onClick={() => handleSaveEdit(channel.id, channel.name)}
+                                title="保存"
+                              >
+                                {isUpdating ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="size-3.5" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                disabled={isUpdating}
+                                onClick={handleCancelEdit}
+                                title="取消"
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            </>
                           ) : (
-                            <Trash2 className="size-3.5" />
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                disabled={isBusy || !!editingId}
+                                onClick={() => handleStartEdit(channel)}
+                                title="编辑渠道名称"
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                disabled={isBusy || !!editingId}
+                                onClick={() => handleDelete(channel)}
+                                title="删除渠道"
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="size-3.5" />
+                                )}
+                              </Button>
+                            </>
                           )}
-                        </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

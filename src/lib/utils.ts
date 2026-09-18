@@ -129,3 +129,36 @@ export function getPreviewFileUrl(rawUrl?: string | null, fileName?: string): st
   if (!rawUrl || rawUrl.startsWith("data:")) return rawUrl || "";
   return `/api/files/preview?${new URLSearchParams({ url: rawUrl, ...(fileName && { name: fileName }) })}`;
 }
+
+/**
+ * 将前端输入的本地日期时间字符串解析为确定性的北京时间 Date 对象 (UTC+8)
+ * - 若已带有时区标识 (如 'Z' 或 '+08:00' 等)，直接解析
+ * - 若无时区标识 (如 '2026-09-18T16:09' 或 '2026-09-18 16:09')，自动按 UTC+8 解析，
+ *   避免在系统时区为 UTC 的 Linux/生产服务器上被误当成 UTC 导致 +8 小时偏差
+ */
+export function parseBeijingDateTime(value?: string | Date | null): Date {
+  if (!value) return new Date();
+  if (value instanceof Date) return value;
+  const trimmed = value.trim();
+  if (!trimmed) return new Date();
+  if (trimmed.endsWith("Z") || /[+-]\d{2}(:\d{2})?$/.test(trimmed)) {
+    return new Date(trimmed);
+  }
+  const normalized = trimmed.replace(" ", "T");
+  const withSeconds = normalized.length === 16 ? `${normalized}:00` : normalized;
+  return new Date(`${withSeconds}+08:00`);
+}
+
+/**
+ * 将 YYYY-MM-DD 解析为对应北京时间的当日起始与截止 Date (无论服务端系统时区是 UTC 还是本地时区)
+ * start: YYYY-MM-DDT00:00:00.000+08:00 (北京时间当天 00:00:00)
+ * end:   YYYY-MM-DDT23:59:59.999+08:00 (北京时间当天 23:59:59.999)
+ */
+export function getBeijingDayRange(dateStr: string): { gte: Date; lte: Date } {
+  const clean = dateStr.trim();
+  return {
+    gte: new Date(`${clean}T00:00:00.000+08:00`),
+    lte: new Date(`${clean}T23:59:59.999+08:00`),
+  };
+}
+

@@ -26,8 +26,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { StaggerContainer, FadeIn, PulseBadge } from "@/components/motion/MotionWrapper";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, getBeijingDayRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -70,12 +69,9 @@ export default async function PoolsPage({
   const pageSize = Math.max(1, Number(params.pageSize) || (activeTab === "qc" ? 10 : 12));
 
   // 当天时间窗口 (2026-09-21 演示基准)
-  const todayStart = new Date("2026-09-21T00:00:00.000Z");
-  const todayEnd = new Date("2026-09-21T23:59:59.999Z");
+  const { gte: todayStart, lte: todayEnd } = getBeijingDayRange("2026-09-21");
 
-  const dateFilter = selectedDateStr
-    ? { gte: startOfDay(parseISO(selectedDateStr)), lte: endOfDay(parseISO(selectedDateStr)) }
-    : undefined;
+  const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 
   const [currentUser, pools, todayQCs, poolQCRecords] = await Promise.all([
     getCurrentUser(),
@@ -118,6 +114,11 @@ export default async function PoolsPage({
   let occupiedCount = 0;
   let idleCount = 0;
   let exceptionCount = 0;
+
+  const poolRefOptions = [
+    { label: "全部暂养池", value: "全部暂养池" },
+    ...pools.map((p: any) => ({ label: `${p.name} (${p.code})`, value: p.code })),
+  ];
 
   const poolStats = pools.map((pool: any) => {
     const items = pool.batchItems || [];
@@ -563,11 +564,19 @@ export default async function PoolsPage({
 
               <div className="flex items-center flex-wrap gap-2">
                 <QCRecordDialog
-                  config={{ ...WATER_QC_PRESET, refId: selectedPool || "全部暂养池" }}
+                  config={{
+                    ...WATER_QC_PRESET,
+                    refId: selectedPool || "全部暂养池",
+                    refOptions: poolRefOptions,
+                  }}
                   triggerLabel="录入水质监测"
                 />
                 <QCRecordDialog
-                  config={{ ...INSPECT_QC_PRESET, refId: selectedPool || "全部暂养池" }}
+                  config={{
+                    ...INSPECT_QC_PRESET,
+                    refId: selectedPool || "全部暂养池",
+                    refOptions: poolRefOptions,
+                  }}
                   triggerLabel="录入暂养巡检"
                 />
               </div>

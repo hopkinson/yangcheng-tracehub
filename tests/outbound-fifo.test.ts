@@ -206,6 +206,7 @@ async function main() {
       contactPhone: "13800000000",
       applicantId: admin.id,
     });
+    if (!outbound.success) throw new Error(outbound.message);
     outboundId = outbound.id;
 
     const lines = await prisma.outboundLine.findMany({

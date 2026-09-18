@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
-import { getBeijingDateStr } from "@/lib/utils";
+import { getBeijingDateStr, parseBeijingDateTime } from "@/lib/utils";
 import { requireRole } from "@/lib/auth";
 
 export interface CreateQCRecordData {
+  id?: string;
   cat: string;
   formNo?: string;
   refType: string;
@@ -36,8 +37,8 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
       await requireRole(["QA_DIRECTOR", "ADMIN", "WAREHOUSE_ADMIN"]);
     }
 
-    if (!data.cat || !data.refId || !data.checkTime) {
-      return { success: false, message: "记录类别、关联对象与巡检时间均为必填项" };
+    if (!data.cat?.trim() || !data.refId?.trim() || !data.checkTime?.trim() || !data.uploader?.trim()) {
+      return { success: false, message: "记录类别、关联对象、巡检时间与质检人员均为必填项" };
     }
 
     // 结论推导: 合格 (QUALIFIED)、不合格 (UNQUALIFIED)、待整改 (RECTIFYING)
@@ -70,28 +71,55 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
     };
     const prefix = prefixMap[data.cat] || "QC";
     const code = await prisma.$transaction(async (tx) => {
-      const count = await tx.qCRecord.count();
-      const recordCode = `${prefix}${dateStr}${String(count + 1).padStart(2, "0")}`;
+      let recordCode = "";
       const now = new Date();
 
-      await tx.qCRecord.create({
-        data: {
-          code: recordCode,
-          cat: data.cat,
-          formNo: data.formNo || null,
-          refType: data.refType,
-          refId: data.refId,
-          title: FIXED_QC_TITLES[data.cat] || data.title,
-          checkTime: new Date(data.checkTime),
-          uploadTime: now,
-          result,
-          conclusion: data.conclusion || "合格",
-          reason: data.reason?.trim() || null,
-          uploader: data.uploader || "赵质检 (质检员)",
-          fileName: data.fileName || `${recordCode}_质检留痕原件.jpg`,
-          fileUrl: data.fileUrl || null,
-        },
-      });
+      if (data.id) {
+        const existing = await tx.qCRecord.findUnique({ where: { id: data.id } });
+        if (!existing) {
+          throw new Error("待修改的品控记录不存在");
+        }
+        await tx.qCRecord.update({
+          where: { id: data.id },
+          data: {
+            cat: data.cat,
+            formNo: data.formNo || null,
+            refType: data.refType,
+            refId: data.refId,
+            title: FIXED_QC_TITLES[data.cat] || data.title,
+            checkTime: parseBeijingDateTime(data.checkTime),
+            result,
+            conclusion: data.conclusion || "合格",
+            reason: data.reason?.trim() || null,
+            uploader: (data.uploader || "").trim(),
+            fileName: data.fileUrl ? (data.fileName || existing.fileName || `${existing.code}_质检留痕原件.jpg`) : null,
+            fileUrl: data.fileUrl || null,
+          },
+        });
+        recordCode = existing.code;
+      } else {
+        const count = await tx.qCRecord.count();
+        recordCode = `${prefix}${dateStr}${String(count + 1).padStart(2, "0")}`;
+
+        await tx.qCRecord.create({
+          data: {
+            code: recordCode,
+            cat: data.cat,
+            formNo: data.formNo || null,
+            refType: data.refType,
+            refId: data.refId,
+            title: FIXED_QC_TITLES[data.cat] || data.title,
+            checkTime: parseBeijingDateTime(data.checkTime),
+            uploadTime: now,
+            result,
+            conclusion: data.conclusion || "合格",
+            reason: data.reason?.trim() || null,
+            uploader: (data.uploader || "").trim(),
+            fileName: data.fileUrl ? (data.fileName || `${recordCode}_质检留痕原件.jpg`) : null,
+            fileUrl: data.fileUrl || null,
+          },
+        });
+      }
 
       if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
         const status = result === "QUALIFIED" ? "QUALIFIED" : result === "RECTIFYING" ? "RECTIFYING" : "UNQUALIFIED";
@@ -118,12 +146,18 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
     try {
       revalidatePath("/", "layout");
     } catch {}
-    return { success: true, code, message: `品控记录 ${code} 上传成功` };
+    return {
+      success: true,
+      code,
+      message: data.id ? `品控记录 ${code} 修改成功` : `品控记录 ${code} 上传成功`,
+    };
   } catch (error: any) {
     console.error("createQCRecordAction error:", error);
     return { success: false, message: error.message || "上传品控记录失败" };
   }
 }
+
+export const saveQCRecordAction = createQCRecordAction;
 
 export async function deleteQCRecordAction(recordId: string) {
   try {

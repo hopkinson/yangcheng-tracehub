@@ -59,7 +59,10 @@ export default async function FarmersPage({
     );
 
     const cumulativeInPool = currentYearBatches.reduce((sum, b) => sum + b.inPoolCount, 0);
-    const cumulativeClaimed = currentYearTags.reduce((sum, t) => sum + t.claimCount, 0);
+    const cumulativeClaimed = currentYearTags.reduce(
+      (sum, t) => sum + Math.max(0, t.claimCount - (t.returnedCount || 0)),
+      0
+    );
     const cumulativeOutbound = currentYearBatches.reduce(
       (sum, b) => sum + b.outboundOrders.reduce((s, o) => s + o.outboundCount, 0),
       0

@@ -34,7 +34,10 @@ export function ColdStoreDialog({
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      toast.error("请输入库位名称");
+      return;
+    }
 
     startTransition(async () => {
       const res = await createColdStoreAction({ name });

@@ -139,7 +139,7 @@ export function SortTaskDialog({
   };
 
   const handleToggleLine = (lineId: string, maxCount: number) => {
-    setSelectedLines(({ [lineId]: _, ...rest }) => (lineId in selectedLines ? rest : { ...selectedLines, [lineId]: maxCount }));
+    setSelectedLines(({ [lineId]: found, ...rest }) => (found ? rest : { ...rest, [lineId]: maxCount }));
   };
 
   const handleCountChange = (lineId: string, maxCount: number, val: number) => {
@@ -435,17 +435,15 @@ export function SortTaskDialog({
                         className={`flex items-center gap-2 flex-1 select-none ${
                           isExhausted ? "cursor-not-allowed" : "cursor-pointer"
                         }`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          if (isExhausted) return;
-                          handleToggleLine(line.id, lineAvailable);
-                        }}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           disabled={isExhausted}
-                          onChange={() => {}}
+                          onChange={() => {
+                            if (isExhausted) return;
+                            handleToggleLine(line.id, lineAvailable);
+                          }}
                           className="size-3.5 accent-primary cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span className="font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded text-[11px]">

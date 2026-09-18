@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { formatShortDateTime, getBeijingTimeString } from "@/lib/utils";
+import { formatDate, formatISODate, formatShortDateTime } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -64,7 +64,7 @@ export default async function ReportsPage({
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[320px]">报告名称</TableHead>
-                <TableHead className="w-[150px]">检测时间</TableHead>
+                <TableHead className="w-[140px]">检测日期</TableHead>
                 <TableHead className="w-[150px]">上传时间</TableHead>
                 <TableHead className="w-[140px]">上传人</TableHead>
                 <TableHead className="min-w-[220px]">附件</TableHead>
@@ -80,14 +80,12 @@ export default async function ReportsPage({
                 </TableRow>
               ) : (
                 reports.map((report) => {
-                  const inspectedAt = report.inspectedAt
-                    ? getBeijingTimeString(report.inspectedAt)?.slice(0, 16).replace(" ", "T") || ""
-                    : "";
+                  const inspectedAt = report.inspectedAt ? formatISODate(report.inspectedAt) : "";
 
                   return (
                     <TableRow key={report.id}>
                       <TableCell className="font-semibold">{report.name}</TableCell>
-                      <TableCell className="font-mono text-sm">{formatShortDateTime(report.inspectedAt)}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatDate(report.inspectedAt)}</TableCell>
                       <TableCell className="font-mono text-sm">{formatShortDateTime(report.createdAt)}</TableCell>
                       <TableCell>{report.uploadedBy.fullName}</TableCell>
                       <TableCell>

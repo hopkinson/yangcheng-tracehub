@@ -22,8 +22,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
-import { formatDateTime, cn } from "@/lib/utils";
+import { formatDateTime, cn, getBeijingDayRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +35,7 @@ export default async function BundlingPage({
   const selectedDateStr = params?.date?.trim();
   const selectedGroupId = params?.group?.trim();
 
-  const dateFilter = selectedDateStr
-    ? { gte: startOfDay(parseISO(selectedDateStr)), lte: endOfDay(parseISO(selectedDateStr)) }
-    : undefined;
+  const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 
   // 1. 查询捆扎组与批次统计
   const groups = await prisma.bundleGroup.findMany({

@@ -76,6 +76,7 @@ export async function requestTagClaimAction(data: {
     try {
       revalidatePath("/tags");
       revalidatePath("/approvals");
+      revalidatePath("/farmers");
     } catch {}
     return claim;
   });
@@ -133,6 +134,7 @@ export async function resubmitTagClaimAction(data: {
     try {
       revalidatePath("/tags");
       revalidatePath("/approvals");
+      revalidatePath("/farmers");
     } catch {}
     return updated;
   });
@@ -201,6 +203,7 @@ export async function settleDailyTagClaimAction(data: {
     try {
       revalidatePath("/tags");
       revalidatePath("/ledgers");
+      revalidatePath("/farmers");
     } catch {}
     return updatedClaim;
   });

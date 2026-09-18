@@ -92,7 +92,7 @@ export function ColdIntakeDialog({
   };
 
   const handleToggleTask = (taskId: string) => {
-    setSelectedTaskIds(({ [taskId]: _, ...rest }) => (taskId in selectedTaskIds ? rest : { ...selectedTaskIds, [taskId]: true }));
+    setSelectedTaskIds(({ [taskId]: found, ...rest }) => (found ? rest : { ...rest, [taskId]: true }));
   };
 
   const selectTasks = (tasksToSelect: SortTaskOption[]) => {
@@ -113,6 +113,10 @@ export function ColdIntakeDialog({
     const taskIds = Object.keys(selectedTaskIds).filter((id) => selectedTaskIds[id]);
     if (taskIds.length === 0) {
       toast.error("请至少勾选一个待入库的分拣批次");
+      return;
+    }
+    if (!operator?.trim()) {
+      toast.error("请填写经手入库员姓名");
       return;
     }
 
@@ -326,17 +330,15 @@ export function ColdIntakeDialog({
                         className={`flex items-center gap-2.5 flex-1 select-none ${
                           isExhausted ? "cursor-not-allowed" : "cursor-pointer"
                         }`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          if (isExhausted) return;
-                          handleToggleTask(task.id);
-                        }}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           disabled={isExhausted}
-                          onChange={() => {}}
+                          onChange={() => {
+                            if (isExhausted) return;
+                            handleToggleTask(task.id);
+                          }}
                           className="size-3.5 accent-primary cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span className="font-mono font-semibold">{task.code}</span>

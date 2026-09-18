@@ -188,6 +188,7 @@ async function runRepro() {
       contactPhone: "13800000000",
       applicantId: admin.id,
     });
+    if (!res.success) throw new Error(res.message);
     assert.ok(res.id, "出库单应成功生成");
     assert.equal(res.outboundCount, 600, "出库总数应为600只");
     assert.ok(res.batchId, "原料批次关联应合法");

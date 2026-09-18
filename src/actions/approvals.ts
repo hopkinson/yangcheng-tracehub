@@ -72,6 +72,7 @@ export async function approveTagClaimAction(data: {
     try {
       revalidatePath("/approvals");
       revalidatePath("/tags");
+      revalidatePath("/farmers");
     } catch {}
     return updated;
   });

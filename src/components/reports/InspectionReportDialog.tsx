@@ -149,7 +149,7 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
           <DialogTitle>{isEditing ? "编辑检测报告" : "上传检测报告"}</DialogTitle>
           <DialogDescription>
             {isEditing
-              ? "修改报告名称、检测时间，或维护营业执照资质（主报告附件保持不变）。"
+              ? "修改报告名称、检测日期，或维护营业执照资质（主报告附件保持不变）。"
               : "以报告名称归档，上传时间和上传人由系统自动记录。"}
           </DialogDescription>
         </DialogHeader>
@@ -310,11 +310,11 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
               name="inspectedAt"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>检测时间</FormLabel>
+                  <FormLabel>检测日期</FormLabel>
                   <FormControl>
-                    <Input type="datetime-local" {...field} />
+                    <Input type="date" {...field} />
                   </FormControl>
-                  <FormDescription>没有准确检测时间时可以留空。</FormDescription>
+                  <FormDescription>没有准确检测日期时可以留空。</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

@@ -91,7 +91,7 @@ export const inspectionReportFormSchema = z.object({
   name: z.string().trim().min(2, "报告名称至少 2 个字符").max(100, "报告名称最多 100 个字符"),
   inspectedAt: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的检测时间")
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "请选择有效的检测日期")
     .or(z.literal(""))
     .default(""),
 });
@@ -204,3 +204,27 @@ export const changePasswordFormSchema = z
     path: ["newPassword"],
   });
 export type ChangePasswordFormValues = z.infer<typeof changePasswordFormSchema>;
+
+/**
+ * 品控巡检与水质留痕校验
+ */
+export const qcRecordFormSchema = z
+  .object({
+    refId: z.string().trim().min(1, "请选择或输入关联对象/批次"),
+    formNo: z.string().trim().optional(),
+    checkTime: z.string().trim().min(1, "请选择实际巡检/校准时间"),
+    uploader: z.string().trim().min(1, "请选择质检人员"),
+    conclusion: z.string().trim().min(1, "请选择检查结论判定"),
+    reason: z.string().trim().optional(),
+  })
+  .refine(
+    (data) => {
+      const isException = /不合格|待整改|暂停|整改|需复核|异常|超温/.test(data.conclusion);
+      return !isException || Boolean(data.reason?.trim());
+    },
+    {
+      message: "结论判定为异常/不合格/待整改时，必须填写详细原因与整改说明",
+      path: ["reason"],
+    }
+  );
+export type QCRecordFormValues = z.infer<typeof qcRecordFormSchema>;

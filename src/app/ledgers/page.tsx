@@ -8,8 +8,7 @@ import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
 import { LedgerTabCarousel } from "@/components/ledgers/LedgerTabCarousel";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { FileCheck } from "lucide-react";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
-import { cn, formatDate, formatTime } from "@/lib/utils";
+import { cn, formatDate, formatTime, getBeijingDayRange } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -182,13 +181,7 @@ export default async function LedgersPage({
   const pageFor = (index: number) => parsePositive(params[`l${index}Page`]);
   const pageSizeFor = (index: number) => parsePositive(params[`l${index}PageSize`], 10);
 
-  let dateFilter: { gte: Date; lte: Date } | undefined;
-  if (selectedDateStr) {
-    try {
-      const parsed = parseISO(selectedDateStr);
-      dateFilter = { gte: startOfDay(parsed), lte: endOfDay(parsed) };
-    } catch {}
-  }
+  const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 
   const isChannelViewer = currentUser?.role === "CHANNEL_VIEWER";
   const channelId = currentUser?.channelId;

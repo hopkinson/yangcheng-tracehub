@@ -20,8 +20,8 @@ function validateAttachment(file: File, label: string) {
 
 function parseInspectedAt(value: string) {
   if (!value) return null;
-  const date = new Date(`${value}:00+08:00`);
-  if (Number.isNaN(date.getTime())) throw new Error("检测时间格式无效");
+  const date = new Date(`${value}T00:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) throw new Error("检测日期格式无效");
   return date;
 }
 

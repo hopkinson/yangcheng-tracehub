@@ -5,6 +5,7 @@
 # Next.js build
 /.next/
 /out/
+/tsconfig.tsbuildinfo
 
 # Database
 /prisma/dev.db

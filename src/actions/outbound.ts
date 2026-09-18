@@ -312,76 +312,80 @@ export async function createStoreOutboundAction(data: {
   contactName: string;
   contactPhone: string;
   applicantId: string;
-}) {
-  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+}): Promise<any> {
+  try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
 
-  const contactName = data.contactName.trim();
-  const contactPhone = data.contactPhone.trim();
-  if (!contactName) throw new Error("请填写联系人");
-  if (!/^[0-9+\-\s()]{6,20}$/.test(contactPhone)) throw new Error("请填写正确的联系方式");
+    const contactName = data.contactName.trim();
+    const contactPhone = data.contactPhone.trim();
+    if (!contactName) throw new Error("请填写联系人");
+    if (contactPhone.length < 5 || contactPhone.length > 20) throw new Error("请填写有效联系方式（5-20位）");
 
-  return await prisma.$transaction(async (tx) => {
-    const store = await tx.store.findUniqueOrThrow({
-      where: { id: data.storeId },
-      include: { channel: true },
-    });
+    const outboundOrder = await prisma.$transaction(async (tx) => {
+      const store = await tx.store.findUniqueOrThrow({
+        where: { id: data.storeId },
+        include: { channel: true },
+      });
 
-    const orders = await tx.order.findMany({
-      where: { id: { in: data.orderIds }, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-    });
+      const orders = await tx.order.findMany({
+        where: { id: { in: data.orderIds }, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+      });
 
-    if (orders.length === 0) {
-      throw new Error("请至少选择一个待发货的门店订单");
-    }
+      if (orders.length === 0) {
+        throw new Error("请至少选择一个待发货的门店订单");
+      }
 
-    const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
-    const { lines, firstAllocation } = await buildFifoOutboundLines(orders, tx);
-    const orderCode = await nextOutboundCode(tx);
+      const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
+      const { lines, firstAllocation } = await buildFifoOutboundLines(orders, tx);
+      const orderCode = await nextOutboundCode(tx);
 
-    const outboundOrder = await tx.outboundOrder.create({
-      data: {
-        code: orderCode,
-        coldLogId: firstAllocation.coldLogId,
-        batchId: firstAllocation.sourceBatchId,
-        storeId: data.storeId,
-        channelId: store.channelId,
-        outboundCount: totalCrabCount,
-        channelOrderCount: totalCrabCount,
-        logisticsNo: "门店冷链专车自配",
-        transportCompany: data.transportCompany?.trim() || null,
-        contactName,
-        contactPhone,
-        status: "PENDING",
-        applicantId: data.applicantId,
-        lines: { create: lines },
-      },
-    });
+      const created = await tx.outboundOrder.create({
+        data: {
+          code: orderCode,
+          coldLogId: firstAllocation.coldLogId,
+          batchId: firstAllocation.sourceBatchId,
+          storeId: data.storeId,
+          channelId: store.channelId,
+          outboundCount: totalCrabCount,
+          channelOrderCount: totalCrabCount,
+          logisticsNo: "门店冷链专车自配",
+          transportCompany: data.transportCompany?.trim() || null,
+          contactName,
+          contactPhone,
+          status: "PENDING",
+          applicantId: data.applicantId,
+          lines: { create: lines },
+        },
+      });
 
-    // 标记订单为已发货
-    await tx.order.updateMany({
-      where: { id: { in: data.orderIds } },
-      data: {
-        status: "SHIPPED",
-      },
-    });
+      // 标记订单为已发货
+      await tx.order.updateMany({
+        where: { id: { in: data.orderIds } },
+        data: {
+          status: "SHIPPED",
+        },
+      });
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: data.applicantId,
-        action: "STORE_OUTBOUND_REQUEST",
-        entityType: "OUTBOUND_ORDER",
-        entityId: outboundOrder.id,
-        details: JSON.stringify({
-          orderCode,
-          storeName: store.name,
-          totalCrabCount,
-          ordersCount: orders.length,
-          allocationMode: "FIFO_BY_SOURCE_BATCH",
-          fifoAllocations: lines.map((line) => ({ orderNo: line.orderNo, coldLogId: line.coldLogId, count: line.count })),
-        }),
-      },
-    });
+      await tx.auditLog.create({
+        data: {
+          operatorId: data.applicantId,
+          action: "STORE_OUTBOUND_REQUEST",
+          entityType: "OUTBOUND_ORDER",
+          entityId: created.id,
+          details: JSON.stringify({
+            orderCode,
+            storeName: store.name,
+            totalCrabCount,
+            ordersCount: orders.length,
+            allocationMode: "FIFO_BY_SOURCE_BATCH",
+            fifoAllocations: lines.map((line) => ({ orderNo: line.orderNo, coldLogId: line.coldLogId, count: line.count })),
+          }),
+        },
+      });
+
+      return created;
+    }, { isolationLevel: "Serializable" });
 
     try {
       revalidatePath("/outbound");
@@ -389,8 +393,10 @@ export async function createStoreOutboundAction(data: {
       revalidatePath("/approvals");
     } catch {}
 
-    return outboundOrder;
-  }, { isolationLevel: "Serializable" });
+    return Object.assign({ success: true }, outboundOrder);
+  } catch (err: any) {
+    return { success: false, error: err.message || "出库申请失败" };
+  }
 }
 
 /**
@@ -400,78 +406,85 @@ export async function createCardUnifiedOutboundAction(data: {
   orderIds: string[];
   transportCompany?: string;
   applicantId: string;
-}) {
-  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  return await prisma.$transaction(async (tx) => {
-    const orders = await tx.order.findMany({
-      where: { id: { in: data.orderIds }, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-    });
+}): Promise<any> {
+  try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+    const outboundOrder = await prisma.$transaction(async (tx) => {
+      const orders = await tx.order.findMany({
+        where: { id: { in: data.orderIds }, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+      });
 
-    if (orders.length === 0) {
-      throw new Error("请至少选择一个待发货的提蟹订单");
-    }
+      if (orders.length === 0) {
+        throw new Error("请至少选择一个待发货的提蟹订单");
+      }
 
-    // 查找山姆默认总店
-    const defaultStore = await tx.store.findFirst({
-      include: { channel: true },
-    });
-    if (!defaultStore) throw new Error("未找到默认渠道门店");
+      // 查找山姆默认总店
+      const defaultStore = await tx.store.findFirst({
+        include: { channel: true },
+      });
+      if (!defaultStore) throw new Error("未找到默认渠道门店");
 
-    const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
-    const { lines, firstAllocation } = await buildFifoOutboundLines(
-      orders,
-      tx,
-      () => ({ expressCompany: data.transportCompany || "顺丰速运" })
-    );
-    const orderCode = await nextOutboundCode(tx);
+      const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
+      const { lines, firstAllocation } = await buildFifoOutboundLines(
+        orders,
+        tx,
+        () => ({ expressCompany: data.transportCompany || "顺丰速运" })
+      );
+      const orderCode = await nextOutboundCode(tx);
 
-    const outboundOrder = await tx.outboundOrder.create({
-      data: {
-        code: orderCode,
-        coldLogId: firstAllocation.coldLogId,
-        batchId: firstAllocation.sourceBatchId,
-        type: "CRAB_CARD",
-        storeId: defaultStore.id,
-        channelId: defaultStore.channelId,
-        outboundCount: totalCrabCount,
-        channelOrderCount: totalCrabCount,
-        logisticsNo: "发货后回填",
-        status: "PENDING",
-        applicantId: data.applicantId,
-        lines: { create: lines },
-      },
-    });
+      const created = await tx.outboundOrder.create({
+        data: {
+          code: orderCode,
+          coldLogId: firstAllocation.coldLogId,
+          batchId: firstAllocation.sourceBatchId,
+          type: "CRAB_CARD",
+          storeId: defaultStore.id,
+          channelId: defaultStore.channelId,
+          outboundCount: totalCrabCount,
+          channelOrderCount: totalCrabCount,
+          logisticsNo: "发货后回填",
+          status: "PENDING",
+          applicantId: data.applicantId,
+          lines: { create: lines },
+        },
+      });
 
-    await tx.order.updateMany({
-      where: { id: { in: data.orderIds } },
-      data: {
-        status: "SHIPPED",
-      },
-    });
+      await tx.order.updateMany({
+        where: { id: { in: data.orderIds } },
+        data: {
+          status: "SHIPPED",
+        },
+      });
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: data.applicantId,
-        action: "CARD_UNIFIED_OUTBOUND_REQUEST",
-        entityType: "OUTBOUND_ORDER",
-        entityId: outboundOrder.id,
-        details: JSON.stringify({
-          orderCode,
-          totalCrabCount,
-          ordersCount: orders.length,
-          allocationMode: "FIFO_BY_SOURCE_BATCH",
-          fifoAllocations: lines.map((line) => ({ orderNo: line.orderNo, coldLogId: line.coldLogId, count: line.count })),
-        }),
-      },
-    });
+      await tx.auditLog.create({
+        data: {
+          operatorId: data.applicantId,
+          action: "CARD_UNIFIED_OUTBOUND_REQUEST",
+          entityType: "OUTBOUND_ORDER",
+          entityId: created.id,
+          details: JSON.stringify({
+            orderCode,
+            totalCrabCount,
+            ordersCount: orders.length,
+            allocationMode: "FIFO_BY_SOURCE_BATCH",
+            fifoAllocations: lines.map((line) => ({ orderNo: line.orderNo, coldLogId: line.coldLogId, count: line.count })),
+          }),
+        },
+      });
 
-    revalidatePath("/outbound");
-    revalidatePath("/orders");
-    revalidatePath("/approvals");
+    }, { isolationLevel: "Serializable" });
 
-    return outboundOrder;
-  }, { isolationLevel: "Serializable" });
+    try {
+      revalidatePath("/outbound");
+      revalidatePath("/orders");
+      revalidatePath("/approvals");
+    } catch {}
+
+    return Object.assign({ success: true }, outboundOrder);
+  } catch (err: any) {
+    return { success: false, error: err.message || "提蟹统一出库失败" };
+  }
 }
 
 /**

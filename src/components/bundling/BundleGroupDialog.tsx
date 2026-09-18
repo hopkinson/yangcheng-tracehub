@@ -31,7 +31,10 @@ export function BundleGroupDialog({
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      toast.error("班组名称不能为空");
+      return;
+    }
 
     startTransition(async () => {
       const res = await createBundleGroupAction(name);

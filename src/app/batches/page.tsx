@@ -14,10 +14,9 @@ import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { BatchFilterSelect } from "@/components/qc/BatchFilterSelect";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, getBeijingDayRange } from "@/lib/utils";
 import { Invariants } from "@/lib/invariants";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
+import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -30,6 +29,7 @@ import {
   ArrowRight,
   ShieldCheck,
   Utensils,
+  Pencil,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -162,9 +162,7 @@ export default async function BatchesPage({
   const page = Math.max(1, Number(params.page) || 1);
   const pageSize = Math.max(1, Number(params.pageSize) || 10);
 
-  const dateFilter = selectedDateStr
-    ? { gte: startOfDay(parseISO(selectedDateStr)), lte: endOfDay(parseISO(selectedDateStr)) }
-    : undefined;
+  const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 
   const [
     currentUser,
@@ -242,6 +240,24 @@ export default async function BatchesPage({
       orderBy: { checkTime: "desc" },
     }),
   ]);
+
+  const batchCodes = batches.map((b: any) => b.code);
+  const batchQCForBatches = batchCodes.length > 0 ? await prisma.qCRecord.findMany({
+    where: {
+      refType: "BATCH",
+      refId: { in: batchCodes },
+      cat: { in: ["QUICK_CHECK", "TASTE_CHECK"] },
+    },
+    orderBy: { checkTime: "desc" },
+  }) : [];
+
+  const qcByBatchAndCat = new Map<string, any>();
+  for (const q of batchQCForBatches) {
+    const key = `${q.refId}_${q.cat}`;
+    if (!qcByBatchAndCat.has(key)) {
+      qcByBatchAndCat.set(key, q);
+    }
+  }
 
   const currentUserId = currentUser?.id || "";
   const isAdmin = currentUser?.role === "ADMIN";
@@ -497,52 +513,60 @@ export default async function BatchesPage({
                             <TableCell className="align-middle">
                               <div className="flex flex-col gap-1 max-w-[135px]">
                                 <div className="flex items-center gap-2 whitespace-nowrap">
-                                  {canEditQc && batch.quickCheck !== "QUALIFIED" ? (
-                                    <QCRecordDialog
-                                      config={{ ...QUICK_QC_PRESET, refId: batch.code }}
-                                      trigger={
-                                        <InspectionTag
-                                          status={batch.quickCheck}
-                                          url={batch.quickCheckUrl || batch.reportUrl}
-                                          label="农残"
-                                          batchCode={batch.code}
-                                          reportName={batch.quickCheckName || batch.reportName}
-                                          editable
-                                        />
-                                      }
-                                    />
-                                  ) : (
-                                    <InspectionTag
-                                      status={batch.quickCheck}
-                                      url={batch.quickCheckUrl || batch.reportUrl}
-                                      label="农残"
-                                      batchCode={batch.code}
-                                      reportName={batch.quickCheckName || batch.reportName}
-                                    />
-                                  )}
-                                  {canEditQc && batch.sampleCheck !== "QUALIFIED" ? (
-                                    <QCRecordDialog
-                                      config={{ ...TASTE_QC_PRESET, refId: batch.code }}
-                                      trigger={
-                                        <InspectionTag
-                                          status={batch.sampleCheck}
-                                          url={batch.sampleCheckUrl}
-                                          label="试吃"
-                                          batchCode={batch.code}
-                                          reportName={batch.sampleCheckName}
-                                          editable
-                                        />
-                                      }
-                                    />
-                                  ) : (
-                                    <InspectionTag
-                                      status={batch.sampleCheck}
-                                      url={batch.sampleCheckUrl}
-                                      label="试吃"
-                                      batchCode={batch.code}
-                                      reportName={batch.sampleCheckName}
-                                    />
-                                  )}
+                                  {(() => {
+                                    const quickQC = qcByBatchAndCat.get(`${batch.code}_QUICK_CHECK`);
+                                    return canEditQc && batch.quickCheck !== "QUALIFIED" ? (
+                                      <QCRecordDialog
+                                        config={{ ...QUICK_QC_PRESET, refId: batch.code }}
+                                        record={quickQC}
+                                        trigger={
+                                          <InspectionTag
+                                            status={batch.quickCheck}
+                                            url={batch.quickCheckUrl || batch.reportUrl}
+                                            label="农残"
+                                            batchCode={batch.code}
+                                            reportName={batch.quickCheckName || batch.reportName}
+                                            editable
+                                          />
+                                        }
+                                      />
+                                    ) : (
+                                      <InspectionTag
+                                        status={batch.quickCheck}
+                                        url={batch.quickCheckUrl || batch.reportUrl}
+                                        label="农残"
+                                        batchCode={batch.code}
+                                        reportName={batch.quickCheckName || batch.reportName}
+                                      />
+                                    );
+                                  })()}
+                                  {(() => {
+                                    const sampleQC = qcByBatchAndCat.get(`${batch.code}_TASTE_CHECK`);
+                                    return canEditQc && batch.sampleCheck !== "QUALIFIED" ? (
+                                      <QCRecordDialog
+                                        config={{ ...TASTE_QC_PRESET, refId: batch.code }}
+                                        record={sampleQC}
+                                        trigger={
+                                          <InspectionTag
+                                            status={batch.sampleCheck}
+                                            url={batch.sampleCheckUrl}
+                                            label="试吃"
+                                            batchCode={batch.code}
+                                            reportName={batch.sampleCheckName}
+                                            editable
+                                          />
+                                        }
+                                      />
+                                    ) : (
+                                      <InspectionTag
+                                        status={batch.sampleCheck}
+                                        url={batch.sampleCheckUrl}
+                                        label="试吃"
+                                        batchCode={batch.code}
+                                        reportName={batch.sampleCheckName}
+                                      />
+                                    );
+                                  })()}
                                 </div>
                                 <Link
                                   href={`/batches?tab=qc&batch=${batch.code}`}
@@ -789,7 +813,31 @@ export default async function BatchesPage({
                             </TableCell>
                             <TableCell className="text-muted-foreground">{record.uploader}</TableCell>
                             <TableCell className="text-right">
-                              <QCViewDialog record={record} triggerText="查看原件" />
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canEditQc && (
+                                  <QCRecordDialog
+                                    config={{
+                                      cat: record.cat,
+                                      categoryLabel: record.cat === "QUICK_CHECK" ? "农残快检" : "品质抽检/试吃",
+                                      defaultTitle: record.title,
+                                      refType: record.refType,
+                                      refId: record.refId,
+                                      formNoPreset: record.formNo || undefined,
+                                    }}
+                                    record={record}
+                                    trigger={
+                                      <button
+                                        type="button"
+                                        className="text-xs text-primary hover:underline font-medium inline-flex items-center gap-0.5 cursor-pointer mr-1"
+                                        title="修改品控记录"
+                                      >
+                                        <Pencil className="size-3" /> 编辑
+                                      </button>
+                                    }
+                                  />
+                                )}
+                                <QCViewDialog record={record} triggerText="查看原件" />
+                              </div>
                             </TableCell>
                           </TableRow>
                         );

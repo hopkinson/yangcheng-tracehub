@@ -145,10 +145,12 @@ export function StoreOutboundDialog({
           storeId: selectedStoreId,
           orderIds: selectedOrderIds,
           transportCompany,
-          contactName,
-          contactPhone,
+          contactName: contactName.trim(),
+          contactPhone: contactPhone.trim(),
           applicantId: userId,
         });
+
+        if (res?.error) return void toast.error(res.error);
 
         toast.success(`出库申请 ${res.code} 提交成功（合单 ${selectedOrderIds.length} 笔共 ${totalCrabs} 只）`);
         setOpen(false);
@@ -217,6 +219,7 @@ export function StoreOutboundDialog({
               <Input
                 value={contactName}
                 onChange={(e) => setContactName(e.target.value)}
+                placeholder="例如：张三"
                 className="h-8 text-xs"
                 required
               />
@@ -228,6 +231,8 @@ export function StoreOutboundDialog({
                 type="tel"
                 value={contactPhone}
                 onChange={(e) => setContactPhone(e.target.value)}
+                placeholder="手机号或座机（如 13800000000）"
+                minLength={5}
                 className="h-8 text-xs font-mono"
                 required
               />

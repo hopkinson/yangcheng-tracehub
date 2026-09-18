@@ -107,6 +107,8 @@ export function CardOutboundDialog({
           applicantId: userId,
         });
 
+        if (res?.error) return void toast.error(res.error);
+
         toast.success(`提蟹统一出库单 ${res.code} 生成成功（包含 ${selectedOrderIds.length} 笔提蟹共 ${totalCrabs} 只）`);
         setOpen(false);
       } catch (err: any) {
