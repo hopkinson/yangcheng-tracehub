@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const rawUrl = searchParams.get("url")?.trim();
   const name = searchParams.get("name")?.trim();
+  const isDownload = Boolean(searchParams.get("download"));
+  const dispositionType = isDownload ? "attachment" : "inline";
 
   if (!rawUrl) return new NextResponse("Missing file url parameter", { status: 400 });
 
@@ -42,19 +44,19 @@ export async function GET(req: NextRequest) {
         return new NextResponse(new Uint8Array(file), {
           headers: {
             "Content-Type": contentType,
-            "Content-Disposition": `inline; filename="${encodeURIComponent(name || path.basename(cleanPath))}"`,
+            "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(name || path.basename(cleanPath))}"`,
             "Cache-Control": "public, max-age=86400",
           },
         });
       } catch {}
     }
 
-    if (/\.pdf$/i.test(cleanPath) || /report|pesticide/i.test(cleanPath)) {
-      const fallbackPdf = createFallbackCertificatePdf(name || "Yangcheng Lake Crab Inspection Report");
+    if (/pdf|report|pesticide|slip|码单|报告|凭证/i.test(`${cleanPath} ${name || ""}`)) {
+      const fallbackPdf = createFallbackCertificatePdf(name || "Yangcheng Lake Crab Document");
       return new NextResponse(new Uint8Array(fallbackPdf), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${encodeURIComponent(name || "report.pdf")}"`,
+          "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(name || "document.pdf")}"`,
         },
       });
     }
@@ -139,7 +141,7 @@ export async function GET(req: NextRequest) {
         return new NextResponse(new Uint8Array(fallbackPdf), {
           headers: {
             "Content-Type": "application/pdf",
-            "Content-Disposition": `inline; filename="${encodeURIComponent(name || "document.pdf")}"`,
+            "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(name || "document.pdf")}"`,
           },
         });
       }
@@ -154,8 +156,8 @@ export async function GET(req: NextRequest) {
     return new NextResponse(new Uint8Array(bodyBytes), {
       headers: {
         "Content-Type": contentType,
-        // 关键：强制 inline 确保浏览器内嵌显示，击穿 aliyuncs.com 的强制 attachment 下载
-        "Content-Disposition": `inline; filename="${encodeURIComponent(name || path.basename(urlObj.pathname))}"`,
+        // 关键：非显式下载时强制 inline 确保浏览器内嵌显示，击穿 aliyuncs.com 的强制 attachment 下载
+        "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(name || path.basename(urlObj.pathname))}"`,
         "Cache-Control": "public, max-age=3600",
       },
     });

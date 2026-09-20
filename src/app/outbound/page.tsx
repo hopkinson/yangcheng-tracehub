@@ -11,11 +11,15 @@ import { CardOutboundDialog } from "@/components/outbound/CardOutboundDialog";
 import { LogisticsBatchImportDialog } from "@/components/outbound/LogisticsBatchImportDialog";
 import { OutboundDetailDialog } from "@/components/outbound/OutboundDetailDialog";
 import { OutboundLossDialog } from "@/components/outbound/OutboundLossDialog";
+import { OutboundLossDetailDialog } from "@/components/outbound/OutboundLossDetailDialog";
 import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatDate } from "@/lib/utils";
+import { canApprove } from "@/config/approval";
+import { getApprovalSetting } from "@/lib/approval-settings";
+import Link from "next/link";
 import {
   ThermometerSnowflake,
   Truck,
@@ -32,16 +36,21 @@ export const dynamic = "force-dynamic";
 export default async function OutboundPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string; tab?: string }>;
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
   const pageSize = Math.max(1, Number(params.pageSize) || 10);
+  const activeTab = params.tab === "loss" ? "loss" : "delivery";
 
   const [
     currentUser,
     totalOrders,
     orders,
+    totalLossOrders,
+    lossOrders,
+    pendingLossOrdersCount,
+    approvalSetting,
     stores,
     pendingOrders,
     sortTasks,
@@ -53,8 +62,8 @@ export default async function OutboundPage({
     getCurrentUser(),
     prisma.outboundOrder.count(),
     prisma.outboundOrder.findMany({
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: activeTab === "delivery" ? (page - 1) * pageSize : 0,
+      take: activeTab === "delivery" ? pageSize : 10,
       include: {
         coldLog: { include: { store: true } },
         batch: { include: { farmer: true, pool: true } },
@@ -66,6 +75,26 @@ export default async function OutboundPage({
       },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.outboundLossOrder.count(),
+    prisma.outboundLossOrder.findMany({
+      skip: activeTab === "loss" ? (page - 1) * pageSize : 0,
+      take: activeTab === "loss" ? pageSize : 10,
+      include: {
+        applicant: true,
+        approver: true,
+        items: true,
+        records: {
+          include: {
+            coldLog: { include: { store: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.outboundLossOrder.count({
+      where: { status: "PENDING" },
+    }),
+    getApprovalSetting(),
     prisma.store.findMany({
       where: { isActive: true },
       include: { channel: true },
@@ -89,7 +118,8 @@ export default async function OutboundPage({
       where: { outboundOrder: { status: { not: "REJECTED" } } },
     }),
     prisma.outboundLossRecord.findMany({
-      select: { gender: true, weightTier: true, count: true, coldLogId: true },
+      where: { status: { not: "REJECTED" } },
+      select: { gender: true, weightTier: true, count: true, coldLogId: true, status: true },
     }),
     prisma.qCRecord.findMany({
       where: {
@@ -109,6 +139,7 @@ export default async function OutboundPage({
 
   const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
+  const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
   const lastStoreOutbound = currentUserId
     ? await prisma.outboundOrder.findFirst({
         where: { applicantId: currentUserId, type: "STORE_ORDER" },
@@ -239,219 +270,412 @@ export default async function OutboundPage({
         </div>
       </FadeIn>
 
-      {/* 14.4 出库批次台账 */}
+      {/* 14.4 出库台账 (发货出库单 vs 损耗出库单分类单独展示) */}
       <FadeIn>
         <Card>
-          <CardHeader className="py-3 px-4 border-b flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-              <Truck className="size-4 text-primary" />
-              出库单列表
-            </CardTitle>
-            <span className="text-xs text-muted-foreground font-mono">共 {totalOrders} 笔出库批次</span>
+          <CardHeader className="py-3 px-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex flex-col gap-0.5">
+              <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
+                <Truck className="size-4 text-primary" />
+                出库台账
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                发货出库与损耗出库分类管理，损耗出库只核减库存/库存盘停，不产生发货
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 bg-muted/40 p-1 rounded-lg border border-border/70">
+              <Link
+                href="/outbound?tab=delivery"
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+                  activeTab === "delivery"
+                    ? "bg-background text-foreground shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span>发货出库单</span>
+                <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalOrders}</span>
+              </Link>
+              <Link
+                href="/outbound?tab=loss"
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+                  activeTab === "loss"
+                    ? "bg-background text-foreground shadow-xs font-semibold text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span>损耗出库单</span>
+                <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalLossOrders}</span>
+                {pendingLossOrdersCount > 0 && (
+                  <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                )}
+              </Link>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="rounded-md border-b overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="w-[140px]">出库批次号 (CK)</TableHead>
-                    <TableHead className="w-[90px]">类型</TableHead>
-                    <TableHead className="min-w-[150px]">去向</TableHead>
-                    <TableHead className="min-w-[180px]">出库规格明细</TableHead>
-                    <TableHead className="w-[110px]">总数</TableHead>
-                    <TableHead className="w-[90px]">状态</TableHead>
-                    <TableHead className="min-w-[160px]">物流信息</TableHead>
-                    <TableHead className="w-[140px]">申请/审核时间</TableHead>
-                    <TableHead className="text-right w-[140px]">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {orders.map((order: any) => {
-                    const isStore = order.type === "STORE_ORDER";
-                    const isApproved = order.status === "APPROVED";
-                    const isPending = order.status === "PENDING";
-                    const isRejected = order.status === "REJECTED";
-
-                    const lines = order.lines || [];
-                    const totalLineCount = lines.length;
-                    const filledLineCount = lines.filter((l: any) => Boolean(l.waybillNo)).length;
-                    const isAllLogisticsFilled = totalLineCount > 0 && filledLineCount === totalLineCount;
-
-                    // 出库明细聚合 chips（无 lines 时兜底批次规格，统一样式）
-                    const specChips: [string, number][] = lines.length > 0
-                      ? Object.entries(
-                          lines.reduce((acc: Record<string, number>, l: any) => {
-                            const key = `${l.gender === "FEMALE" ? "母" : "公"}${l.weightTier}`;
-                            acc[key] = (acc[key] || 0) + l.count;
-                            return acc;
-                          }, {} as Record<string, number>)
-                        )
-                      : [[`${order.batch?.gender === "FEMALE" ? "母" : "公"}${order.batch?.weightTier || "4.0两"}`, order.outboundCount]];
-
-                    return (
-                      <TableRow key={order.id} className="hover:bg-muted/30 transition-colors text-xs">
-                        {/* 1. 出库批次号 */}
-                        <TableCell className="align-middle">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-mono font-bold text-foreground text-xs">
-                              {order.code}
-                            </span>
-                            <span
-                              className="text-[10px] font-mono text-muted-foreground truncate max-w-[140px]"
-                              title={order.coldLog ? `${order.coldLog.code} (${order.coldLog.store?.code || "冷库"})` : undefined}
-                            >
-                              {order.coldLog
-                                ? `${order.coldLog.code} (${order.coldLog.store?.code || "冷库"})`
-                                : `${order.lines?.length || 1} 笔明细合单`}
-                            </span>
-                          </div>
-                        </TableCell>
-
-                        {/* 2. 类型徽标：门店订单=湖青 / 提蟹订单=蟹橙 */}
-                        <TableCell className="align-middle">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-[10px] font-medium px-1.5 py-0 h-5",
-                              isStore
-                                ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30"
-                                : "bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30"
-                            )}
-                          >
-                            {isStore ? "门店订单" : "提蟹订单"}
-                          </Badge>
-                        </TableCell>
-
-                        {/* 3. 去向 */}
-                        <TableCell className="align-middle">
-                          <div className="flex flex-col gap-0.5 items-start">
-                            <span className="font-medium text-foreground text-xs flex items-center gap-1">
-                              {isStore ? <StoreIcon className="size-3 text-cyan-600" /> : <ShoppingBag className="size-3 text-orange-600" />}
-                              {order.store?.name || order.storeName || (isStore ? getTenant().storeLabel : "蟹卡顺丰直发")}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground font-mono">
-                              {order.channel?.name || getTenant().channelName}
-                            </span>
-                          </div>
-                        </TableCell>
-
-                        {/* 4. 出库明细 (规格×数量 chip) */}
-                        <TableCell className="align-middle">
-                          <div className="flex flex-wrap gap-1">
-                            {specChips.map(([specName, count]) => (
-                              <span
-                                key={specName}
-                                className="px-1.5 py-0.5 rounded bg-muted/80 text-[10px] font-mono border"
-                              >
-                                {specName} · {count}只
-                              </span>
-                            ))}
-                          </div>
-                        </TableCell>
-
-                        {/* 5. 总数 */}
-                        <TableCell className="align-middle">
-                          <div className="flex items-baseline gap-1">
-                            <span className="font-mono font-bold text-primary text-sm leading-tight">
-                              {order.outboundCount.toLocaleString()}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground">只</span>
-                          </div>
-                        </TableCell>
-
-                        {/* 6. 状态 */}
-                        <TableCell className="align-middle">
-                          <Badge
-                            variant={
-                              isApproved ? "default" : isRejected ? "destructive" : "secondary"
-                            }
-                            className={cn(
-                              "font-normal text-[11px] py-0.5",
-                              isPending && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
-                              isApproved && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                            )}
-                          >
-                            {isPending && (
-                              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse mr-1 inline-block" />
-                            )}
-                            {isApproved ? "已出库" : isRejected ? "已驳回" : "待审核"}
-                          </Badge>
-                        </TableCell>
-
-                        {/* 7. 物流信息 */}
-                        <TableCell className="align-middle">
-                          {isStore ? (
-                            <span className="font-mono text-xs text-muted-foreground">门店自配</span>
-                          ) : isPending ? (
-                            <span className="text-xs text-muted-foreground font-mono">发货后回填</span>
-                          ) : isAllLogisticsFilled ? (
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-mono flex items-center gap-1 w-fit">
-                              <CheckCircle2 className="size-3" />
-                              物流已齐 · {totalLineCount} 单
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] font-mono flex items-center gap-1 w-fit">
-                              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
-                              待回填 {totalLineCount - filledLineCount} 单
-                            </Badge>
-                          )}
-                        </TableCell>
-
-                        {/* 8. 申请/审核时间 */}
-                        <TableCell className="align-middle">
-                          <div className="flex flex-col gap-0.5 font-mono text-[11px] text-muted-foreground">
-                            <span>申: {formatDateTime(order.createdAt)}</span>
-                            {order.approvedAt && <span>审: {formatDateTime(order.approvedAt)}</span>}
-                          </div>
-                        </TableCell>
-
-                        {/* 9. 操作 */}
-                        <TableCell className="text-right align-middle">
-                          <div className="flex items-center justify-end gap-1">
-                            <OutboundDetailDialog
-                              order={{
-                                id: order.id,
-                                code: order.code,
-                                type: order.type,
-                                storeName: order.store?.name || order.storeName,
-                                channelName: order.channel?.name,
-                                coldLogCode: order.coldLog?.code,
-                                coldStoreName: order.coldLog?.store?.name,
-                                outboundCount: order.outboundCount,
-                                logisticsNo: order.logisticsNo,
-                                status: order.status,
-                                applicantName: order.applicant?.fullName,
-                                approverName: order.approver?.fullName,
-                                approvalComment: order.approvalComment,
-                                approvedAt: order.approvedAt,
-                                createdAt: order.createdAt,
-                                lines: order.lines || [],
-                              }}
-                            />
-                            {!isStore && (
-                              <LogisticsBatchImportDialog
-                                outboundId={order.id}
-                                outboundCode={order.code}
-                                lines={order.lines || []}
-                                userId={currentUserId}
-                              />
-                            )}
-                            {isRejected && isWarehouseOrAdmin && (
-                              <ResubmitOutboundDialog
-                                order={order}
-                                stores={stores}
-                                userId={currentUserId}
-                              />
-                            )}
-                          </div>
-                        </TableCell>
+            {activeTab === "delivery" ? (
+              <>
+                <div className="rounded-md border-b overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-[140px]">出库批次号 (CK)</TableHead>
+                        <TableHead className="w-[90px]">类型</TableHead>
+                        <TableHead className="min-w-[150px]">去向</TableHead>
+                        <TableHead className="min-w-[180px]">出库规格明细</TableHead>
+                        <TableHead className="w-[110px]">总数</TableHead>
+                        <TableHead className="w-[90px]">状态</TableHead>
+                        <TableHead className="min-w-[160px]">物流信息</TableHead>
+                        <TableHead className="w-[140px]">申请/审核时间</TableHead>
+                        <TableHead className="text-right w-[140px]">操作</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-            <DataTablePagination total={totalOrders} page={page} pageSize={pageSize} />
+                    </TableHeader>
+                    <TableBody>
+                      {orders.map((order: any) => {
+                        const isStore = order.type === "STORE_ORDER";
+                        const isApproved = order.status === "APPROVED";
+                        const isPending = order.status === "PENDING";
+                        const isRejected = order.status === "REJECTED";
+
+                        const lines = order.lines || [];
+                        const totalLineCount = lines.length;
+                        const filledLineCount = lines.filter((l: any) => Boolean(l.waybillNo)).length;
+                        const isAllLogisticsFilled = totalLineCount > 0 && filledLineCount === totalLineCount;
+
+                        // 出库明细聚合 chips（无 lines 时兜底批次规格，统一样式）
+                        const specChips: [string, number][] = lines.length > 0
+                          ? Object.entries(
+                              lines.reduce((acc: Record<string, number>, l: any) => {
+                                const key = `${l.gender === "FEMALE" ? "母" : "公"}${l.weightTier}`;
+                                acc[key] = (acc[key] || 0) + l.count;
+                                return acc;
+                              }, {} as Record<string, number>)
+                            )
+                          : [[`${order.batch?.gender === "FEMALE" ? "母" : "公"}${order.batch?.weightTier || "4.0两"}`, order.outboundCount]];
+
+                        return (
+                          <TableRow key={order.id} className="hover:bg-muted/30 transition-colors text-xs">
+                            {/* 1. 出库批次号 */}
+                            <TableCell className="align-middle">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-mono font-bold text-foreground text-xs">
+                                  {order.code}
+                                </span>
+                                <span
+                                  className="text-[10px] font-mono text-muted-foreground truncate max-w-[140px]"
+                                  title={order.coldLog ? `${order.coldLog.code} (${order.coldLog.store?.code || "冷库"})` : undefined}
+                                >
+                                  {order.coldLog
+                                    ? `${order.coldLog.code} (${order.coldLog.store?.code || "冷库"})`
+                                    : `${order.lines?.length || 1} 笔明细合单`}
+                                </span>
+                              </div>
+                            </TableCell>
+
+                            {/* 2. 类型徽标：门店订单=湖青 / 提蟹订单=蟹橙 */}
+                            <TableCell className="align-middle">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px] font-medium px-1.5 py-0 h-5",
+                                  isStore
+                                    ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30"
+                                    : "bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30"
+                                )}
+                              >
+                                {isStore ? "门店订单" : "提蟹订单"}
+                              </Badge>
+                            </TableCell>
+
+                            {/* 3. 去向 */}
+                            <TableCell className="align-middle">
+                              <div className="flex flex-col gap-0.5 items-start">
+                                <span className="font-medium text-foreground text-xs flex items-center gap-1">
+                                  {isStore ? <StoreIcon className="size-3 text-cyan-600" /> : <ShoppingBag className="size-3 text-orange-600" />}
+                                  {order.store?.name || order.storeName || (isStore ? getTenant().storeLabel : "蟹卡顺丰直发")}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground font-mono">
+                                  {order.channel?.name || getTenant().channelName}
+                                </span>
+                              </div>
+                            </TableCell>
+
+                            {/* 4. 出库明细 (规格×数量 chip) */}
+                            <TableCell className="align-middle">
+                              <div className="flex flex-wrap gap-1">
+                                {specChips.map(([specName, count]) => (
+                                  <span
+                                    key={specName}
+                                    className="px-1.5 py-0.5 rounded bg-muted/80 text-[10px] font-mono border"
+                                  >
+                                    {specName} · {count}只
+                                  </span>
+                                ))}
+                              </div>
+                            </TableCell>
+
+                            {/* 5. 总数 */}
+                            <TableCell className="align-middle">
+                              <div className="flex items-baseline gap-1">
+                                <span className="font-mono font-bold text-primary text-sm leading-tight">
+                                  {order.outboundCount.toLocaleString()}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground">只</span>
+                              </div>
+                            </TableCell>
+
+                            {/* 6. 状态 */}
+                            <TableCell className="align-middle">
+                              <Badge
+                                variant={
+                                  isApproved ? "default" : isRejected ? "destructive" : "secondary"
+                                }
+                                className={cn(
+                                  "font-normal text-[11px] py-0.5",
+                                  isPending && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+                                  isApproved && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                )}
+                              >
+                                {isPending && (
+                                  <span className="size-1.5 rounded-full bg-amber-500 animate-pulse mr-1 inline-block" />
+                                )}
+                                {isApproved ? "已出库" : isRejected ? "已驳回" : "待审核"}
+                              </Badge>
+                            </TableCell>
+
+                            {/* 7. 物流信息 */}
+                            <TableCell className="align-middle">
+                              {isStore ? (
+                                <span className="font-mono text-xs text-muted-foreground truncate max-w-[150px] block" title={order.transportCompany || order.logisticsNo || "门店自配"}>
+                                  {order.transportCompany || order.logisticsNo || "门店自配"}
+                                </span>
+                              ) : isPending ? (
+                                <span className="text-xs text-muted-foreground font-mono">发货后回填</span>
+                              ) : isAllLogisticsFilled ? (
+                                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-mono flex items-center gap-1 w-fit">
+                                  <CheckCircle2 className="size-3" />
+                                  物流已齐 · {totalLineCount} 单
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] font-mono flex items-center gap-1 w-fit">
+                                  <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                  待回填 {totalLineCount - filledLineCount} 单
+                                </Badge>
+                              )}
+                            </TableCell>
+
+                            {/* 8. 申请/审核时间 */}
+                            <TableCell className="align-middle">
+                              <div className="flex flex-col gap-0.5 font-mono text-[11px] text-muted-foreground">
+                                <span>申: {formatDateTime(order.createdAt)}</span>
+                                {order.approvedAt && <span>审: {formatDateTime(order.approvedAt)}</span>}
+                              </div>
+                            </TableCell>
+
+                            {/* 9. 操作 */}
+                            <TableCell className="text-right align-middle">
+                              <div className="flex items-center justify-end gap-1">
+                                <OutboundDetailDialog
+                                  order={{
+                                    id: order.id,
+                                    code: order.code,
+                                    type: order.type,
+                                    storeName: order.store?.name || order.storeName,
+                                    channelName: order.channel?.name,
+                                    coldLogCode: order.coldLog?.code,
+                                    coldStoreName: order.coldLog?.store?.name,
+                                    outboundCount: order.outboundCount,
+                                    logisticsNo: order.logisticsNo,
+                                    transportCompany: order.transportCompany,
+                                    contactName: order.contactName,
+                                    contactPhone: order.contactPhone,
+                                    status: order.status,
+                                    applicantName: order.applicant?.fullName,
+                                    approverName: order.approver?.fullName,
+                                    approvalComment: order.approvalComment,
+                                    approvedAt: order.approvedAt,
+                                    createdAt: order.createdAt,
+                                    lines: order.lines || [],
+                                  }}
+                                />
+                                {!isStore && (
+                                  <LogisticsBatchImportDialog
+                                    outboundId={order.id}
+                                    outboundCode={order.code}
+                                    lines={order.lines || []}
+                                    userId={currentUserId}
+                                  />
+                                )}
+                                {isRejected && isWarehouseOrAdmin && (
+                                  <ResubmitOutboundDialog
+                                    order={order}
+                                    stores={stores}
+                                    userId={currentUserId}
+                                  />
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+                <DataTablePagination total={totalOrders} page={page} pageSize={pageSize} />
+              </>
+            ) : (
+              <>
+                <div className="rounded-md border-b overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-[140px]">损耗单号</TableHead>
+                        <TableHead className="w-[110px]">盘点日期</TableHead>
+                        <TableHead className="min-w-[200px]">损耗明细</TableHead>
+                        <TableHead className="w-[100px]">核减总数</TableHead>
+                        <TableHead className="w-[110px]">综合损耗率</TableHead>
+                        <TableHead className="min-w-[220px]">原因说明</TableHead>
+                        <TableHead className="w-[90px]">状态</TableHead>
+                        <TableHead className="w-[140px]">申请/审核时间</TableHead>
+                        <TableHead className="text-right w-[110px]">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lossOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-8 text-xs text-muted-foreground">
+                            暂无出库损耗单记录
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        lossOrders.map((loss: any) => {
+                          const isPending = loss.status === "PENDING";
+                          const isApproved = loss.status === "APPROVED";
+                          const isRejected = loss.status === "REJECTED";
+
+                          return (
+                            <TableRow key={loss.id} className="hover:bg-muted/30 transition-colors text-xs">
+                              {/* 1. 损耗单号 */}
+                              <TableCell className="align-middle">
+                                <span className="font-mono font-bold text-foreground text-xs">
+                                  {loss.code}
+                                </span>
+                              </TableCell>
+
+                              {/* 2. 盘点日期 */}
+                              <TableCell className="align-middle font-mono text-muted-foreground text-xs">
+                                {formatDate(loss.inventoryDate)}
+                              </TableCell>
+
+                              {/* 3. 损耗明细: 多个规格展开展示 */}
+                              <TableCell className="align-middle">
+                                <div className="flex flex-wrap gap-1.5 py-0.5">
+                                  {loss.items.map((item: any) => (
+                                    <span
+                                      key={item.id}
+                                      className={cn(
+                                        "px-2 py-0.5 rounded text-[11px] font-mono border whitespace-nowrap",
+                                        item.gender === "FEMALE"
+                                          ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                                          : "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30"
+                                      )}
+                                    >
+                                      {item.gender === "FEMALE" ? "母" : "公"}{item.weightTier} × {item.lossCount}
+                                    </span>
+                                  ))}
+                                </div>
+                              </TableCell>
+
+                              {/* 4. 核减总数 */}
+                              <TableCell className="align-middle">
+                                <span className="font-mono font-bold text-destructive text-sm">
+                                  -{loss.totalLossCount}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground ml-0.5">只</span>
+                              </TableCell>
+
+                              {/* 5. 综合损耗率 */}
+                              <TableCell className="align-middle">
+                                <div className="flex items-center gap-1.5 font-mono">
+                                  <span className={cn("font-medium", loss.isException ? "text-destructive" : "text-foreground")}>
+                                    {loss.lossRate.toFixed(1)}%
+                                  </span>
+                                  {loss.isException && (
+                                    <Badge variant="destructive" className="text-[10px] px-1 py-0 h-4 font-normal">
+                                      超标
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              {/* 6. 原因说明 */}
+                              <TableCell className="align-middle">
+                                <span className="text-xs text-muted-foreground truncate max-w-[220px] block" title={loss.reason}>
+                                  {loss.reason}
+                                </span>
+                              </TableCell>
+
+                              {/* 7. 状态 */}
+                              <TableCell className="align-middle">
+                                <Badge
+                                  variant={isApproved ? "default" : isRejected ? "destructive" : "secondary"}
+                                  className={cn(
+                                    "font-normal text-[11px] py-0.5",
+                                    isPending && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+                                    isApproved && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                  )}
+                                >
+                                  {isPending && (
+                                    <span className="size-1.5 rounded-full bg-amber-500 animate-pulse mr-1 inline-block" />
+                                  )}
+                                  {isApproved ? "已核销" : isRejected ? "已驳回" : "待审核"}
+                                </Badge>
+                              </TableCell>
+
+                              {/* 8. 申请/审核时间 */}
+                              <TableCell className="align-middle">
+                                <div className="flex flex-col gap-0.5 font-mono text-[11px] text-muted-foreground">
+                                  <span>申: {formatDateTime(loss.createdAt).slice(5)}</span>
+                                  {loss.approvedAt && <span>审: {formatDateTime(loss.approvedAt).slice(5)}</span>}
+                                </div>
+                              </TableCell>
+
+                              {/* 9. 操作 */}
+                              <TableCell className="text-right align-middle">
+                                <OutboundLossDetailDialog
+                                  order={{
+                                    id: loss.id,
+                                    code: loss.code,
+                                    inventoryDate: loss.inventoryDate,
+                                    totalLossCount: loss.totalLossCount,
+                                    lossRate: loss.lossRate,
+                                    isException: loss.isException,
+                                    reason: loss.reason,
+                                    status: loss.status,
+                                    rejectReason: loss.rejectReason,
+                                    applicantName: loss.applicant?.fullName,
+                                    approverName: loss.approver?.fullName,
+                                    approvalComment: loss.approvalComment,
+                                    approvedAt: loss.approvedAt,
+                                    createdAt: loss.createdAt,
+                                    items: loss.items || [],
+                                    records: loss.records || [],
+                                  }}
+                                  canApprove={canApproveOutbound}
+                                  triggerLabel={isPending ? "详情 (待审核)" : "详情"}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <DataTablePagination total={totalLossOrders} page={page} pageSize={pageSize} />
+              </>
+            )}
           </CardContent>
         </Card>
       </FadeIn>

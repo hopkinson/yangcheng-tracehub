@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, ArrowRight, ShieldAlert, Sparkles } from "lucide-react";
+import { Search, X, ArrowRight, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface TraceSearchHeroProps {
@@ -10,13 +10,6 @@ interface TraceSearchHeroProps {
   isChannelViewer?: boolean;
   channelName?: string;
 }
-
-const SAMPLE_QUERIES = [
-  { label: "门店订单", code: "SM20260920001" },
-  { label: "蟹卡提货", code: "KK20260920055" },
-  { label: "顺丰直发", code: "KK20260919018" },
-  { label: "出库批次", code: "CK2026092101" },
-];
 
 export function TraceSearchHero({
   initialQuery = "",
@@ -33,11 +26,6 @@ export function TraceSearchHero({
     } else {
       router.push(`/trace?query=${encodeURIComponent(query.trim())}`);
     }
-  };
-
-  const handleSampleClick = (code: string) => {
-    setQuery(code);
-    router.push(`/trace?query=${encodeURIComponent(code)}`);
   };
 
   return (
@@ -84,25 +72,6 @@ export function TraceSearchHero({
           <ArrowRight className="size-3.5" />
         </Button>
       </form>
-
-      {/* 快捷示例 */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-muted-foreground flex items-center gap-1 shrink-0">
-          <Sparkles className="size-3 text-primary" />
-          示例单号一键填充:
-        </span>
-        {SAMPLE_QUERIES.map((item) => (
-          <button
-            key={item.code}
-            type="button"
-            onClick={() => handleSampleClick(item.code)}
-            className="rounded border bg-muted/60 px-2 py-0.5 text-xs text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors cursor-pointer flex items-center gap-1 font-mono"
-          >
-            <span className="text-[10px] text-muted-foreground font-sans">{item.label}:</span>
-            {item.code}
-          </button>
-        ))}
-      </div>
 
       {/* 边界声明 Banner */}
       <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">

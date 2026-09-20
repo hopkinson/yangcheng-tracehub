@@ -57,7 +57,7 @@ async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = 
       select: { coldLogId: true, count: true },
     }),
     db.outboundLossRecord.findMany({
-      where: { coldLogId: { in: logIds } },
+      where: { coldLogId: { in: logIds }, status: { not: "REJECTED" } },
       select: { coldLogId: true, count: true },
     }),
   ]);
@@ -89,7 +89,7 @@ async function getColdStorageStock(gender: string, rawWeightTier: string, db: an
   const tiers = tierVariants(rawWeightTier);
   const lots = await getFifoColdLots(gender, rawWeightTier, db);
   const lossAgg = await db.outboundLossRecord.aggregate({
-    where: { gender, weightTier: { in: tiers } },
+    where: { gender, weightTier: { in: tiers }, status: { not: "REJECTED" } },
     _sum: { count: true },
   });
   return {
@@ -179,6 +179,13 @@ export type OutboundLossItemInput = {
   lossCount: number;
 };
 
+async function nextOutboundLossCode(tx: any): Promise<string> {
+  const dateStr = getBeijingDateStr().replace(/-/g, "");
+  const prefix = `SH${dateStr}`;
+  const count = await tx.outboundLossOrder.count({ where: { code: { startsWith: prefix } } });
+  return `${prefix}${String(count + 1).padStart(2, "0")}`;
+}
+
 export async function batchRegisterOutboundLossAction(data: {
   items: OutboundLossItemInput[];
   reason?: string;
@@ -200,9 +207,20 @@ export async function batchRegisterOutboundLossAction(data: {
   }
 
   const reason = data.reason?.trim() || "发货环节损耗盘点";
+  const totalLossCount = validItems.reduce((sum, item) => sum + item.lossCount, 0);
 
   const transactionResult = await prisma.$transaction(async (tx) => {
-    const results: Array<{ gender: string; weightTier: string; availableAfter: number; lossCount: number }> = [];
+    const code = await nextOutboundLossCode(tx);
+    const itemPlans: Array<{
+      item: { gender: string; weightTier: string; lossCount: number };
+      stock: { totalQualified: number; totalLoss: number; availableCount: number };
+      lossResult: any;
+      allocations: Array<{ coldLogId: string; count: number }>;
+    }> = [];
+
+    let totalAvailable = 0;
+    let totalQualified = 0;
+    let totalHistoricalLoss = 0;
 
     for (const item of validItems) {
       const { gender, weightTier, lossCount } = item;
@@ -213,71 +231,119 @@ export async function batchRegisterOutboundLossAction(data: {
         );
       }
 
-      const result = Invariants.calculateLoss({
+      const lossResult = Invariants.calculateLoss({
         bookInPool: stock.availableCount,
         physicalCount: stock.availableCount - lossCount,
         inPoolCount: stock.totalQualified,
         historicalLoss: stock.totalLoss,
       });
-      if (!result.valid) throw new Error(result.reason);
-
-      if (result.isException && !data.reason?.trim()) {
-        throw new Error(`${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier} 累计出库损耗率超 5%，请详细填写损耗原因`);
-      }
+      if (!lossResult.valid) throw new Error(lossResult.reason);
 
       const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx);
+
+      totalAvailable += stock.availableCount;
+      totalQualified += stock.totalQualified;
+      totalHistoricalLoss += stock.totalLoss;
+
+      itemPlans.push({ item, stock, lossResult, allocations });
+    }
+
+    const overallLossResult = Invariants.calculateLoss({
+      bookInPool: totalAvailable,
+      physicalCount: totalAvailable - totalLossCount,
+      inPoolCount: totalQualified,
+      historicalLoss: totalHistoricalLoss,
+    });
+
+    const isException =
+      itemPlans.some((p) => p.lossResult.isException) || Boolean(overallLossResult.isException);
+
+    if (isException && !data.reason?.trim()) {
+      throw new Error("累计出库损耗率超 5% 警戒线，请详细填写损耗原因说明");
+    }
+
+    // 1. 创建损耗出库主单 (PENDING 待审核)
+    const lossOrder = await tx.outboundLossOrder.create({
+      data: {
+        code,
+        inventoryDate: new Date(),
+        totalLossCount,
+        lossRate: overallLossResult.lossRate,
+        isException,
+        reason,
+        status: "PENDING",
+        applicantId: user.id,
+      },
+    });
+
+    // 2. 创建各规格明细条目与 FIFO 扣减分配
+    const results: Array<{ gender: string; weightTier: string; availableAfter: number; lossCount: number }> = [];
+
+    for (const plan of itemPlans) {
+      const { item, stock, lossResult, allocations } = plan;
+
+      await tx.outboundLossItem.create({
+        data: {
+          lossOrderId: lossOrder.id,
+          gender: item.gender,
+          weightTier: item.weightTier,
+          lossCount: item.lossCount,
+          lossRate: lossResult.lossRate,
+          isException: Boolean(lossResult.isException),
+        },
+      });
+
       for (const allocation of allocations) {
         await tx.outboundLossRecord.create({
           data: {
-            gender,
-            weightTier,
+            lossOrderId: lossOrder.id,
+            gender: item.gender,
+            weightTier: item.weightTier,
             count: allocation.count,
             reason,
+            status: "PENDING",
             coldLogId: allocation.coldLogId,
             operatorId: user.id,
           },
         });
       }
 
-      await tx.auditLog.create({
-        data: {
-          operatorId: user.id,
-          action: "OUTBOUND_LOSS_REGISTER",
-          entityType: "OUTBOUND_STOCK",
-          entityId: `${gender}_${weightTier}`,
-          details: JSON.stringify({
-            gender,
-            weightTier,
-            bookCount: stock.availableCount,
-            physicalCount: stock.availableCount - lossCount,
-            lossCount,
-            cumulativeLoss: result.totalLoss,
-            lossRate: result.lossRate,
-            reason,
-            fifoAllocations: allocations,
-          }),
-        },
-      });
-
       results.push({
-        gender,
-        weightTier,
-        availableAfter: stock.availableCount - lossCount,
-        lossCount,
+        gender: item.gender,
+        weightTier: item.weightTier,
+        availableAfter: stock.availableCount - item.lossCount,
+        lossCount: item.lossCount,
       });
     }
 
+    await tx.auditLog.create({
+      data: {
+        operatorId: user.id,
+        action: "OUTBOUND_LOSS_CREATE",
+        entityType: "OUTBOUND_LOSS_ORDER",
+        entityId: lossOrder.id,
+        details: JSON.stringify({
+          code,
+          totalLossCount,
+          lossRate: overallLossResult.lossRate,
+          isException,
+          reason,
+          items: validItems,
+        }),
+      },
+    });
+
     return {
+      lossOrder,
       results,
-      totalLossRecorded: results.reduce((acc, r) => acc + r.lossCount, 0),
+      totalLossRecorded: totalLossCount,
     };
   }, { isolationLevel: "Serializable" });
 
-  // 库存扣减已经提交后，不让页面缓存刷新失败把本次业务结果伪装成“登记失败”，
-  // 否则用户重试可能造成同一笔损耗重复登记。
   try {
     revalidatePath("/outbound");
     revalidatePath("/cold-storage");
+    revalidatePath("/approvals");
     revalidatePath("/ledgers");
     revalidatePath("/");
   } catch {}
@@ -318,6 +384,9 @@ export async function createStoreOutboundAction(data: {
 
     const contactName = data.contactName.trim();
     const contactPhone = data.contactPhone.trim();
+    const transportCompany = data.transportCompany?.trim() || null;
+    const defaultLogistics = transportCompany || "门店冷链专车自配";
+
     if (!contactName) throw new Error("请填写联系人");
     if (contactPhone.length < 5 || contactPhone.length > 20) throw new Error("请填写有效联系方式（5-20位）");
 
@@ -337,7 +406,11 @@ export async function createStoreOutboundAction(data: {
       }
 
       const totalCrabCount = orders.reduce((sum, order) => sum + order.count, 0);
-      const { lines, firstAllocation } = await buildFifoOutboundLines(orders, tx);
+      const { lines, firstAllocation } = await buildFifoOutboundLines(
+        orders,
+        tx,
+        () => ({ expressCompany: defaultLogistics })
+      );
       const orderCode = await nextOutboundCode(tx);
 
       const created = await tx.outboundOrder.create({
@@ -349,8 +422,8 @@ export async function createStoreOutboundAction(data: {
           channelId: store.channelId,
           outboundCount: totalCrabCount,
           channelOrderCount: totalCrabCount,
-          logisticsNo: "门店冷链专车自配",
-          transportCompany: data.transportCompany?.trim() || null,
+          logisticsNo: defaultLogistics,
+          transportCompany,
           contactName,
           contactPhone,
           status: "PENDING",

@@ -33,7 +33,7 @@ export function TagClaimDialog({
     resolver: zodResolver(tagClaimFormSchema),
     defaultValues: {
       farmerId: farmers[0]?.id || "",
-      claimCount: 500,
+      claimCount: undefined,
     },
   });
 
@@ -41,7 +41,7 @@ export function TagClaimDialog({
     if (open) {
       form.reset({
         farmerId: farmers[0]?.id || "",
-        claimCount: 500,
+        claimCount: undefined,
       });
     }
   }, [open, farmers, form]);
@@ -149,7 +149,14 @@ export function TagClaimDialog({
                 <FormItem>
                   <FormLabel>本次领用数量 (只)</FormLabel>
                   <FormControl>
-                    <Input type="number" min="1" max={maxClaimable || undefined} {...field} />
+                    <Input
+                      type="number"
+                      min="1"
+                      max={maxClaimable || undefined}
+                      placeholder="请输入领用数量"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

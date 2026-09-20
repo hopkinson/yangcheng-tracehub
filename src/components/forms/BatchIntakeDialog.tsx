@@ -13,7 +13,8 @@ import { uploadFileAction } from "@/actions/upload";
 import { batchIntakeFormSchema, type BatchIntakeFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Waves, Upload, FileText, X } from "lucide-react";
+import { Plus, Waves, Upload, FileText, X, Loader2 } from "lucide-react";
+import { cn, getFileDropHandlers } from "@/lib/utils";
 
 export const WEIGHT_TIERS = [
   "2.0两",
@@ -51,6 +52,8 @@ export function BatchIntakeDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const defaultFarmer = farmers[0];
   const defaultEnclosure = defaultFarmer?.enclosures[0]?.id || "";
@@ -91,6 +94,7 @@ export function BatchIntakeDialog({
 
   const selectedFarmerId = form.watch("farmerId");
   const currentFarmer = farmers.find((f) => f.id === selectedFarmerId);
+  const enclosures = currentFarmer?.enclosures || [];
   const selectedGender = form.watch("gender");
   const selectedWeight = form.watch("weightTier");
   const reportName = form.watch("reportName");
@@ -102,15 +106,12 @@ export function BatchIntakeDialog({
   const remainingQuota = Math.max(0, farmerQuota - cumulativeInPool);
   const isOverQuota = farmerQuota > 0 && numInPool > remainingQuota;
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (target: File | React.ChangeEvent<HTMLInputElement>) => {
+    const file = target instanceof File ? target : target.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) return toast.error("文件不能超过 10MB");
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("文件不能超过 10MB");
-      return;
-    }
-
+    setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -119,8 +120,10 @@ export function BatchIntakeDialog({
       form.setValue("reportName", res.name);
       toast.success(`报告已上传: ${res.name}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "文件上传失败";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "文件上传失败");
+    } finally {
+      setUploading(false);
+      if (!(target instanceof File)) target.target.value = "";
     }
   };
 
@@ -409,13 +412,36 @@ export function BatchIntakeDialog({
                   </Button>
                 </div>
               ) : (
-                <label className="flex flex-col items-center justify-center rounded-md border border-dashed p-3 hover:bg-muted/50 cursor-pointer transition-colors">
-                  <Upload className="size-4 text-muted-foreground mb-1" />
-                  <span className="text-xs text-muted-foreground font-medium">点击上传批次检测报告文件</span>
+                <label
+                  {...getFileDropHandlers(handleFileUpload, setIsDragging, uploading)}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 cursor-pointer transition-all",
+                    isDragging
+                      ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20 text-primary"
+                      : "border-dashed hover:bg-muted/50 text-muted-foreground"
+                  )}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin text-primary mb-1" />
+                      <span className="text-xs font-medium text-primary">报告上传中...</span>
+                    </>
+                  ) : isDragging ? (
+                    <>
+                      <Upload className="size-4 text-primary animate-bounce mb-1" />
+                      <span className="text-xs font-medium text-primary">松开鼠标即可上传检测报告</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-4 text-muted-foreground mb-1" />
+                      <span className="text-xs font-medium">点击或拖拽上传批次检测报告文件</span>
+                    </>
+                  )}
                   <input
                     type="file"
                     accept=".pdf,image/png,image/jpeg"
                     className="hidden"
+                    disabled={uploading}
                     onChange={handleFileUpload}
                   />
                 </label>

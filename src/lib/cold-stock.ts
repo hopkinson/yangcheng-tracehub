@@ -34,7 +34,7 @@ export function aggregateTraceableColdStocks({
   }>;
   coldLogs: Array<{ id: string; count: number; type?: string; sortTaskId: string }>;
   outboundLines?: Array<{ count: number; coldLogId: string }>;
-  outboundLosses?: Array<{ count: number; coldLogId: string }>;
+  outboundLosses?: Array<{ count: number; coldLogId: string; status?: string }>;
   defaultSpecs?: Array<{ gender: string; weightTier: string }>;
 }): ColdSpecStock[] {
   const taskMap = new Map(sortTasks.map((task) => [task.id, task] as const));
@@ -53,8 +53,9 @@ export function aggregateTraceableColdStocks({
     coldLogSpecs.set(log.id, spec);
   }
 
-  const addUsage = (rows: Array<{ count: number; coldLogId: string }>, kind: "used" | "loss") => {
+  const addUsage = (rows: Array<{ count: number; coldLogId: string; status?: string }>, kind: "used" | "loss") => {
     for (const row of rows) {
+      if (row.status === "REJECTED") continue;
       const spec = coldLogSpecs.get(row.coldLogId);
       if (!spec) continue;
       const key = `${spec.gender}_${spec.weightTier}`;

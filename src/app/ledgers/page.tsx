@@ -250,7 +250,7 @@ export default async function LedgersPage({
             store: true,
             sortTask: { include: { bundleBatch: { include: { sourceBatch: true } } } },
             outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
-            outboundLosses: true,
+            outboundLosses: { where: { status: { not: "REJECTED" } } },
           },
           orderBy: { createdAt: "desc" },
         }),
@@ -350,9 +350,13 @@ export default async function LedgersPage({
   }
 
   const farmerRows = farmers.map((farmer) => {
-    const cumulativeBound = farmer.tagClaims.reduce((sum, claim) => sum + claim.boundCount, 0);
-    const cumulativeScrapped = farmer.tagClaims.reduce((sum, claim) => sum + claim.scrappedCount, 0);
-    const cumulativeReturned = farmer.tagClaims.reduce((sum, claim) => sum + claim.returnedCount, 0);
+    let cumulativeClaimed = 0, cumulativeBound = 0, cumulativeScrapped = 0, cumulativeReturned = 0;
+    for (const c of farmer.tagClaims) {
+      cumulativeClaimed += c.claimCount;
+      cumulativeBound += c.boundCount;
+      cumulativeScrapped += c.scrappedCount;
+      cumulativeReturned += c.returnedCount;
+    }
     const cumulativeInPool = farmer.batches.reduce((sum, batch) => sum + batch.inPoolCount, 0);
     const cumulativeOutbound = shippedByFarmer.get(farmer.id) || 0;
     const exportRow: ExportValue[] = [
@@ -363,6 +367,7 @@ export default async function LedgersPage({
       farmer.area,
       farmer.quota,
       cumulativeInPool,
+      cumulativeClaimed,
       cumulativeBound,
       cumulativeScrapped,
       cumulativeReturned,
@@ -374,7 +379,7 @@ export default async function LedgersPage({
     ];
     const displayRow: ReactNode[] = [...exportRow];
     if (farmer.contractUrl) {
-      displayRow[14] = (
+      displayRow[displayRow.length - 1] = (
         <a href={farmer.contractUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
           {farmer.contractName || "查看附件"}
         </a>
@@ -707,7 +712,7 @@ export default async function LedgersPage({
     });
 
   const headers = {
-    l1: ["编号", "姓名", "养殖类型", "围网", "面积(亩)", "年度额度(只)", "累计入池(只)", "累计领扣(只)", "累计作废", "累计回退", "累计出库(只)", "额度结余(只)", "信用评级", "合作状态", "合同附件"],
+    l1: ["编号", "姓名", "养殖类型", "围网", "面积(亩)", "年度额度(只)", "累计入池(只)", "累计领扣(只)", "累计绑扎(只)", "累计作废", "累计回退", "累计出库(只)", "额度结余(只)", "信用评级", "合作状态", "合同附件"],
     l2: ["入库日期", "入库时间", "原料批次", "养殖户", "规格(两)", "公母", "只数", "斤数", "池名", "池号", "在池", "发货", "累计损耗", "损耗率", "农残快检", "品质抽检", "跟车员"],
     l3: ["申领日期", "申领时间", "蟹扣批次", "蟹扣养殖户", "申领数", "完成绑扎", "退回", "作废", "差额", "轧平校验", "累计绑扎", "剩余额度", "申请人", "复核人", "审核状态"],
     l4: ["入池日期", "入池时间", "池名", "池号", "原料批次", "养殖户", "围网", "入池数量", "绑扎数量", "在池数量", "损耗(只)", "损耗率"],

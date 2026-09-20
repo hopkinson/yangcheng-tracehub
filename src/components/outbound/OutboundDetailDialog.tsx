@@ -29,6 +29,9 @@ export function OutboundDetailDialog({
     coldStoreName?: string | null;
     outboundCount: number;
     logisticsNo?: string | null;
+    transportCompany?: string | null;
+    contactName?: string | null;
+    contactPhone?: string | null;
     status: string;
     applicantName?: string | null;
     approverName?: string | null;
@@ -98,7 +101,7 @@ export function OutboundDetailDialog({
 
         <div className="space-y-4 flex-1 overflow-y-auto px-1 py-1 text-xs">
           {/* 基本信息面板 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg border bg-muted/20">
+          <div className={cn("grid gap-2.5 p-3 rounded-lg border bg-muted/20", order.contactName ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-4")}>
             <div>
               <span className="text-[11px] text-muted-foreground block">去向 / 门店</span>
               <span className="font-medium text-foreground">{order.storeName || (isStore ? getTenant().storeLabel : "蟹卡直发")}</span>
@@ -112,11 +115,23 @@ export function OutboundDetailDialog({
               <span className="font-mono text-muted-foreground">{formatDateTime(order.createdAt)}</span>
             </div>
             <div>
-              <span className="text-[11px] text-muted-foreground block">{isStore ? "配送方式" : "物流单号"}</span>
-              <span className="font-mono font-medium truncate block" title={order.logisticsNo || ""}>
-                {order.logisticsNo || (isStore ? "门店自配" : "发货后回填")}
+              <span className="text-[11px] text-muted-foreground block">{isStore ? "承运物流 / 配送方式" : "物流单号"}</span>
+              <span className="font-mono font-medium truncate block" title={order.transportCompany || order.logisticsNo || ""}>
+                {order.transportCompany || order.logisticsNo || (isStore ? "门店自配" : "发货后回填")}
               </span>
             </div>
+            {order.contactName && (
+              <div>
+                <span className="text-[11px] text-muted-foreground block">联系人</span>
+                <span className="font-medium text-foreground">{order.contactName}</span>
+              </div>
+            )}
+            {order.contactPhone && (
+              <div>
+                <span className="text-[11px] text-muted-foreground block">联系方式</span>
+                <span className="font-mono text-muted-foreground">{order.contactPhone}</span>
+              </div>
+            )}
           </div>
 
           {order.coldLogCode && (
@@ -185,7 +200,7 @@ export function OutboundDetailDialog({
                       <TableCell className="font-mono font-bold text-xs">{l.count} 只</TableCell>
                       <TableCell className="font-mono text-xs">
                         {isStore ? (
-                          <span className="text-muted-foreground">门店自配专车</span>
+                          <span className="text-muted-foreground">{order.transportCompany || "门店自配专车"}</span>
                         ) : l.waybillNo ? (
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] px-1 bg-emerald-500/10 text-emerald-600 rounded border border-emerald-500/20">

@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Truck, Loader2, Download, UploadCloud, FileCheck2 } from "lucide-react";
 import { batchImportLogisticsAction, updateSingleLineLogisticsAction } from "@/actions/outbound";
 import { readExcelFile, downloadExcelTemplate } from "@/lib/excel";
+import { cn, getFileDropHandlers } from "@/lib/utils";
 
 export function LogisticsBatchImportDialog({
   outboundId,
@@ -41,6 +42,7 @@ export function LogisticsBatchImportDialog({
   const [mode, setMode] = useState<"excel" | "manual">("excel");
   const [rawText, setRawText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -181,14 +183,14 @@ export function LogisticsBatchImportDialog({
           <form onSubmit={handleImport} className="space-y-3 py-1 flex-1 flex flex-col min-h-0">
             {/* 上传区域 */}
             <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const f = e.dataTransfer.files?.[0];
-                if (f) handleFileUpload(f);
-              }}
+              {...getFileDropHandlers(handleFileUpload, setIsDragging)}
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:bg-muted/40 transition-colors flex flex-col items-center justify-center gap-1.5 bg-muted/10"
+              className={cn(
+                "border-2 rounded-lg p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5",
+                isDragging
+                  ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20 text-primary"
+                  : "border-dashed hover:bg-muted/40 bg-muted/10"
+              )}
             >
               <input
                 ref={fileInputRef}
@@ -198,6 +200,7 @@ export function LogisticsBatchImportDialog({
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) handleFileUpload(f);
+                  e.target.value = "";
                 }}
               />
               {fileName ? (
@@ -208,9 +211,9 @@ export function LogisticsBatchImportDialog({
                 </div>
               ) : (
                 <>
-                  <UploadCloud className="size-6 text-muted-foreground" />
-                  <div className="text-xs text-foreground font-medium">
-                    点击选择 或 拖拽已填好运单号的 Excel 到此处
+                  <UploadCloud className={cn("size-6", isDragging ? "text-primary animate-bounce" : "text-muted-foreground")} />
+                  <div className="text-xs font-medium">
+                    {isDragging ? "松开鼠标即可导入 Excel 文件" : "点击选择 或 拖拽已填好运单号的 Excel 到此处"}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     支持 .xlsx / .xls / .csv 格式（可先点击右上角导出待回填表格）

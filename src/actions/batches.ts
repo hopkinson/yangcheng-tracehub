@@ -276,6 +276,7 @@ export async function createMultiSpecBatchAction(data: {
           humidity: data.humidity || 85.0,
           escort: data.escort || "跟车员",
           slipUrl: data.slipUrl || null,
+          slipName: data.slipName || null,
           quickCheck: data.quickCheck || "PENDING",
           quickCheckUrl: data.quickCheckUrl || null,
           quickCheckName: data.quickCheckName || null,

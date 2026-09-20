@@ -25,6 +25,7 @@ import { importOrdersAction } from "@/actions/production";
 import { Invariants, type RawImportOrder } from "@/lib/invariants";
 import { getTenant } from "@/config/tenant";
 import { readExcelFile, downloadExcelTemplate } from "@/lib/excel";
+import { cn, getFileDropHandlers } from "@/lib/utils";
 
 export function OrderImportDialog() {
   const [open, setOpen] = useState(false);
@@ -34,6 +35,7 @@ export function OrderImportDialog() {
   const [inputText, setInputText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsedPreview, setParsedPreview] = useState<RawImportOrder[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -165,14 +167,14 @@ export function OrderImportDialog() {
 
           {/* 拖拽上传区域 */}
           <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) handleFileUpload(f);
-            }}
+            {...getFileDropHandlers(handleFileUpload, setIsDragging)}
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:bg-muted/40 transition-colors flex flex-col items-center justify-center gap-1.5 bg-muted/10"
+            className={cn(
+              "border-2 rounded-lg p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5",
+              isDragging
+                ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20 text-primary"
+                : "border-dashed hover:bg-muted/40 bg-muted/10"
+            )}
           >
             <input
               ref={fileInputRef}
@@ -182,6 +184,7 @@ export function OrderImportDialog() {
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) handleFileUpload(f);
+                e.target.value = "";
               }}
             />
             {fileName ? (
@@ -192,9 +195,9 @@ export function OrderImportDialog() {
               </div>
             ) : (
               <>
-                <UploadCloud className="size-7 text-muted-foreground" />
-                <div className="text-xs text-foreground font-medium">
-                  点击选择 或 拖拽 Excel 文件到此处
+                <UploadCloud className={cn("size-7", isDragging ? "text-primary animate-bounce" : "text-muted-foreground")} />
+                <div className="text-xs font-medium">
+                  {isDragging ? "松开鼠标即可导入 Excel 文件" : "点击选择 或 拖拽 Excel 文件到此处"}
                 </div>
                 <div className="text-[11px] text-muted-foreground">
                   支持 .xlsx / .xls / .csv 格式，导入前可先下载上方标准模板

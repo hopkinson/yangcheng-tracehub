@@ -25,6 +25,8 @@ model User {
   createdBatches  Batch[]          @relation("BatchCreator")
   lossRecords     LossRecord[]     @relation("LossInspector")
   outboundLossRecords OutboundLossRecord[] @relation("OutboundLossOperator")
+  outboundLossOrders OutboundLossOrder[] @relation("OutboundLossApplicant")
+  approvedLossOrders OutboundLossOrder[] @relation("OutboundLossApprover")
   tagClaims       TagClaim[]       @relation("TagApplicant")
   approvedClaims  TagClaim[]       @relation("TagApprover")
   outboundOrders  OutboundOrder[]  @relation("OutboundApplicant")
@@ -490,6 +492,9 @@ model OutboundLossRecord {
   weightTier  String   // 标准化规格，如 4.0两
   count       Int      // 本次损耗只数
   reason      String
+  status      String   @default("APPROVED") // PENDING, APPROVED, REJECTED
+  lossOrderId String?
+  lossOrder   OutboundLossOrder? @relation(fields: [lossOrderId], references: [id], onDelete: Cascade)
   coldLogId   String
   coldLog     ColdLog  @relation(fields: [coldLogId], references: [id], onDelete: Restrict)
   operatorId  String
@@ -498,6 +503,46 @@ model OutboundLossRecord {
 
   @@index([gender, weightTier, createdAt])
   @@index([coldLogId])
+  @@index([lossOrderId])
+}
+
+model OutboundLossOrder {
+  id              String      @id @default(cuid())
+  code            String      @unique // SH+YYYYMMDD+XX, 如 SH2026092101
+  inventoryDate   DateTime    @default(now()) // 盘点日期
+  totalLossCount  Int         @default(0) // 核减总数
+  lossRate        Float       @default(0) // 综合损耗率 (%)
+  isException     Boolean     @default(false) // 综合损耗率 > 5% 标记超标
+  reason          String      // 原因说明
+  status          String      @default("PENDING") // PENDING (待审核), APPROVED (已核销), REJECTED (已驳回)
+  rejectReason    String?
+
+  applicantId     String
+  applicant       User        @relation("OutboundLossApplicant", fields: [applicantId], references: [id])
+  approverId      String?
+  approver        User?       @relation("OutboundLossApprover", fields: [approverId], references: [id])
+  approvalComment String?
+  approvedAt      DateTime?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items           OutboundLossItem[]
+  records         OutboundLossRecord[]
+}
+
+model OutboundLossItem {
+  id              String            @id @default(cuid())
+  lossOrderId     String
+  lossOrder       OutboundLossOrder @relation(fields: [lossOrderId], references: [id], onDelete: Cascade)
+  gender          String            // MALE, FEMALE
+  weightTier      String            // 4.0两
+  lossCount       Int               // 规格核减只数
+  lossRate        Float             @default(0) // 单规格损耗率 (%)
+  isException     Boolean           @default(false) // 是否超 5%
+  createdAt       DateTime          @default(now())
+
+  @@index([lossOrderId])
 }
 
 // -------------------------------------------------------------

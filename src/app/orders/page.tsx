@@ -7,6 +7,8 @@ import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
 import { formatISODate } from "@/lib/utils";
+import { Invariants } from "@/lib/invariants";
+import { aggregatePipelineStocks } from "@/lib/order-stock";
 
 export const dynamic = "force-dynamic";
 
@@ -54,19 +56,51 @@ export default async function OrdersPage({
     page * pageSize
   );
 
-  // 2. 查询当前暂养池在池存活数 (按公母+规格聚合)
-  const batchItems = await prisma.batchItem.findMany({
-    where: {
-      batch: { status: { not: "FROZEN" } },
-    },
-  });
+  // 2. 并行查询全流程工序数据（暂养、捆扎、分拣、保鲜）
+  const [
+    batches,
+    batchItems,
+    bundleBatches,
+    sortTasks,
+    coldLogs,
+    outboundLines,
+    outboundLosses,
+  ] = await Promise.all([
+    prisma.batch.findMany({
+      where: { status: { not: "FROZEN" } },
+      select: { id: true, gender: true, weightTier: true, inPoolCount: true, outPoolCount: true, lossCount: true, status: true },
+    }),
+    prisma.batchItem.findMany({
+      where: { batch: { status: { not: "FROZEN" } } },
+      select: { batchId: true, gender: true, weightTier: true, inPoolCount: true, outPoolCount: true, lossCount: true },
+    }),
+    prisma.bundleBatch.findMany({
+      select: { id: true, lines: { select: { gender: true, weightTier: true, count: true } } },
+    }),
+    prisma.sortTask.findMany({
+      select: { id: true, bundleBatchId: true, gender: true, weightTier: true, inputCount: true, qualifiedCount: true },
+    }),
+    prisma.coldLog.findMany({
+      select: { id: true, type: true, sortTaskId: true, count: true },
+    }),
+    prisma.outboundLine.findMany({
+      where: { outboundOrder: { status: { not: "REJECTED" } } },
+      select: { count: true, coldLogId: true },
+    }),
+    prisma.outboundLossRecord.findMany({
+      select: { count: true, coldLogId: true },
+    }),
+  ]);
 
-  const poolStockMap: Record<string, number> = {};
-  for (const item of batchItems) {
-    const key = `${item.gender}_${item.weightTier}`;
-    const live = Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount);
-    poolStockMap[key] = (poolStockMap[key] || 0) + live;
-  }
+  const pipelineStocks = aggregatePipelineStocks({
+    batches,
+    batchItems,
+    bundleBatches,
+    sortTasks,
+    coldLogs,
+    outboundLines,
+    outboundLosses,
+  });
 
   // 3. 汇总当前所选范围的发货需求
   const demandSummaryMap: Record<
@@ -132,10 +166,11 @@ export default async function OrdersPage({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {demandSummaries.map((dem) => {
-                const stockKey = `${dem.gender}_${dem.weightTier}`;
-                const liveStock = poolStockMap[stockKey] || 0;
+                const stockKey = `${dem.gender}_${Invariants.normalizeWeightTier(dem.weightTier)}`;
+                const stock = pipelineStocks[stockKey] ?? { holding: 0, bundling: 0, sorting: 0, cold: 0, total: 0 };
                 const isFullyShipped = dem.pendingCount === 0;
-                const gap = dem.pendingCount > liveStock ? dem.pendingCount - liveStock : 0;
+                const gap = dem.pendingCount > stock.total ? dem.pendingCount - stock.total : 0;
+                const canDirectShip = stock.cold >= dem.pendingCount;
 
                 return (
                   <div
@@ -154,9 +189,13 @@ export default async function OrdersPage({
                         <Badge variant="destructive" className="text-[10px]">
                           <AlertTriangle className="size-3 mr-1" /> 缺口 {gap} 只
                         </Badge>
+                      ) : canDirectShip ? (
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]">
+                          <CheckCircle2 className="size-3 mr-1" /> 冷库现货充足
+                        </Badge>
                       ) : (
                         <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
-                          可满足
+                          流转可满足
                         </Badge>
                       )}
                     </div>
@@ -167,8 +206,28 @@ export default async function OrdersPage({
                         <span className="text-sm font-bold text-foreground">{dem.pendingCount} 只</span>
                       </div>
                       <div>
-                        <span className="text-[11px] text-muted-foreground block">暂养在池存活</span>
-                        <span className="text-sm font-bold text-primary">{liveStock} 只</span>
+                        <span className="text-[11px] text-muted-foreground block">全链可用总存量</span>
+                        <span className="text-sm font-bold text-primary">{stock.total} 只</span>
+                      </div>
+                    </div>
+
+                    {/* 四道工序协同流转明细：保鲜、分拣、捆扎、暂养 */}
+                    <div className="grid grid-cols-4 gap-1 text-[10px] text-muted-foreground font-mono pt-1.5 border-t border-border/40 text-center">
+                      <div title="保鲜库即时可用库存">
+                        <span className="block text-[9px] text-muted-foreground/80">保鲜</span>
+                        <span className="font-semibold text-foreground">{stock.cold}</span>
+                      </div>
+                      <div title="分拣合格待入冷库">
+                        <span className="block text-[9px] text-muted-foreground/80">分拣</span>
+                        <span className="font-semibold text-foreground">{stock.sorting}</span>
+                      </div>
+                      <div title="捆扎在制或待分拣">
+                        <span className="block text-[9px] text-muted-foreground/80">捆扎</span>
+                        <span className="font-semibold text-foreground">{stock.bundling}</span>
+                      </div>
+                      <div title="暂养池存活待起池">
+                        <span className="block text-[9px] text-muted-foreground/80">暂养</span>
+                        <span className="font-semibold text-foreground">{stock.holding}</span>
                       </div>
                     </div>
                   </div>

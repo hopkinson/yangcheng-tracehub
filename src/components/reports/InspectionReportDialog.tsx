@@ -26,6 +26,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { cn, getFileDropHandlers } from "@/lib/utils";
 import {
   createInspectionReportAction,
   deleteInspectionReportAction,
@@ -57,6 +58,8 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
   const [file, setFile] = useState<File | null>(null);
   const [license, setLicense] = useState<File | "REMOVE" | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isDraggingLicense, setIsDraggingLicense] = useState(false);
   const isEditing = !!report;
   const form = useForm<InspectionReportFormValues>({
     resolver: zodResolver(inspectionReportFormSchema),
@@ -158,7 +161,15 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4">
             <div className="grid gap-1.5">
               <label className="text-xs font-medium">报告附件</label>
-              <div className="rounded-md border border-dashed p-3">
+              <div
+                {...getFileDropHandlers(handleFileChange, setIsDraggingFile, isEditing)}
+                className={cn(
+                  "rounded-md border p-3 transition-all",
+                  isDraggingFile
+                    ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20"
+                    : "border-dashed"
+                )}
+              >
                 {isEditing ? (
                   <div className="flex items-center gap-2 text-sm">
                     <FileText className="size-4 shrink-0 text-primary" />
@@ -182,13 +193,16 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                   </div>
                 ) : (
                   <label className="flex cursor-pointer items-center justify-center gap-2 py-2 text-sm text-muted-foreground hover:text-foreground">
-                    <Upload className="size-4" />
-                    选择 PDF / JPG / PNG 文件
+                    <Upload className={cn("size-4", isDraggingFile && "text-primary animate-bounce")} />
+                    <span>{isDraggingFile ? "松开鼠标即可上传报告文件" : "点击或拖拽上传 PDF / JPG / PNG 文件"}</span>
                     <input
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                       className="hidden"
-                      onChange={(event) => handleFileChange(event.target.files?.[0])}
+                      onChange={(event) => {
+                        handleFileChange(event.target.files?.[0]);
+                        event.target.value = "";
+                      }}
                     />
                   </label>
                 )}
@@ -206,7 +220,15 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                 )}
               </div>
 
-              <div className="rounded-md border border-dashed p-3">
+              <div
+                {...getFileDropHandlers(handleLicenseFileChange, setIsDraggingLicense)}
+                className={cn(
+                  "rounded-md border p-3 transition-all",
+                  isDraggingLicense
+                    ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20"
+                    : "border-dashed"
+                )}
+              >
                 {license instanceof File ? (
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -255,7 +277,10 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                           className="hidden"
-                          onChange={(event) => handleLicenseFileChange(event.target.files?.[0])}
+                          onChange={(event) => {
+                            handleLicenseFileChange(event.target.files?.[0]);
+                            event.target.value = "";
+                          }}
                         />
                       </label>
                       <Button
@@ -272,13 +297,22 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                   </div>
                 ) : (
                   <label className="flex cursor-pointer items-center justify-center gap-2 py-2 text-sm text-muted-foreground hover:text-foreground">
-                    <Upload className="size-4" />
-                    {isEditing ? "补传营业执照 (PDF / JPG / PNG)" : "选择 PDF / JPG / PNG 文件"}
+                    <Upload className={cn("size-4", isDraggingLicense && "text-primary animate-bounce")} />
+                    <span>
+                      {isDraggingLicense
+                        ? "松开鼠标即可上传营业执照"
+                        : isEditing
+                        ? "点击或拖拽补传营业执照 (PDF / JPG / PNG)"
+                        : "点击或拖拽选择 PDF / JPG / PNG 文件"}
+                    </span>
                     <input
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                       className="hidden"
-                      onChange={(event) => handleLicenseFileChange(event.target.files?.[0])}
+                      onChange={(event) => {
+                        handleLicenseFileChange(event.target.files?.[0]);
+                        event.target.value = "";
+                      }}
                     />
                   </label>
                 )}

@@ -15,6 +15,7 @@ import { farmerFormSchema, type FarmerFormValues } from "@/lib/validations/schem
 import { findDuplicateEnclosureCodes, normalizeEnclosureCodes } from "@/lib/enclosures";
 import { toast } from "sonner";
 import { Plus, Edit2, Scale, Upload, Loader2, Eye, Trash2, FileText } from "lucide-react";
+import { cn, getFileDropHandlers } from "@/lib/utils";
 
 interface FarmerData {
   id: string;
@@ -46,6 +47,7 @@ export interface FarmerWithStats extends FarmerData {
   quota: number;
   cumulativeInPool: number;
   cumulativeClaimed: number;
+  cumulativeBound?: number;
   cumulativeOutbound: number;
   remainingQuota: number;
 }
@@ -66,6 +68,7 @@ export function FarmerDialog({
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isContractDragging, setIsContractDragging] = useState(false);
   const isEditing = !!farmer;
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
@@ -94,14 +97,8 @@ export function FarmerDialog({
   const watchedContractUrl = form.watch("contractUrl");
   const watchedContractName = form.watch("contractName");
 
-  async function handleContractUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("合同附件大小不能超过 10MB");
-      return;
-    }
+  async function uploadContractFile(file: File) {
+    if (file.size > 10 * 1024 * 1024) return toast.error("合同附件大小不能超过 10MB");
 
     setUploading(true);
     try {
@@ -112,11 +109,9 @@ export function FarmerDialog({
       form.setValue("contractName", res.name, { shouldDirty: true, shouldValidate: true });
       toast.success(`合同上传成功: ${res.name}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "合同上传失败";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "合同上传失败");
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   }
 
@@ -360,15 +355,41 @@ export function FarmerDialog({
                   </div>
                 </div>
               ) : (
-                <label className="h-9 border border-dashed rounded-md flex items-center justify-center gap-2 px-3 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer transition-colors">
-                  {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-                  <span>{uploading ? "正在上传合同..." : "点击上传养殖合同附件 (PDF / 图片)"}</span>
+                <label
+                  {...getFileDropHandlers(uploadContractFile, setIsContractDragging, uploading)}
+                  className={cn(
+                    "h-9 border rounded-md flex items-center justify-center gap-2 px-3 text-xs cursor-pointer transition-all",
+                    isContractDragging
+                      ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20 text-primary"
+                      : "border-dashed text-muted-foreground hover:bg-muted/50"
+                  )}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin text-primary" />
+                      <span>正在上传合同...</span>
+                    </>
+                  ) : isContractDragging ? (
+                    <>
+                      <Upload className="size-3.5 text-primary animate-bounce" />
+                      <span className="font-medium text-primary">松开鼠标即可上传合同附件</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-3.5" />
+                      <span>点击或拖拽上传养殖合同附件 (PDF / 图片)</span>
+                    </>
+                  )}
                   <input
                     type="file"
                     accept="application/pdf,image/*"
                     className="hidden"
                     disabled={uploading}
-                    onChange={handleContractUpload}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) uploadContractFile(f);
+                      e.target.value = "";
+                    }}
                   />
                 </label>
               )}
@@ -502,6 +523,15 @@ export function FarmerDetailDialog({
                 { label: "年度额度", val: farmer.quota, pct: 100, bar: "bg-primary", txt: "text-primary" },
                 { label: "累计入池", val: farmer.cumulativeInPool, pct: inPoolPct, bar: "bg-blue-500 dark:bg-blue-400", txt: "text-blue-600 dark:text-blue-400" },
                 { label: "累计领扣", val: farmer.cumulativeClaimed, pct: claimedPct, bar: "bg-amber-500 dark:bg-amber-400", txt: "text-amber-600 dark:text-amber-400" },
+                ...(farmer.cumulativeBound != null
+                  ? [{
+                      label: "累计绑扎",
+                      val: farmer.cumulativeBound,
+                      pct: Math.min(100, (farmer.cumulativeBound / quota) * 100),
+                      bar: "bg-purple-500 dark:bg-purple-400",
+                      txt: "text-purple-600 dark:text-purple-400",
+                    }]
+                  : []),
                 { label: "累计出库", val: farmer.cumulativeOutbound, pct: outboundPct, bar: "bg-emerald-500 dark:bg-emerald-400", txt: "text-emerald-600 dark:text-emerald-400" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-3">

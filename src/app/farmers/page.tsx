@@ -58,20 +58,23 @@ export default async function FarmersPage({
       (t) => getBeijingYear(t.claimDate) === f.year
     );
 
-    const cumulativeInPool = currentYearBatches.reduce((sum, b) => sum + b.inPoolCount, 0);
-    const cumulativeClaimed = currentYearTags.reduce(
-      (sum, t) => sum + Math.max(0, t.claimCount - (t.returnedCount || 0)),
-      0
-    );
-    const cumulativeOutbound = currentYearBatches.reduce(
-      (sum, b) => sum + b.outboundOrders.reduce((s, o) => s + o.outboundCount, 0),
-      0
-    );
-    const remainingQuota = Math.max(0, f.quota - cumulativeClaimed);
+    let cumulativeInPool = 0, cumulativeOutbound = 0;
+    for (const b of currentYearBatches) {
+      cumulativeInPool += b.inPoolCount;
+      for (const o of b.outboundOrders) cumulativeOutbound += o.outboundCount;
+    }
+
+    let cumulativeClaimed = 0, cumulativeBound = 0;
+    for (const t of currentYearTags) {
+      cumulativeClaimed += t.claimCount;
+      cumulativeBound += t.boundCount || 0;
+    }
+    const remainingQuota = Math.max(0, f.quota - cumulativeBound);
     return {
       ...f,
       cumulativeInPool,
       cumulativeClaimed,
+      cumulativeBound,
       cumulativeOutbound,
       remainingQuota,
     };

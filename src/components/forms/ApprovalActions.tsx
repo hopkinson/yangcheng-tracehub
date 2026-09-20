@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { approveTagClaimAction, approveOutboundOrderAction } from "@/actions/approvals";
+import { approveTagClaimAction, approveOutboundOrderAction, approveOutboundLossAction } from "@/actions/approvals";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
 
@@ -146,6 +146,23 @@ export function OutboundApprovalButton({ orderId }: { orderId: string; qaUserId?
       onConfirm={async (approved, comment) => {
         await approveOutboundOrderAction({
           orderId,
+          approved,
+          comment: approved ? comment : undefined,
+          rejectReason: !approved ? comment : undefined,
+        });
+      }}
+    />
+  );
+}
+
+export function OutboundLossApprovalButton({ lossOrderId, code }: { lossOrderId: string; code?: string }) {
+  return (
+    <ApprovalActionDialog
+      title={`损耗出库单${code ? ` [${code}]` : ""}`}
+      defaultApproveComment="审核通过，准予出库损耗核销"
+      onConfirm={async (approved, comment) => {
+        await approveOutboundLossAction({
+          lossOrderId,
           approved,
           comment: approved ? comment : undefined,
           rejectReason: !approved ? comment : undefined,

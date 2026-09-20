@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TagApprovalButton, OutboundApprovalButton } from "@/components/forms/ApprovalActions";
+import { TagApprovalButton, OutboundApprovalButton, OutboundLossApprovalButton } from "@/components/forms/ApprovalActions";
+import { OutboundLossDetailDialog } from "@/components/outbound/OutboundLossDetailDialog";
 import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
@@ -16,6 +17,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+
+const CARD_TYPE_CONFIG: Record<string, { label: string; icon: any; className: string }> = {
+  TAG_CLAIM: {
+    label: "蟹扣领用",
+    icon: Tag,
+    className: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+  },
+  OUTBOUND_LOSS: {
+    label: "损耗出库",
+    icon: AlertTriangle,
+    className: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30",
+  },
+  OUTBOUND: {
+    label: "出库发运",
+    icon: Truck,
+    className: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30",
+  },
+};
 
 export default async function ApprovalsPage({
   searchParams,
@@ -47,8 +66,10 @@ export default async function ApprovalsPage({
   const [
     pendingTagClaims,
     pendingOutboundOrders,
+    pendingLossOrders,
     processedTagClaims,
     processedOutboundOrders,
+    processedLossOrders,
     exceptionBatches,
   ] = await Promise.all([
     canApproveTagClaims
@@ -74,6 +95,17 @@ export default async function ApprovalsPage({
             channel: true,
             applicant: true,
             lines: true,
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
+    canApproveOutbound
+      ? prisma.outboundLossOrder.findMany({
+          where: { status: "PENDING" },
+          include: {
+            applicant: true,
+            items: true,
+            records: { include: { coldLog: { include: { store: true } } } },
           },
           orderBy: { createdAt: "desc" },
         })
@@ -105,6 +137,19 @@ export default async function ApprovalsPage({
           orderBy: { updatedAt: "desc" },
         })
       : Promise.resolve([]),
+    canApproveOutbound
+      ? prisma.outboundLossOrder.findMany({
+          where: { status: { in: ["APPROVED", "REJECTED"] } },
+          take: 50,
+          include: {
+            applicant: true,
+            approver: true,
+            items: true,
+            records: { include: { coldLog: { include: { store: true } } } },
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : Promise.resolve([]),
     // 损耗异常属于异常处置，不参与审批角色配置与审批待办数量
     canHandleExceptions
       ? prisma.batch.findMany({
@@ -129,10 +174,14 @@ export default async function ApprovalsPage({
 
   const visiblePendingTagClaims = canApproveTagClaims ? pendingTagClaims : [];
   const visiblePendingOutboundOrders = canApproveOutbound ? pendingOutboundOrders : [];
+  const visiblePendingLossOrders = canApproveOutbound ? pendingLossOrders : [];
   const visibleProcessedTagClaims = canApproveTagClaims ? processedTagClaims : [];
   const visibleProcessedOutboundOrders = canApproveOutbound ? processedOutboundOrders : [];
-  const totalPendingCount = visiblePendingTagClaims.length + visiblePendingOutboundOrders.length;
-  const processedCount = visibleProcessedTagClaims.length + visibleProcessedOutboundOrders.length;
+  const visibleProcessedLossOrders = canApproveOutbound ? processedLossOrders : [];
+  const totalPendingCount =
+    visiblePendingTagClaims.length + visiblePendingOutboundOrders.length + visiblePendingLossOrders.length;
+  const processedCount =
+    visibleProcessedTagClaims.length + visibleProcessedOutboundOrders.length + visibleProcessedLossOrders.length;
 
   // 待办卡片统一聚合流
   const pendingTagCards = (typeFilter === "ALL" || typeFilter === "TAG")
@@ -154,6 +203,7 @@ export default async function ApprovalsPage({
           applicantRole: claim.applicant.role === "WAREHOUSE_ADMIN" ? "库管员" : "业务员",
           tagClaimData: claim,
           outboundData: undefined,
+          lossData: undefined,
         };
       })
     : [];
@@ -175,11 +225,33 @@ export default async function ApprovalsPage({
           applicantRole: order.applicant.role === "WAREHOUSE_ADMIN" ? "库管员" : "业务员",
           tagClaimData: undefined,
           outboundData: order,
+          lossData: undefined,
         };
       })
     : [];
 
-  const pendingItems = [...pendingTagCards, ...pendingOutboundCards].sort(
+  const pendingLossCards = (typeFilter === "ALL" || typeFilter === "OUTBOUND" || typeFilter === "LOSS")
+    ? visiblePendingLossOrders.map((loss) => {
+        const specSummary = loss.items.map((i: any) => `${i.gender === "FEMALE" ? "母" : "公"}${i.weightTier}×${i.lossCount}`).join(" · ");
+        return {
+          id: loss.id,
+          type: "OUTBOUND_LOSS" as const,
+          code: loss.code,
+          createdAt: new Date(loss.createdAt),
+          summary: `损耗出库 · 综合损耗率 ${loss.lossRate.toFixed(1)}%${loss.isException ? " (超标)" : ""}`,
+          quantityLabel: `核减 -${loss.totalLossCount.toLocaleString()} 只`,
+          subSummary: `多规格明细: ${specSummary}`,
+          checkDescription: `出库损耗原因: ${loss.reason}${loss.isException ? " ⚠️ 综合损耗率超 5% 红线" : ""}`,
+          applicantName: loss.applicant?.fullName || "仓管员",
+          applicantRole: "库管员",
+          tagClaimData: undefined,
+          outboundData: undefined,
+          lossData: loss,
+        };
+      })
+    : [];
+
+  const pendingItems = [...pendingTagCards, ...pendingOutboundCards, ...pendingLossCards].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
   );
 
@@ -295,7 +367,17 @@ export default async function ApprovalsPage({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                出库申请 ({visiblePendingOutboundOrders.length})
+                出库发运 ({visiblePendingOutboundOrders.length})
+              </Link>
+              <Link
+                href="/approvals?tab=pending&type=LOSS"
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  typeFilter === "LOSS"
+                    ? "bg-background text-foreground shadow-xs font-semibold text-purple-600 dark:text-purple-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                出库损耗 ({visiblePendingLossOrders.length})
               </Link>
             </div>
           )}
@@ -308,37 +390,33 @@ export default async function ApprovalsPage({
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <CheckCircle2 className="size-10 text-emerald-500/60 mb-2" />
                 <h3 className="text-sm font-semibold text-foreground">暂无待审批事项</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">所有领扣与出库申请均已完成核验与审核</p>
+                <p className="text-xs text-muted-foreground mt-0.5">所有领扣、发货出库与损耗出库申请均已完成核验与审核</p>
               </CardContent>
             </Card>
           ) : (
             <div className="flex flex-col gap-2.5">
               {pendingItems.map((item) => {
                 const isTag = item.type === "TAG_CLAIM";
+                const isLoss = item.type === "OUTBOUND_LOSS";
+                const typeConf = CARD_TYPE_CONFIG[item.type] || CARD_TYPE_CONFIG.OUTBOUND;
+                const TypeIcon = typeConf.icon;
                 return (
                   <Card key={`${item.type}_${item.id}`} className="transition-all hover:shadow-xs">
                     <CardContent className="p-3 sm:px-3.5 flex flex-col gap-1.5">
                       {/* 卡片主信息行：左侧类型单号与摘要，右侧操作按钮与时间 */}
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0 flex-1 flex flex-col gap-1">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {isTag ? (
-                              <Badge
-                                variant="outline"
-                                className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5 shrink-0"
-                              >
-                                <Tag className="size-2.5" />
-                                蟹扣领用
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30 font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5 shrink-0"
-                              >
-                                <Truck className="size-2.5" />
-                                出库申请
-                              </Badge>
-                            )}
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "font-semibold px-1.5 py-0 text-[11px] flex items-center gap-1 h-5 shrink-0",
+                                typeConf.className
+                              )}
+                            >
+                              <TypeIcon className="size-2.5" />
+                              {typeConf.label}
+                            </Badge>
                             <span className="font-mono text-[11px] font-medium text-muted-foreground shrink-0">{item.code}</span>
                             <span className="text-sm font-semibold text-foreground truncate">{item.summary}</span>
                             {item.quantityLabel && (
@@ -361,8 +439,32 @@ export default async function ApprovalsPage({
                             {isTag && item.tagClaimData && (
                               <TagApprovalButton claimId={item.tagClaimData.id} />
                             )}
-                            {!isTag && item.outboundData && (
+                            {!isTag && !isLoss && item.outboundData && (
                               <OutboundApprovalButton orderId={item.outboundData.id} />
+                            )}
+                            {isLoss && item.lossData && (
+                              <>
+                                <OutboundLossDetailDialog
+                                  order={{
+                                    id: item.lossData.id,
+                                    code: item.lossData.code,
+                                    inventoryDate: item.lossData.inventoryDate,
+                                    totalLossCount: item.lossData.totalLossCount,
+                                    lossRate: item.lossData.lossRate,
+                                    isException: item.lossData.isException,
+                                    reason: item.lossData.reason,
+                                    status: item.lossData.status,
+                                    applicantName: item.lossData.applicant?.fullName,
+                                    createdAt: item.lossData.createdAt,
+                                    items: item.lossData.items || [],
+                                    records: item.lossData.records || [],
+                                  }}
+                                  canApprove={canApproveOutbound}
+                                  triggerLabel="明细"
+                                  triggerVariant="outline"
+                                />
+                                <OutboundLossApprovalButton lossOrderId={item.lossData.id} code={item.code} />
+                              </>
                             )}
                           </div>
                         </div>
@@ -396,7 +498,7 @@ export default async function ApprovalsPage({
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">已处理审批历史 (最新 100 笔)</CardTitle>
               <CardDescription className="text-xs">
-                包含已一键通过放行及已填写原因驳回的蟹扣领用与出库申请留痕
+                包含已一键通过放行及已填写原因驳回的蟹扣领用、出库发运与损耗出库申请留痕
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -414,7 +516,7 @@ export default async function ApprovalsPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleProcessedTagClaims.length === 0 && visibleProcessedOutboundOrders.length === 0 ? (
+                    {visibleProcessedTagClaims.length === 0 && visibleProcessedOutboundOrders.length === 0 && visibleProcessedLossOrders.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                           暂无已处理历史记录
@@ -444,6 +546,17 @@ export default async function ApprovalsPage({
                           approvedAt: o.approvedAt || o.updatedAt,
                           comment: o.approvalComment || o.rejectReason || (o.status === "APPROVED" ? "审核通过" : "已驳回"),
                         })),
+                        ...visibleProcessedLossOrders.map((l: any) => ({
+                          id: l.id,
+                          type: "LOSS" as const,
+                          code: l.code,
+                          summary: `出库损耗核减 -${l.totalLossCount.toLocaleString()} 只 · 损耗率 ${l.lossRate.toFixed(1)}%`,
+                          applicant: l.applicant?.fullName || "仓管员",
+                          status: l.status,
+                          approver: l.approver?.fullName || "—",
+                          approvedAt: l.approvedAt || l.updatedAt,
+                          comment: l.approvalComment || l.rejectReason || (l.status === "APPROVED" ? "审核通过" : "已驳回"),
+                        })),
                       ]
                         .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime())
                         .map((row) => (
@@ -453,9 +566,13 @@ export default async function ApprovalsPage({
                                 <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">
                                   蟹扣领用
                                 </Badge>
+                              ) : row.type === "LOSS" ? (
+                                <Badge variant="outline" className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30 text-[10px] px-1.5 py-0">
+                                  损耗出库
+                                </Badge>
                               ) : (
                                 <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30 text-[10px] px-1.5 py-0">
-                                  出库申请
+                                  出库发运
                                 </Badge>
                               )}
                             </TableCell>
@@ -474,8 +591,8 @@ export default async function ApprovalsPage({
 
                             <TableCell className="align-middle">
                               {row.status === "APPROVED" ? (
-                                <Badge variant="default" className="text-[10px] px-1.5 py-0 font-normal">
-                                  已通过
+                                <Badge variant="default" className="text-[10px] px-1.5 py-0 font-normal bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                                  已核销
                                 </Badge>
                               ) : (
                                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-normal">
@@ -491,10 +608,8 @@ export default async function ApprovalsPage({
                               </div>
                             </TableCell>
 
-                            <TableCell className="align-middle text-xs">
-                              <span className={cn(row.status === "REJECTED" ? "text-destructive font-medium" : "text-muted-foreground")}>
-                                {row.comment}
-                              </span>
+                            <TableCell className="align-middle text-xs text-muted-foreground">
+                              {row.comment}
                             </TableCell>
                           </TableRow>
                         ))

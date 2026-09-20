@@ -246,3 +246,75 @@ export async function approveOutboundOrderAction(data: {
     return updated;
   });
 }
+
+// 审批出库损耗单 (通过核销 / 驳回释放占用)
+export async function approveOutboundLossAction(data: {
+  lossOrderId: string;
+  approved: boolean;
+  comment?: string;
+  rejectReason?: string;
+  approverId?: string;
+}) {
+  const approvalSetting = await getApprovalSetting();
+  const operator = await requireRole(approvalRoles(approvalSetting.outboundRole));
+  const approverId = operator.id;
+
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.outboundLossOrder.findUniqueOrThrow({
+      where: { id: data.lossOrderId },
+      include: {
+        items: true,
+        records: true,
+      },
+    });
+
+    if (order.status !== "PENDING") {
+      throw new Error("该损耗出库单已被处理，请勿重复审批");
+    }
+
+    const status = data.approved ? "APPROVED" : "REJECTED";
+    const rejectReason = data.approved ? null : (data.rejectReason || data.comment || "审核驳回");
+
+    await tx.outboundLossRecord.updateMany({
+      where: { lossOrderId: order.id },
+      data: { status },
+    });
+
+    const updated = await tx.outboundLossOrder.update({
+      where: { id: order.id },
+      data: {
+        status,
+        rejectReason,
+        approverId,
+        approvalComment: data.comment,
+        approvedAt: new Date(),
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: approverId,
+        action: data.approved ? "APPROVE_OUTBOUND_LOSS" : "REJECT_OUTBOUND_LOSS",
+        entityType: "OUTBOUND_LOSS_ORDER",
+        entityId: order.id,
+        details: JSON.stringify({
+          code: order.code,
+          approved: data.approved,
+          totalLossCount: order.totalLossCount,
+          reason: rejectReason || data.comment,
+        }),
+      },
+    });
+
+    try {
+      revalidatePath("/approvals");
+      revalidatePath("/outbound");
+      revalidatePath("/cold-storage");
+      revalidatePath("/ledgers");
+      revalidatePath("/");
+    } catch {}
+
+    return updated;
+  });
+}
+

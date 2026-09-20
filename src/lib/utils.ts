@@ -162,3 +162,37 @@ export function getBeijingDayRange(dateStr: string): { gte: Date; lte: Date } {
   };
 }
 
+/**
+ * 构造轻量化拖拽文件上传事件绑定
+ */
+export function getFileDropHandlers(
+  onDrop: (file: File) => void,
+  setIsDragging: (dragging: boolean) => void,
+  disabled?: boolean
+) {
+  return {
+    onDragOver: (e: { preventDefault: () => void; stopPropagation: () => void }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!disabled) setIsDragging(true);
+    },
+    onDragLeave: (e: { preventDefault: () => void; stopPropagation: () => void }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+    },
+    onDrop: (e: {
+      preventDefault: () => void;
+      stopPropagation: () => void;
+      dataTransfer: { files?: FileList | null };
+    }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      if (disabled) return;
+      const f = e.dataTransfer?.files?.[0];
+      if (f) onDrop(f);
+    },
+  };
+}
+

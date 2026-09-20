@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Layers, Plus, Loader2, Tag, Waves } from "lucide-react";
 import { createBundleBatchAction } from "@/actions/production";
+import { cn } from "@/lib/utils";
 
 export interface MaterialBatchOption {
   id: string;
@@ -50,16 +51,19 @@ export interface GroupOption {
   id: string;
   code: string;
   name: string;
+  isBundling?: boolean;
 }
 
 export function BundleBatchDialog({
   groups,
+  defaultGroupId,
   materialBatches,
   tagClaims,
   pools,
   defaultRopeBatch,
 }: {
   groups: GroupOption[];
+  defaultGroupId?: string;
   materialBatches: MaterialBatchOption[];
   tagClaims: TagClaimOption[];
   pools: PoolOption[];
@@ -71,8 +75,13 @@ export function BundleBatchDialog({
   const firstTagForBatch = (batch?: MaterialBatchOption) =>
     tagClaims.find((tag) => tag.farmerId === batch?.farmerId && (tag.availableCount ?? tag.claimCount) > 0);
 
+  const resolveInitialGroup = () =>
+    groups.find((g) => (defaultGroupId && g.id === defaultGroupId) || !g.isBundling)?.id ||
+    groups[0]?.id ||
+    "";
+
   const [selectedBatchId, setSelectedBatchId] = useState(firstBatch?.id || "");
-  const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
+  const [selectedGroupId, setSelectedGroupId] = useState(resolveInitialGroup);
   const [selectedTagId, setSelectedTagId] = useState(firstTagForBatch(firstBatch)?.id || "");
   const [ropeBatch, setRopeBatch] = useState(defaultRopeBatch);
   const [selectedPools, setSelectedPools] = useState<
@@ -106,6 +115,7 @@ export function BundleBatchDialog({
     if (nextOpen) {
       const nextBatch = materialBatches[0];
       setSelectedBatchId(nextBatch?.id || "");
+      setSelectedGroupId(resolveInitialGroup());
       setSelectedTagId(firstTagForBatch(nextBatch)?.id || "");
       setSelectedPools([]);
       setRopeBatch(defaultRopeBatch);
@@ -256,11 +266,28 @@ export function BundleBatchDialog({
                 <SelectContent>
                   {groups.map((group) => (
                     <SelectItem key={group.id} value={group.id} className="text-xs">
-                      {group.name} ({group.code})
+                      <span className="flex items-center justify-between w-full gap-2">
+                        <span>{group.name} ({group.code})</span>
+                        <span
+                          className={cn(
+                            "text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0",
+                            group.isBundling
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                              : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                          )}
+                        >
+                          {group.isBundling ? "作业中" : "空闲"}
+                        </span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {groups.find((g) => g.id === selectedGroupId)?.isBundling && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  当前班组已有在制批次正在作业中，若需独立工位建议切换至空闲班组。
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">

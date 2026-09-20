@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { FileText, Thermometer, Droplets, User, CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, ExternalLink, Download, FileWarning, FileCheck } from "lucide-react";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, getPreviewFileUrl } from "@/lib/utils";
 
 export interface BatchDetailProps {
   batch: {
@@ -63,6 +63,12 @@ export interface BatchDetailProps {
 export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
   const [open, setOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const isPdf = /\.pdf/i.test(batch.slipUrl || batch.slipName || "");
+  const defaultDownloadName =
+    batch.slipName || `${batch.code}-入库码单${isPdf ? ".pdf" : ".jpg"}`;
+  const safePreviewUrl = batch.slipUrl
+    ? getPreviewFileUrl(batch.slipUrl, defaultDownloadName)
+    : "";
 
   const rawTime = batch.inPoolTime || batch.createdAt || new Date();
   const inDateStr = formatDateTime(rawTime);
@@ -250,13 +256,24 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
 
           {/* 纸质码单照片原件 */}
           <div className="border rounded-lg overflow-hidden bg-muted/20 p-2 flex items-center justify-center min-h-40">
-            {batch.slipUrl ? (
-              imageError ? (
+            {safePreviewUrl ? (
+              isPdf ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
+                  <FileCheck className="size-8 text-primary" />
+                  <span className="text-xs text-muted-foreground">纸质码单 / 入库单凭证 (PDF)</span>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1 mt-1" asChild>
+                    <a href={safePreviewUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="size-3" />
+                      在新窗口预览 PDF
+                    </a>
+                  </Button>
+                </div>
+              ) : imageError ? (
                 <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
                   <FileWarning className="size-8 text-amber-500" />
                   <span className="text-xs text-muted-foreground">码单原件暂无法直接内嵌预览</span>
                   <Button variant="outline" size="sm" className="h-7 text-xs gap-1 mt-1" asChild>
-                    <a href={batch.slipUrl} target="_blank" rel="noopener noreferrer">
+                    <a href={safePreviewUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="size-3" />
                       在新窗口尝试打开
                     </a>
@@ -264,14 +281,14 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
                 </div>
               ) : (
                 <a
-                  href={batch.slipUrl}
+                  href={safePreviewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   title="点击在新窗口查看大图码单原件"
                   className="group relative block"
                 >
                   <img
-                    src={batch.slipUrl}
+                    src={safePreviewUrl}
                     alt="入库码单原件"
                     onError={() => setImageError(true)}
                     className="max-h-64 object-contain rounded border shadow-xs transition-opacity group-hover:opacity-90 cursor-zoom-in"
@@ -285,16 +302,16 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
         </div>
 
         {/* 底部操作栏 */}
-        {batch.slipUrl && (
+        {safePreviewUrl && (
           <div className="flex items-center justify-between pt-2 border-t text-xs">
             <span className="text-muted-foreground truncate max-w-[240px]">
-              {batch.code} 纸质入库码单原件
+              {defaultDownloadName}
             </span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
                 <a
-                  href={batch.slipUrl}
-                  download={`${batch.code}-slip`}
+                  href={safePreviewUrl}
+                  download={defaultDownloadName}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -303,7 +320,7 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
                 </a>
               </Button>
               <Button variant="default" size="sm" className="h-7 text-xs gap-1" asChild>
-                <a href={batch.slipUrl} target="_blank" rel="noopener noreferrer">
+                <a href={safePreviewUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="size-3.5" />
                   新窗口打开
                 </a>

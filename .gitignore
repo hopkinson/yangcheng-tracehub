@@ -46,3 +46,4 @@ Thumbs.db
 # Local AI agent workspace/config
 .agent/
 .agents/
+.workbuddy/

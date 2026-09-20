@@ -72,6 +72,7 @@ export default async function DashboardPage() {
   // 2. 8 张环节卡细分指标（当日 / 累计 / 待办）
   // 1. 订单
   const todayOrders = orders.filter((o) => isTodayOrDemo(o.deliveryDate) || isTodayOrDemo(o.importTime));
+  const todayOriginalOrdersCount = new Set(todayOrders.map((o) => o.orderNo || o.id)).size;
   const pendingOrders = orders.filter((o) => o.status === "PENDING");
   const pendingDeliveryTotalCount = pendingOrders.reduce((s, o) => s + o.count, 0);
 
@@ -111,13 +112,15 @@ export default async function DashboardPage() {
     });
 
   const todayPoolInCount = todayInPoolTotalCount;
+  const todayPoolLossCount = todayBatches.reduce((s, b) => s + (b.lossCount || 0), 0);
 
   // 5. 捆扎
   const todayBundleBatches = bundleBatches.filter((b) => isTodayOrDemo(b.date));
   const todayBundleTotalCount = todayBundleBatches.reduce(
-    (s, b) => s + b.lines.reduce((ls, l) => ls + l.count, 0),
+    (s, b) => s + (b.qualifiedCount || b.lines.reduce((ls, l) => ls + l.count, 0)),
     0
   );
+  const todayBundleLossCount = todayBundleBatches.reduce((s, b) => s + (b.lossCount || 0), 0);
   const todayBundleDoneCount = todayBundleBatches.filter((b) => b.status === "COMPLETED").length;
 
   // 6. 分拣
@@ -128,6 +131,7 @@ export default async function DashboardPage() {
   // 7. 预冷
   const todayColdLogs = coldLogs.filter((l) => isTodayOrDemo(l.createdAt) && l.type === "INTAKE");
   const todayColdIntakeCount = todayColdLogs.reduce((s, l) => s + l.count, 0);
+  const todayColdBatchesCount = todayColdLogs.length;
   const totalColdStockCount = aggregateTraceableColdStocks({
     sortTasks,
     coldLogs,
@@ -143,6 +147,7 @@ export default async function DashboardPage() {
   // 8. 出库
   const todayOutboundOrders = outboundOrders.filter((o) => isTodayOrDemo(o.createdAt));
   const todayOutboundTotalCount = todayOutboundOrders.reduce((s, o) => s + o.outboundCount, 0);
+  const todayOutboundOriginalOrdersCount = new Set(todayOutboundOrders.flatMap((o) => o.lines.map((l) => l.orderNo || o.id))).size;
   const pendingOutboundOrdersCount = outboundOrders.filter((o) => o.status === "PENDING").length;
   const closeDate = formatISODate();
   const poolCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_POOL_CLOSE" && formatISODate(log.createdAt) === closeDate);
@@ -211,7 +216,7 @@ export default async function DashboardPage() {
   return (
     <OverviewDashboard
       metrics={{
-        todayOrdersCount: todayOrders.length,
+        todayOrdersCount: todayOriginalOrdersCount,
         pendingDeliveryTotalCount,
         totalOrdersCount: orders.length,
         todayBatchesCount: todayBatches.length,
@@ -222,10 +227,12 @@ export default async function DashboardPage() {
         totalTagClaimsCount: totalTagClaimed,
         pendingTagClaimsCount,
         todayPoolInCount,
+        todayPoolLossCount,
         activePoolsCount: activePools.filter((p) => p.liveCount > 0).length,
         totalLiveInPoolCount: totalLiveInPool,
         todayBundleBatchesCount: todayBundleBatches.length,
         todayBundleTotalCount,
+        todayBundleLossCount,
         todayBundleDoneCount,
         totalBundleBatchesCount: bundleBatches.length,
         todaySortTasksCount: todaySortTasks.length,
@@ -233,6 +240,7 @@ export default async function DashboardPage() {
         todaySortLossCount,
         totalSortTasksCount: sortTasks.length,
         todayColdIntakeCount,
+        todayColdBatchesCount,
         activeColdStoresCount: coldStores.length,
         totalColdStockCount,
         isClosingTime,
@@ -241,6 +249,7 @@ export default async function DashboardPage() {
         canCloseDaily: currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN",
         todayOutboundOrdersCount: todayOutboundOrders.length,
         todayOutboundTotalCount,
+        todayOutboundOriginalOrdersCount,
         pendingOutboundOrdersCount,
         totalOutboundOrdersCount: outboundOrders.length,
         totalOutboundCount: totalOutboundApproved,

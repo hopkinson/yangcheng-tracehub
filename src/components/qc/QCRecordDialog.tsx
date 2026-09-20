@@ -29,7 +29,7 @@ import { Camera, FileCheck, Loader2, AlertTriangle, X } from "lucide-react";
 import { createQCRecordAction, getQCInspectorsAction } from "@/actions/qc";
 import { uploadFileAction } from "@/actions/upload";
 import { qcRecordFormSchema, type QCRecordFormValues } from "@/lib/validations/schemas";
-import { cn, getBeijingTimeString, getPreviewFileUrl } from "@/lib/utils";
+import { cn, getBeijingTimeString, getPreviewFileUrl, getFileDropHandlers } from "@/lib/utils";
 
 const ROLE_NAME_MAP: Record<string, string> = {
   ADMIN: "超级管理员",
@@ -95,6 +95,7 @@ export function QCRecordDialog({
   const [fileUrl, setFileUrl] = useState<string>(record?.fileUrl || "");
   const [fileName, setFileName] = useState<string>(record?.fileName || "");
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const isPdf = fileName.toLowerCase().endsWith(".pdf");
 
   const conclusionsList = config.conclusions && config.conclusions.length > 0
@@ -130,10 +131,7 @@ export function QCRecordDialog({
     }
   }, [open, userList.length]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       toast.error("文件不能超过 10MB");
       return;
@@ -153,6 +151,13 @@ export function QCRecordDialog({
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
+    e.target.value = "";
   };
 
   const onSubmit = (data: QCRecordFormValues) => {
@@ -441,16 +446,29 @@ export function QCRecordDialog({
                   {fileName && <div className="text-[11px] text-muted-foreground truncate">{fileName}</div>}
                 </div>
               ) : (
-                <label className="h-24 border border-dashed rounded flex flex-col items-center justify-center text-xs text-muted-foreground gap-1.5 bg-background/50 hover:bg-muted/50 cursor-pointer transition-colors">
+                <label
+                  {...getFileDropHandlers(processFile, setIsDragging, uploading)}
+                  className={cn(
+                    "h-24 border rounded flex flex-col items-center justify-center text-xs gap-1.5 cursor-pointer transition-all",
+                    isDragging
+                      ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20 text-primary"
+                      : "border-dashed bg-background/50 hover:bg-muted/50 text-muted-foreground"
+                  )}
+                >
                   {uploading ? (
                     <>
                       <Loader2 className="size-6 text-primary animate-spin" />
                       <span>文件上传中...</span>
                     </>
+                  ) : isDragging ? (
+                    <>
+                      <Camera className="size-6 text-primary animate-bounce" />
+                      <span className="font-medium text-primary">松开鼠标即可上传原件</span>
+                    </>
                   ) : (
                     <>
                       <Camera className="size-6 text-muted-foreground/60" />
-                      <span>点击上传现场纸质记录原件（图片/PDF）</span>
+                      <span>点击或拖拽上传现场纸质记录原件（图片/PDF）</span>
                     </>
                   )}
                   <input

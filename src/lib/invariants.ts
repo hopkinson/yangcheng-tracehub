@@ -107,6 +107,24 @@ function parseStoreSpecHeader(cell: string) {
   };
 }
 
+export interface MultiSpecItemValidation {
+  weightError?: string;
+  countError?: string;
+  poolError?: string;
+  isValid: boolean;
+}
+
+export interface MultiSpecBatchValidation {
+  itemErrors: MultiSpecItemValidation[];
+  totalCount: number;
+  totalWeight: number;
+  isOverQuota: boolean;
+  excessQuota: number;
+  hasErrors: boolean;
+  canSubmit: boolean;
+  errorMessage?: string;
+}
+
 export const Invariants = {
   // 1. 额度校验: 面积 * 600 只/亩
   calculateQuota: (areaInMu: number): number => Math.floor(areaInMu * 600),
@@ -118,6 +136,70 @@ export const Invariants = {
       valid: !isExceeded,
       remainingQuota: Math.max(0, annualQuota - cumulativeInPool),
       excess: isExceeded ? cumulativeInPool + newBatchCount - annualQuota : 0,
+    };
+  },
+
+  // 1.1 原料批次多规格主从录入边界与守恒严格校验
+  validateMultiSpecBatch: (
+    items: Array<{
+      weight: number | string;
+      inPoolCount: number | string;
+      poolId?: string;
+      gender?: string;
+      weightTier?: string;
+    }>,
+    remainingQuota: number = 0
+  ): MultiSpecBatchValidation => {
+    let totalCount = 0;
+    let totalWeight = 0;
+
+    const itemErrors = items.map((it) => {
+      const w = Number(it.weight);
+      const weightError =
+        !it.weight || !Number.isFinite(w) || w <= 0 ? "重量必须大于 0 斤" : undefined;
+      if (!weightError) totalWeight += w;
+
+      const c = Number(it.inPoolCount);
+      const countError =
+        !it.inPoolCount || !Number.isInteger(c) || c <= 0
+          ? "只数必须为大于 0 的整数"
+          : remainingQuota > 0 && c > remainingQuota
+          ? `单行只数超出该户剩余额度 (${remainingQuota.toLocaleString()} 只)`
+          : undefined;
+      if (Number.isFinite(c) && c > 0) totalCount += c;
+
+      const poolError = !it.poolId
+        ? "未选择暂养池"
+        : items.filter((x) => x.poolId && x.poolId === it.poolId).length > 1
+        ? "同一码单暂养池不可重复选择"
+        : undefined;
+
+      return {
+        weightError,
+        countError,
+        poolError,
+        isValid: !weightError && !countError && !poolError,
+      };
+    });
+
+    const isOverQuota = remainingQuota >= 0 && totalCount > remainingQuota;
+    const excessQuota = isOverQuota ? totalCount - remainingQuota : 0;
+    const hasErrors = itemErrors.some((e) => !e.isValid) || items.length === 0;
+    const canSubmit = !hasErrors && !isOverQuota && totalCount > 0;
+
+    return {
+      itemErrors,
+      totalCount,
+      totalWeight,
+      isOverQuota,
+      excessQuota,
+      hasErrors,
+      canSubmit,
+      errorMessage: isOverQuota
+        ? `超出养殖户剩余额度: 本批合计 ${totalCount.toLocaleString()} 只，该户剩余额度仅剩 ${remainingQuota.toLocaleString()} 只（超额 ${excessQuota.toLocaleString()} 只）`
+        : hasErrors
+        ? "请修正明细行中的错误后提交"
+        : undefined,
     };
   },
 

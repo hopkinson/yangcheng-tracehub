@@ -52,11 +52,13 @@ export interface DashboardProps {
     pendingTagClaimsCount: number;
     // 4. 暂养
     todayPoolInCount: number;
+    todayPoolLossCount: number;
     activePoolsCount: number;
     totalLiveInPoolCount: number;
     // 5. 捆扎
     todayBundleBatchesCount: number;
     todayBundleTotalCount: number;
+    todayBundleLossCount: number;
     todayBundleDoneCount: number;
     totalBundleBatchesCount: number;
     // 6. 分拣
@@ -66,6 +68,7 @@ export interface DashboardProps {
     totalSortTasksCount: number;
     // 7. 预冷
     todayColdIntakeCount: number;
+    todayColdBatchesCount: number;
     activeColdStoresCount: number;
     totalColdStockCount: number;
     isClosingTime: boolean;
@@ -75,6 +78,7 @@ export interface DashboardProps {
     // 8. 出库
     todayOutboundOrdersCount: number;
     todayOutboundTotalCount: number;
+    todayOutboundOriginalOrdersCount: number;
     pendingOutboundOrdersCount: number;
     totalOutboundOrdersCount: number;
     totalOutboundCount: number;
@@ -540,11 +544,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
-                  <AnimatedNumber value={metrics.todayOrdersCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
+                  <AnimatedNumber value={metrics.pendingDeliveryTotalCount} duration={700} />
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  待发货：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.pendingDeliveryTotalCount} duration={700} /></span> 只
+                  今日原始订单：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayOrdersCount} duration={700} /></span> 单
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
@@ -564,11 +568,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
-                  <AnimatedNumber value={metrics.todayBatchesCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">批</span>
+                  <AnimatedNumber value={metrics.todayInPoolTotalCount} duration={700} />
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  今日到货：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayInPoolTotalCount} duration={700} /></span> 只
+                  到货批次：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayBatchesCount} duration={700} /></span> 批
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
@@ -594,11 +598,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
-                  <AnimatedNumber value={metrics.todayTagClaimsCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
+                  <AnimatedNumber value={metrics.todayTagClaimsTotalCount} duration={700} />
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  申领总数：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayTagClaimsTotalCount} duration={700} /></span> 只
+                  申领批次：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayTagClaimsCount} duration={700} /></span> 批
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
@@ -622,7 +626,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                   <span className="text-xs text-muted-foreground font-normal ml-1">只入池</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  在养池数：<span className="font-mono font-medium text-foreground">{metrics.activePoolsCount}</span> 个池在养
+                  暂养损耗：<span className={cn("font-mono font-medium", metrics.todayPoolLossCount > 0 ? "text-destructive" : "text-foreground")}><AnimatedNumber value={metrics.todayPoolLossCount} duration={700} /></span> 只
                 </div>
               </div>
               {metrics.isClosingTime ? (
@@ -674,11 +678,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
-                  <AnimatedNumber value={metrics.todayBundleBatchesCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">批</span>
+                  <AnimatedNumber value={metrics.todayBundleTotalCount} duration={700} />
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  捆扎总数：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayBundleTotalCount} duration={700} /></span> 只 (完工 {metrics.todayBundleDoneCount} 批)
+                  捆扎损耗：<span className={cn("font-mono font-medium", metrics.todayBundleLossCount > 0 ? "text-destructive" : "text-foreground")}><AnimatedNumber value={metrics.todayBundleLossCount} duration={700} /></span> 只
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
@@ -698,12 +702,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
-                  <AnimatedNumber value={metrics.todaySortTasksCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">任务</span>
+                  <AnimatedNumber value={metrics.todaySortQualifiedCount} duration={700} />
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  合格 <span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todaySortQualifiedCount} duration={700} /></span> · 损耗{" "}
-                  <span className="font-mono font-medium text-destructive"><AnimatedNumber value={metrics.todaySortLossCount} duration={700} /></span>
+                  分拣损耗：<span className={cn("font-mono font-medium", metrics.todaySortLossCount > 0 ? "text-destructive" : "text-foreground")}><AnimatedNumber value={metrics.todaySortLossCount} duration={700} /></span> 只
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
@@ -727,7 +730,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                   <span className="text-xs text-muted-foreground font-normal ml-1">只入库</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  保鲜库区：<span className="font-mono font-medium text-foreground">{metrics.activeColdStoresCount}</span> 个库运行中
+                  入库批次：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayColdBatchesCount} duration={700} /></span> 批
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between">
@@ -755,11 +758,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
-                  <AnimatedNumber value={metrics.todayOutboundOrdersCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">单</span>
+                  <AnimatedNumber value={metrics.todayOutboundTotalCount} duration={700} />
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  今日发运：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayOutboundTotalCount} duration={700} /></span> 只
+                  出库原始订单：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayOutboundOriginalOrdersCount} duration={700} /></span> 单
                 </div>
               </div>
               {metrics.isClosingTime ? (
@@ -1042,63 +1045,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         {/* 右栏 (合规与品质中枢)                                    */}
         {/* ======================================================= */}
         <div className="lg:col-span-5 flex flex-col gap-4">
-          {/* 1. 数量闭环收敛漏斗 */}
-          <FadeIn>
-            <Card className="border-border/80 shadow-xs bg-card overflow-hidden">
-              <CardHeader className="py-2.5 px-4 border-b bg-muted/20 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="size-4 text-emerald-600" />
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider">
-                    数量闭环收敛漏斗
-                  </CardTitle>
-                </div>
-                <span className="text-[10px] font-mono text-emerald-600 font-semibold">
-                  守恒状态: 100% 闭环
-                </span>
-              </CardHeader>
-              <CardContent className="p-3.5 space-y-3">
-                <div className="space-y-3">
-                  {funnelSteps.map((step, idx) => (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-medium text-foreground">{step.level}</span>
-                        <div className="font-mono text-right">
-                          <strong className={cn("text-xs", step.textColor)}>
-                            <AnimatedNumber value={step.value} duration={800} />
-                          </strong>
-                          <span className="text-[10px] text-muted-foreground ml-0.5">只</span>
-                          <span className="text-[10px] text-muted-foreground ml-1.5 font-semibold">
-                            ({step.percentage.toFixed(1)}%)
-                          </span>
-                        </div>
-                      </div>
-                      <div className="h-2 w-full bg-muted/60 rounded-full overflow-hidden">
-                        <div
-                          className={cn("h-full rounded-full transition-all duration-700 ease-out", step.bgBar)}
-                          style={{
-                            width: funnelMounted ? `${Math.max(4, Math.min(100, step.percentage))}%` : "0%",
-                            transitionDelay: `${step.delay}ms`,
-                          }}
-                        />
-                      </div>
-                      <div className="text-[10px] text-muted-foreground flex justify-between">
-                        <span>卡口：{step.gate}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-2 border-t text-center">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[11px] font-medium animate-in fade-in duration-500">
-                    <CheckCircle2 className="size-3.5 text-emerald-500" />
-                    全链路数量守恒，当前无越级数据
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </FadeIn>
-
-          {/* 2. 巡检环节健康度 */}
+          {/* 1. 巡检环节健康度 */}
           <FadeIn>
             <Card className="border-border/80 shadow-xs bg-card overflow-hidden">
               <CardHeader className="py-2.5 px-4 border-b bg-muted/20 flex flex-row items-center justify-between">
@@ -1149,16 +1096,72 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                         <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
                           <div
                             className="h-full bg-primary/45 transition-all duration-500"
-                            style={{ width: funnelMounted ? `${passRate}%` : "0%" }}
+                            style={{ width: funnelMounted && item.total > 0 ? `${passRate}%` : "0%" }}
                           />
                           <div
                             className="h-full bg-destructive transition-all duration-500"
-                            style={{ width: funnelMounted ? `${100 - passRate}%` : "0%" }}
+                            style={{ width: funnelMounted && item.total > 0 ? `${100 - passRate}%` : "0%" }}
                           />
                         </div>
                       </div>
                     );
                   })}
+                </div>
+              </CardContent>
+            </Card>
+          </FadeIn>
+
+          {/* 2. 数量闭环收敛漏斗 */}
+          <FadeIn>
+            <Card className="border-border/80 shadow-xs bg-card overflow-hidden">
+              <CardHeader className="py-2.5 px-4 border-b bg-muted/20 flex flex-row items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="size-4 text-emerald-600" />
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wider">
+                    数量闭环收敛漏斗
+                  </CardTitle>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-600 font-semibold">
+                  守恒状态: 100% 闭环
+                </span>
+              </CardHeader>
+              <CardContent className="p-3.5 space-y-3">
+                <div className="space-y-3">
+                  {funnelSteps.map((step, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-foreground">{step.level}</span>
+                        <div className="font-mono text-right">
+                          <strong className={cn("text-xs", step.textColor)}>
+                            <AnimatedNumber value={step.value} duration={800} />
+                          </strong>
+                          <span className="text-[10px] text-muted-foreground ml-0.5">只</span>
+                          <span className="text-[10px] text-muted-foreground ml-1.5 font-semibold">
+                            ({step.percentage.toFixed(1)}%)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-2 w-full bg-muted/60 rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full transition-all duration-700 ease-out", step.bgBar)}
+                          style={{
+                            width: funnelMounted ? `${Math.max(4, Math.min(100, step.percentage))}%` : "0%",
+                            transitionDelay: `${step.delay}ms`,
+                          }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-muted-foreground flex justify-between">
+                        <span>卡口：{step.gate}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-2 border-t text-center">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[11px] font-medium animate-in fade-in duration-500">
+                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                    全链路数量守恒，当前无越级数据
+                  </div>
                 </div>
               </CardContent>
             </Card>

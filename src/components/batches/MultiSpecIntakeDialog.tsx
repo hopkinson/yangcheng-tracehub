@@ -19,6 +19,7 @@ import { Layers, Plus, Trash2, Loader2, Camera, Upload, X } from "lucide-react";
 import { createMultiSpecBatchAction } from "@/actions/batches";
 import { uploadFileAction } from "@/actions/upload";
 import { Invariants } from "@/lib/invariants";
+import { cn, getFileDropHandlers } from "@/lib/utils";
 
 const WEIGHT_TIERS: readonly string[] = ["2.5两", "3.0两", "3.5两", "4.0两", "4.5两", "5.0两", "5.5两", "6.0两"];
 
@@ -64,6 +65,9 @@ export function MultiSpecIntakeDialog({
   const [humidity, setHumidity] = useState("85.0");
   const [escort, setEscort] = useState("孙师傅 (跟车员)");
   const [slipUrl, setSlipUrl] = useState<string>("");
+  const [slipName, setSlipName] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // 明细行 (默认匹配空暂养池)
   const emptyPools = pools.filter((p) => p.liveCount === 0);
@@ -83,8 +87,8 @@ export function MultiSpecIntakeDialog({
         poolId: nextEmptyPool?.id || "",
         gender: "MALE",
         weightTier: "3.5两",
-        weight: "",
-        inPoolCount: "",
+        weight: 300.0,
+        inPoolCount: 1000,
       },
     ]);
   };
@@ -93,20 +97,25 @@ export function MultiSpecIntakeDialog({
     setItems(items.filter((_, i) => i !== idx));
   };
 
-  const handleItemChange = (idx: number, field: string, val: any) => {
-    setItems(
-      items.map((it, i) => (i === idx ? { ...it, [field]: val } : it))
-    );
+  const handleItemChange = (idx: number, field: string, val: string | number) => {
+    const next = [...items];
+    next[idx] = { ...next[idx], [field]: val };
+    setItems(next);
   };
 
   const handleNumberChange = (idx: number, field: "weight" | "inPoolCount", rawVal: string) => {
     handleItemChange(idx, field, rawVal ? rawVal.replace(/^0+(?=\d)/, "") : "");
   };
 
+  // 防混池防重复池分配提示
   const handlePoolChange = (idx: number, newPoolId: string) => {
-    const conflictIdx = items.findIndex((it, i) => i !== idx && it.poolId === newPoolId);
-    setItems((prev) =>
-      prev.map((it, i) => (i === idx ? { ...it, poolId: newPoolId } : i === conflictIdx ? { ...it, poolId: "" } : it))
+    const conflictIdx = items.findIndex((it, i) => i !== idx && it.poolId === newPoolId && Boolean(newPoolId));
+    setItems(
+      items.map((it, i) => {
+        if (i === idx) return { ...it, poolId: newPoolId };
+        if (i === conflictIdx) return { ...it, poolId: "" };
+        return it;
+      })
     );
     if (conflictIdx !== -1) {
       const targetPool = pools.find((p) => p.id === newPoolId);
@@ -115,28 +124,38 @@ export function MultiSpecIntakeDialog({
     }
   };
 
-  const totalCount = items.reduce((sum, it) => sum + (Number(it.inPoolCount) || 0), 0);
-  const totalWeight = items.reduce((sum, it) => sum + (Number(it.weight) || 0), 0);
+  const remainingQuota = selectedFarmer?.remainingQuota || 0;
+  const validation = Invariants.validateMultiSpecBatch(items, remainingQuota);
+  const totalCount = validation.totalCount;
+  const totalWeight = validation.totalWeight;
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processSlipFile = async (file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       toast.error("文件不能超过 10MB");
       return;
     }
 
+    setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
       const res = await uploadFileAction(formData);
       setSlipUrl(res.url);
+      setSlipName(res.name);
       toast.success(`码单照片已上传: ${res.name}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "码单照片上传失败";
       toast.error(msg);
+    } finally {
+      setUploading(false);
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processSlipFile(file);
+    e.target.value = "";
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -149,42 +168,21 @@ export function MultiSpecIntakeDialog({
       toast.error("暂停合作养殖户禁止入池登记！");
       return;
     }
-    if (totalCount > (selectedFarmer?.remainingQuota || 0)) {
-      toast.error(`超额拦截：本批合计 ${totalCount} 只，该户剩余额度仅剩 ${selectedFarmer?.remainingQuota || 0} 只`);
+    if (!validation.canSubmit) {
+      if (validation.isOverQuota) {
+        toast.error(`超额拦截：本批合计 ${totalCount.toLocaleString()} 只，该户剩余额度仅剩 ${remainingQuota.toLocaleString()} 只（超额 ${validation.excessQuota.toLocaleString()} 只）`);
+      } else if (validation.errorMessage) {
+        toast.error(validation.errorMessage);
+      } else {
+        toast.error("表单存在不合规明细，请检查红色提示字段");
+      }
       return;
     }
 
-    if (new Set(items.map((it) => it.poolId)).size !== items.length) {
-      toast.error("码单明细分配冲突：同一码单每行明细必须分配到不同的空暂养池！");
+    const occupied = items.map((it) => pools.find((p) => p.id === it.poolId)).find((p) => p && p.liveCount > 0);
+    if (occupied) {
+      toast.error(`暂养池隔离拦截：${occupied.name || occupied.code} 当前已有在养存量（${occupied.liveCount} 只），必须选择空池！`);
       return;
-    }
-
-    // 前端严格校验：所有明细行必须选择空池
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const countNum = Number(it.inPoolCount) || 0;
-      const weightNum = Number(it.weight) || 0;
-      if (!it.poolId) {
-        toast.error(`第 ${i + 1} 行明细未选择暂养池，请选择空池`);
-        return;
-      }
-      if (countNum <= 0) {
-        toast.error(`第 ${i + 1} 行入池数量必须大于 0`);
-        return;
-      }
-      if (weightNum <= 0) {
-        toast.error(`第 ${i + 1} 行重量必须大于 0`);
-        return;
-      }
-      const p = pools.find((x) => x.id === it.poolId);
-      if (!p) {
-        toast.error(`第 ${i + 1} 行所选暂养池无效`);
-        return;
-      }
-      if (p.liveCount > 0) {
-        toast.error(`暂养池隔离拦截：${p.name || p.code} 当前已有在养存量（${p.liveCount} 只），必须选择空池！`);
-        return;
-      }
     }
 
     startTransition(async () => {
@@ -196,7 +194,7 @@ export function MultiSpecIntakeDialog({
         humidity: parseFloat(humidity) || 85.0,
         escort,
         slipUrl: slipUrl || undefined,
-        slipName: `${formNo}_码单原件.jpg`,
+        slipName: slipName || (slipUrl ? `${formNo}_码单原件.jpg` : undefined),
         items: items.map((it) => ({
           poolId: it.poolId,
           gender: it.gender,
@@ -288,19 +286,45 @@ export function MultiSpecIntakeDialog({
                     variant="ghost"
                     size="sm"
                     className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => setSlipUrl("")}
+                    onClick={() => {
+                      setSlipUrl("");
+                      setSlipName("");
+                    }}
                   >
                     <X className="size-3" />
                   </Button>
                 </div>
               ) : (
-                <label className="h-8 border border-dashed rounded flex items-center justify-center gap-1 px-2 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer transition-colors">
-                  <Upload className="size-3.5" />
-                  <span>上传码单照片</span>
+                <label
+                  {...getFileDropHandlers(processSlipFile, setIsDragging, uploading)}
+                  className={cn(
+                    "h-8 border rounded flex items-center justify-center gap-1 px-2 text-xs cursor-pointer transition-all",
+                    isDragging
+                      ? "border-primary bg-primary/10 border-solid ring-2 ring-primary/20 text-primary"
+                      : "border-dashed text-muted-foreground hover:bg-muted/50"
+                  )}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin text-primary" />
+                      <span>上传中...</span>
+                    </>
+                  ) : isDragging ? (
+                    <>
+                      <Upload className="size-3.5 text-primary animate-bounce" />
+                      <span className="font-medium text-primary">松开上传照片</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-3.5" />
+                      <span>点击或拖拽上传码单照片</span>
+                    </>
+                  )}
                   <input
                     type="file"
                     accept="image/*,.pdf"
                     className="hidden"
+                    disabled={uploading}
                     onChange={handleFileUpload}
                   />
                 </label>
@@ -319,6 +343,7 @@ export function MultiSpecIntakeDialog({
 
             <div className="space-y-2 pt-1">
               {items.map((item, idx) => {
+                const itemErr = validation.itemErrors[idx];
                 const weightNum = Number(item.weight) || 0;
                 const countNum = Number(item.inPoolCount) || 0;
                 const expectedCount = Invariants.estimateCrabCount(weightNum, item.weightTier);
@@ -366,7 +391,10 @@ export function MultiSpecIntakeDialog({
                       onChange={(e) => handleNumberChange(idx, "weight", e.target.value)}
                       onFocus={(e) => e.target.select()}
                       placeholder="重量(斤)"
-                      className="h-7 text-xs font-mono text-right"
+                      className={cn(
+                        "h-7 text-xs font-mono text-right",
+                        itemErr?.weightError && "border-destructive focus-visible:ring-destructive text-destructive bg-destructive/10"
+                      )}
                     />
                   </div>
 
@@ -379,18 +407,21 @@ export function MultiSpecIntakeDialog({
                       onChange={(e) => handleNumberChange(idx, "inPoolCount", e.target.value)}
                       onFocus={(e) => e.target.select()}
                       placeholder="只数"
-                      className="h-7 text-xs font-mono text-right font-bold"
+                      className={cn(
+                        "h-7 text-xs font-mono text-right font-bold",
+                        itemErr?.countError && "border-destructive focus-visible:ring-destructive text-destructive bg-destructive/10"
+                      )}
                     />
                   </div>
 
                   <div className="col-span-3">
                     <Select value={item.poolId || undefined} onValueChange={(v) => handlePoolChange(idx, v)}>
                       <SelectTrigger
-                        className={`h-7 text-xs font-mono ${
-                          !item.poolId
-                            ? "border-amber-500/80 bg-amber-500/10 text-amber-900 dark:text-amber-200"
-                            : ""
-                        }`}
+                        className={cn(
+                          "h-7 text-xs font-mono",
+                          (!item.poolId || itemErr?.poolError) &&
+                            "border-amber-500/80 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                        )}
                       >
                         <SelectValue placeholder="请选入池" />
                       </SelectTrigger>
@@ -422,25 +453,54 @@ export function MultiSpecIntakeDialog({
                     )}
                   </div>
 
-                  {expectedCount !== null && (
-                    <div className={`col-span-12 text-right text-[11px] ${hasLargeDeviation ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                      理论参考：{weightNum.toLocaleString()} 斤按 {item.weightTier}/只约 {expectedCount.toLocaleString()} 只
-                      {countNum > 0 && countDifference !== 0 && (
-                        <>；当前{countDifference > 0 ? "多" : "少"} {Math.abs(countDifference).toLocaleString()} 只（偏差 {(deviationRate * 100).toFixed(1)}%）</>
-                      )}
-                      {countNum > 0 && countDifference === 0 && "；当前填写一致"}
+                  <div className="col-span-12 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[11px] pt-1 border-t border-border/40">
+                    <div className="flex flex-wrap items-center gap-2 text-destructive font-medium">
+                      {itemErr?.weightError && <span>⚠️ 重量：{itemErr.weightError}</span>}
+                      {itemErr?.countError && <span>⚠️ 只数：{itemErr.countError}</span>}
+                      {itemErr?.poolError && <span>⚠️ 池位：{itemErr.poolError}</span>}
                     </div>
-                  )}
+
+                    {expectedCount !== null && (
+                      <div
+                        className={cn(
+                          "text-right sm:ml-auto",
+                          hasLargeDeviation ? "text-destructive font-medium" : "text-muted-foreground"
+                        )}
+                      >
+                        理论参考：{weightNum.toLocaleString()} 斤按 {item.weightTier}/只约 {expectedCount.toLocaleString()} 只
+                        {countNum > 0 && countDifference !== 0 && (
+                          <>；当前{countDifference > 0 ? "多" : "少"} {Math.abs(countDifference).toLocaleString()} 只（偏差 {(deviationRate * 100).toFixed(1)}%）</>
+                        )}
+                        {countNum > 0 && countDifference === 0 && "；当前填写一致"}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 );
               })}
 
-              <div className="flex justify-between items-center pt-2 text-xs font-mono border-t">
-                <span className="text-muted-foreground">
-                  养殖户剩余额度：<strong className="text-foreground">{selectedFarmer?.remainingQuota || 0} 只</strong>
-                </span>
-                <span className="font-bold text-foreground">
-                  本批合计：<strong className="text-primary text-sm">{totalCount} 只</strong> ({totalWeight} 斤)
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-2 text-xs font-mono border-t">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-muted-foreground">
+                    养殖户剩余额度：<strong className="text-foreground">{remainingQuota.toLocaleString()} 只</strong>
+                  </span>
+                  {validation.isOverQuota && (
+                    <span className="text-destructive font-semibold flex items-center gap-1 bg-destructive/10 px-2 py-0.5 rounded text-[11px]">
+                      ⚠️ 超出额度 {validation.excessQuota.toLocaleString()} 只 (严禁入池)
+                    </span>
+                  )}
+                </div>
+                <span className="font-bold text-foreground flex items-center gap-2">
+                  本批合计：
+                  <strong
+                    className={cn(
+                      "text-sm font-bold",
+                      validation.isOverQuota || validation.hasErrors ? "text-destructive" : "text-primary"
+                    )}
+                  >
+                    {totalCount.toLocaleString()} 只
+                  </strong>
+                  <span className="text-muted-foreground text-xs font-normal">({totalWeight.toFixed(1)} 斤)</span>
                 </span>
               </div>
             </div>
@@ -450,9 +510,23 @@ export function MultiSpecIntakeDialog({
             <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>
               取消
             </Button>
-            <Button type="submit" size="sm" disabled={isPending || items.length === 0} className="gap-1 bg-primary text-primary-foreground">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isPending || items.length === 0 || !validation.canSubmit}
+              className={cn(
+                "gap-1",
+                validation.canSubmit
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground cursor-not-allowed hover:bg-muted"
+              )}
+            >
               {isPending && <Loader2 className="size-3.5 animate-spin" />}
-              确认提交并入池 ({totalCount} 只)
+              {validation.isOverQuota
+                ? `超额禁止入池 (超 ${validation.excessQuota.toLocaleString()} 只)`
+                : validation.hasErrors
+                ? `请修正输入错误 (${totalCount > 0 ? `${totalCount.toLocaleString()} 只` : "异常"})`
+                : `确认提交并入池 (${totalCount.toLocaleString()} 只)`}
             </Button>
           </div>
         </form>

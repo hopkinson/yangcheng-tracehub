@@ -176,7 +176,13 @@ export default async function BundlingPage({
         <div className="flex items-center gap-2">
           <BundleGroupDialog groups={groups} />
           <BundleBatchDialog
-            groups={groups.map((g: any) => ({ id: g.id, code: g.code, name: g.name }))}
+            groups={groups.map((g: any) => ({
+              id: g.id,
+              code: g.code,
+              name: g.name,
+              isBundling: g.batches.some((b: any) => b.status === "BUNDLING"),
+            }))}
+            defaultGroupId={selectedGroupId}
             materialBatches={materialBatches}
             tagClaims={approvedTagClaims.map((t: any) => ({
               id: t.id,
