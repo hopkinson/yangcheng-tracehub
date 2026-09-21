@@ -51,43 +51,18 @@ jobs:
           npx tsx prisma/seed.ts
           pnpm test
 
-      - name: "登录 GitHub Container Registry (GHCR)"
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "配置 Docker Buildx 构建引擎"
-        if: github.event_name != 'pull_request'
-        uses: docker/setup-buildx-action@v3
-
-      - name: "构建并推送生产 Docker 镜像至 GHCR"
-        if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       # =========================================================================
-      # 方案 A：在 Runner 打包并通过 SCP 传输至服务器 1，彻底杜绝服务器拉取海外 GHCR 超时
+      # 打包纯净源码 (仅 ~1.8MB) 并通过 SCP 传输至服务器 1，彻底杜绝大镜像包传输超时
       # =========================================================================
-      - name: "导出并压缩生产镜像包"
+      - name: "打包生产源码包"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
         run: |
-          echo "📦 在 Runner 拉取刚构建好的镜像并打包..."
-          docker pull ghcr.io/${{ github.repository }}:latest
-          docker save ghcr.io/${{ github.repository }}:latest | gzip -1 > app-image.tar.gz
-          echo "✅ 镜像打包并压缩完成，文件大小:"
-          ls -lh app-image.tar.gz
+          echo "📦 使用 git archive 打包纯净项目源码..."
+          git archive --format=tar.gz -o app-source.tar.gz HEAD
+          echo "✅ 源码打包完成，文件大小:"
+          ls -lh app-source.tar.gz
 
-      - name: "传输镜像包至服务器 1 (密码认证)"
+      - name: "传输源码包至服务器 1 (密码认证)"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 == ''"
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -96,12 +71,12 @@ jobs:
           password: ${{ env.SERVER_PASSWORD_1 }}
           port: ${{ env.SERVER_PORT_1 }}
           timeout: "60s"
-          command_timeout: "10m"
-          source: "app-image.tar.gz"
+          command_timeout: "5m"
+          source: "app-source.tar.gz"
           target: "/tmp"
           overwrite: true
 
-      - name: "传输镜像包至服务器 1 (密钥认证)"
+      - name: "传输源码包至服务器 1 (密钥认证)"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -110,8 +85,8 @@ jobs:
           key: ${{ env.SERVER_SSH_KEY_1 }}
           port: ${{ env.SERVER_PORT_1 }}
           timeout: "60s"
-          command_timeout: "10m"
-          source: "app-image.tar.gz"
+          command_timeout: "5m"
+          source: "app-source.tar.gz"
           target: "/tmp"
           overwrite: true
 
@@ -128,15 +103,7 @@ jobs:
           script: |
             set -e
 
-            # 1. 从 /tmp 加载传输过来的最新镜像包并立即清理临时文件
-            if [ -f /tmp/app-image.tar.gz ]; then
-              echo "📥 正在从传输包加载最新 Docker 镜像..."
-              docker load < /tmp/app-image.tar.gz
-              rm -f /tmp/app-image.tar.gz
-              echo "✅ 镜像加载成功！"
-            fi
-
-            # 2. 自动定位服务器部署目录
+            # 1. 自动定位服务器部署目录
             TARGET_DIR=""
             for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
               if [ -d "$dir" ]; then
@@ -150,16 +117,27 @@ jobs:
               mkdir -p "$TARGET_DIR"
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
+
+            # 2. 从 /tmp 解压传输过来的源码包并清理临时文件
+            if [ -f /tmp/app-source.tar.gz ]; then
+              echo "📥 正在解压最新源码到 $TARGET_DIR..."
+              tar -xzf /tmp/app-source.tar.gz -C "$TARGET_DIR"
+              rm -f /tmp/app-source.tar.gz
+              echo "✅ 源码解压完成！"
+            fi
             cd "$TARGET_DIR"
 
             # 3. 确保持久化目录存在
             mkdir -p data/db data/uploads
 
-            # 4. 更新 docker-compose.yml
+            # 4. 更新 docker-compose.yml (本地构建)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
-                image: ghcr.io/${{ github.repository }}:latest
+                build:
+                  context: .
+                  dockerfile: Dockerfile
+                image: yangcheng-tracehub:latest
                 container_name: yangcheng-tracehub
                 restart: always
                 ports:
@@ -195,7 +173,10 @@ jobs:
             ENV_EOF
             fi
 
-            # 6. 本地镜像已 load 就绪，直接平滑上线应用容器
+            # 6. 本地镜像构建并平滑上线
+            echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
+            docker compose build app || docker-compose build app
+
             echo "🔄 启动并平滑上线容器..."
             docker compose up -d app || docker-compose up -d app
             if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
@@ -243,15 +224,7 @@ jobs:
           script: |
             set -e
 
-            # 1. 从 /tmp 加载传输过来的最新镜像包并立即清理临时文件
-            if [ -f /tmp/app-image.tar.gz ]; then
-              echo "📥 正在从传输包加载最新 Docker 镜像..."
-              docker load < /tmp/app-image.tar.gz
-              rm -f /tmp/app-image.tar.gz
-              echo "✅ 镜像加载成功！"
-            fi
-
-            # 2. 自动定位服务器部署目录
+            # 1. 自动定位服务器部署目录
             TARGET_DIR=""
             for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
               if [ -d "$dir" ]; then
@@ -265,16 +238,27 @@ jobs:
               mkdir -p "$TARGET_DIR"
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
+
+            # 2. 从 /tmp 解压传输过来的源码包并清理临时文件
+            if [ -f /tmp/app-source.tar.gz ]; then
+              echo "📥 正在解压最新源码到 $TARGET_DIR..."
+              tar -xzf /tmp/app-source.tar.gz -C "$TARGET_DIR"
+              rm -f /tmp/app-source.tar.gz
+              echo "✅ 源码解压完成！"
+            fi
             cd "$TARGET_DIR"
 
             # 3. 确保持久化目录存在
             mkdir -p data/db data/uploads
 
-            # 4. 更新 docker-compose.yml
+            # 4. 更新 docker-compose.yml (本地构建)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
-                image: ghcr.io/${{ github.repository }}:latest
+                build:
+                  context: .
+                  dockerfile: Dockerfile
+                image: yangcheng-tracehub:latest
                 container_name: yangcheng-tracehub
                 restart: always
                 ports:
@@ -310,7 +294,10 @@ jobs:
             ENV_EOF
             fi
 
-            # 6. 本地镜像已 load 就绪，直接平滑上线应用容器
+            # 6. 本地镜像构建并平滑上线
+            echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
+            docker compose build app || docker-compose build app
+
             echo "🔄 启动并平滑上线容器..."
             docker compose up -d app || docker-compose up -d app
             if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
