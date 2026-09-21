@@ -73,13 +73,16 @@ async function main() {
 
   const models = [
     "qCRecord", "specialApproval", "auditLog", "inspectionReport", "lossRecord",
-    "outboundLossRecord", "outboundLine", "outboundOrder", "order",
+    "outboundLossItem", "outboundLossRecord", "outboundLossOrder", "outboundLine", "outboundOrder", "order",
     "coldLog", "coldStore", "sortTask", "sortMachine",
     "bundleLine", "bundleBatch", "bundleGroup", "tagClaim",
     "batchItem", "batch", "holdingPool", "enclosure", "farmer",
     "user", "store", "channel"
   ];
   await prisma.$executeRawUnsafe('DELETE FROM "ApprovalSetting"').catch(() => {});
+  await prisma.$executeRawUnsafe('DELETE FROM "OutboundLossItem"').catch(() => {});
+  await prisma.$executeRawUnsafe('DELETE FROM "OutboundLossRecord"').catch(() => {});
+  await prisma.$executeRawUnsafe('DELETE FROM "OutboundLossOrder"').catch(() => {});
   for (const m of models) {
     if (!prisma[m]) throw new Error(`未知 Prisma 模型: ${m}`);
     await prisma[m].deleteMany().catch((err) => {

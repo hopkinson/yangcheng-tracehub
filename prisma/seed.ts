@@ -13,7 +13,9 @@ async function main() {
   await prisma.auditLog.deleteMany().catch(() => {});
   await prisma.inspectionReport.deleteMany().catch(() => {});
   await prisma.lossRecord.deleteMany().catch(() => {});
+  await prisma.outboundLossItem.deleteMany().catch(() => {});
   await prisma.outboundLossRecord.deleteMany().catch(() => {});
+  await prisma.outboundLossOrder.deleteMany().catch(() => {});
   await prisma.outboundLine.deleteMany().catch(() => {});
   await prisma.outboundOrder.deleteMany().catch(() => {});
   await prisma.order.deleteMany().catch(() => {});

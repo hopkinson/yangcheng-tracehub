@@ -517,10 +517,10 @@ model OutboundLossOrder {
   status          String      @default("PENDING") // PENDING (待审核), APPROVED (已核销), REJECTED (已驳回)
   rejectReason    String?
 
-  applicantId     String
-  applicant       User        @relation("OutboundLossApplicant", fields: [applicantId], references: [id])
+  applicantId     String?
+  applicant       User?       @relation("OutboundLossApplicant", fields: [applicantId], references: [id], onDelete: SetNull)
   approverId      String?
-  approver        User?       @relation("OutboundLossApprover", fields: [approverId], references: [id])
+  approver        User?       @relation("OutboundLossApprover", fields: [approverId], references: [id], onDelete: SetNull)
   approvalComment String?
   approvedAt      DateTime?
 
