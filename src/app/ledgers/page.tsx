@@ -237,6 +237,21 @@ export default async function LedgersPage({
             enclosure: true,
             pool: true,
             items: { include: { pool: true } },
+            bundleBatches: {
+              include: {
+                lines: true,
+                sortTasks: {
+                  include: {
+                    coldLogs: {
+                      include: {
+                        outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
+                        outboundLosses: { where: { status: { not: "REJECTED" } } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           orderBy: { inPoolTime: "desc" },
         }),
@@ -422,6 +437,41 @@ export default async function LedgersPage({
           pool: batch.pool,
         }];
     return items.map((item) => {
+      const itemTier = Invariants.normalizeWeightTier(item.weightTier);
+      let downstreamShipped = 0;
+      let downstreamLoss = 0;
+      let hasDownstream = false;
+
+      if (batch.bundleBatches?.length) {
+        for (const bb of batch.bundleBatches) {
+          for (const line of bb.lines) {
+            if (line.gender === item.gender && Invariants.normalizeWeightTier(line.weightTier) === itemTier) {
+              hasDownstream = true;
+              const lineLoss = line.lossCount ?? (bb.lines.length === 1 ? bb.lossCount : 0);
+              downstreamLoss += lineLoss || 0;
+            }
+          }
+          for (const st of bb.sortTasks) {
+            if (st.gender === item.gender && Invariants.normalizeWeightTier(st.weightTier) === itemTier) {
+              hasDownstream = true;
+              downstreamLoss += st.lossCount || 0;
+              for (const cl of st.coldLogs) {
+                for (const ol of cl.outboundLines) {
+                  downstreamShipped += ol.count || 0;
+                }
+                for (const loss of cl.outboundLosses) {
+                  downstreamLoss += loss.count || 0;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // ponytail: 穿透后道工序数据，发货取真实出库单发货数，累计损耗取 (暂养损耗 + 捆扎损耗 + 分拣损耗 + 发货损耗)
+      const shipped = hasDownstream ? downstreamShipped : item.outPoolCount;
+      const totalLoss = hasDownstream ? item.lossCount + downstreamLoss : item.lossCount;
+
       const exportRow: ExportValue[] = [
         formatDate(batch.inPoolTime),
         formatTime(batch.inPoolTime),
@@ -434,9 +484,9 @@ export default async function LedgersPage({
         item.pool.name || item.pool.code,
         item.pool.code,
         Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
-        item.outPoolCount,
-        item.lossCount,
-        rateText(item.lossCount, item.inPoolCount),
+        shipped,
+        totalLoss,
+        rateText(totalLoss, item.inPoolCount),
         qcText(batch.quickCheck),
         qcText(batch.sampleCheck),
         batch.escort || "—",

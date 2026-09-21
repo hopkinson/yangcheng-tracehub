@@ -13,8 +13,8 @@ console.log("▶ [Test 1] 检查 OverviewDashboard.tsx 8 大卡片顶部主指�
 // 卡片 1: 待发只数放上面，今日原始订单放下面
 assert.match(
   overviewSource,
-  /AnimatedNumber\s+value=\{metrics\.pendingDeliveryTotalCount\}[^>]*>\s*<\/AnimatedNumber>[\s\S]*?<span[^>]*>只(?:待发)?<\/span>|value=\{metrics\.pendingDeliveryTotalCount\}[\s\S]*?<span[^>]*>只(?:待发)?<\/span>/,
-  "卡片1顶部必须是待发只数 (metrics.pendingDeliveryTotalCount)"
+  /value=\{metrics\.pendingDeliveryTotalCount\}[\s\S]*?<span[^>]*>只待发货<\/span>/,
+  "卡片1顶部主指标单位必须明确标注为'只待发货'，避免0只时与今日订单数产生歧义"
 );
 assert.match(
   overviewSource,

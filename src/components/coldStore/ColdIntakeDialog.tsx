@@ -54,7 +54,8 @@ export function ColdIntakeDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const initialSourceBatch = sourceBatches.find((b) => b.availableCount > 0) || sourceBatches[0];
+  const priorityBatch = sourceBatches.find((b) => b.availableCount > 0);
+  const initialSourceBatch = priorityBatch || sourceBatches[0];
 
   const [storeId, setStoreId] = useState(defaultStoreId || stores[0]?.id || "");
   const [selectedSourceBatchId, setSelectedSourceBatchId] = useState(initialSourceBatch?.id || "");
@@ -62,7 +63,11 @@ export function ColdIntakeDialog({
   const [genderFilter, setGenderFilter] = useState<"ALL" | "MALE" | "FEMALE">("ALL");
   const [operator, setOperator] = useState("李仓管");
 
+  // 如果当前选中的批次已无可入库余量，且存在待入库优先批次，自动切换至优先批次
   const currentBatch = sourceBatches.find((b) => b.id === selectedSourceBatchId);
+  if (priorityBatch && (!currentBatch || currentBatch.availableCount <= 0) && selectedSourceBatchId !== priorityBatch.id) {
+    setSelectedSourceBatchId(priorityBatch.id);
+  }
   const currentTasks = currentBatch?.tasks || [];
   const currentBatchAvailable = currentBatch?.availableCount ?? 0;
 
@@ -191,12 +196,24 @@ export function ColdIntakeDialog({
                       暂无可入库的分拣原料批次
                     </SelectItem>
                   ) : (
-                    sourceBatches.map((batch, index) => (
-                      <SelectItem key={batch.id} value={batch.id} className="text-xs font-mono">
-                        {batch.code} · {batch.availableCount > 0 ? `待入库 ${batch.availableCount} 只` : "已全部入库"}
-                        {index === 0 ? " · 当前优先" : ""}
-                      </SelectItem>
-                    ))
+                    sourceBatches.map((batch) => {
+                      const isPriority = priorityBatch?.id === batch.id;
+                      const isExhausted = batch.availableCount <= 0;
+                      const suffix = isExhausted
+                        ? " · 已全部入库"
+                        : ` · 待入库 ${batch.availableCount} 只 · ${isPriority ? "当前优先" : "待前序完成"}`;
+
+                      return (
+                        <SelectItem
+                          key={batch.id}
+                          value={batch.id}
+                          disabled={isExhausted || (!isPriority && Boolean(priorityBatch))}
+                          className="text-xs font-mono"
+                        >
+                          {batch.code}{suffix}
+                        </SelectItem>
+                      );
+                    })
                   )}
                 </SelectContent>
               </Select>

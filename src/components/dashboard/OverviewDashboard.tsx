@@ -545,7 +545,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               <div className="my-1">
                 <div className="text-[28px] leading-none font-semibold font-mono tracking-[-0.02em] text-foreground">
                   <AnimatedNumber value={metrics.pendingDeliveryTotalCount} duration={700} />
-                  <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
+                  <span className="text-xs text-muted-foreground font-normal ml-1">只待发货</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
                   今日原始订单：<span className="font-mono font-medium text-foreground"><AnimatedNumber value={metrics.todayOrdersCount} duration={700} /></span> 单

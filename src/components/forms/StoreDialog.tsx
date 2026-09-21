@@ -56,29 +56,18 @@ export function StoreDialog({
   async function onSubmit(data: StoreFormValues) {
     setLoading(true);
     try {
-      if (isEditing && store) {
-        await updateStoreAction({
-          id: store.id,
-          code: data.code,
-          name: data.name.trim(),
-          channelId: data.channelId,
-          isActive: data.isActive,
-          userId,
-        });
-        toast.success("门店档案已更新！");
-      } else {
-        await createStoreAction({
-          code: data.code,
-          name: data.name.trim(),
-          channelId: data.channelId,
-          userId,
-        });
-        toast.success("新增门店档案成功！");
+      const res = isEditing && store
+        ? await updateStoreAction({ id: store.id, code: data.code, name: data.name.trim(), channelId: data.channelId, isActive: data.isActive, userId })
+        : await createStoreAction({ code: data.code, name: data.name.trim(), channelId: data.channelId, userId });
+
+      if (res?.error) {
+        toast.error(res.error);
+        return;
       }
+      toast.success(isEditing ? "门店档案已更新！" : "新增门店档案成功！");
       setOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "操作失败";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "操作失败");
     } finally {
       setLoading(false);
     }
@@ -90,13 +79,16 @@ export function StoreDialog({
     if (!store) return;
     setLoading(true);
     try {
-      await deleteStoreAction({ id: store.id, userId });
+      const res = await deleteStoreAction({ id: store.id, userId });
+      if (res?.error) {
+        toast.error(res.error);
+        return;
+      }
       toast.success("门店已删除！");
       setConfirmDeleteOpen(false);
       setOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "删除失败");
     } finally {
       setLoading(false);
     }

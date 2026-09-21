@@ -69,7 +69,7 @@ export default async function FarmersPage({
       cumulativeClaimed += t.claimCount;
       cumulativeBound += t.boundCount || 0;
     }
-    const remainingQuota = Math.max(0, f.quota - cumulativeClaimed);
+    const remainingQuota = Math.max(0, f.quota - cumulativeInPool);
     return {
       ...f,
       cumulativeInPool,

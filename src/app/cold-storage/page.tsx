@@ -122,9 +122,12 @@ export default async function ColdStoragePage({
   }
 
   const sourceBatches = [...sourceBatchMap.values()].sort((a, b) => {
-    const aTime = a.inPoolTime ? new Date(a.inPoolTime).getTime() : Number.MAX_SAFE_INTEGER;
-    const bTime = b.inPoolTime ? new Date(b.inPoolTime).getTime() : Number.MAX_SAFE_INTEGER;
-    return aTime - bTime || a.code.localeCompare(b.code);
+    return (
+      (b.availableCount > 0 ? 1 : 0) - (a.availableCount > 0 ? 1 : 0) ||
+      (a.inPoolTime ? new Date(a.inPoolTime).getTime() : Number.MAX_SAFE_INTEGER) -
+        (b.inPoolTime ? new Date(b.inPoolTime).getTime() : Number.MAX_SAFE_INTEGER) ||
+      a.code.localeCompare(b.code)
+    );
   });
 
   const taskMap = new Map(sortTaskOptions.map((t) => [t.id, t]));

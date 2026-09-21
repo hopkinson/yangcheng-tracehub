@@ -23,17 +23,33 @@ export default async function TagsPage({
   const page = Math.max(1, Number(params.page) || 1);
   const pageSize = Math.max(1, Number(params.pageSize) || 10);
 
+  const tagClaimInclude = {
+    farmer: true,
+    applicant: true,
+    approver: true,
+    bundleBatches: {
+      include: {
+        sortTasks: {
+          include: {
+            coldLogs: {
+              include: {
+                outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
+                outboundLosses: { where: { status: { not: "REJECTED" } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
   const [currentUser, totalClaims, tagClaims, farmers, unbalancedClaims] = await Promise.all([
     getCurrentUser(),
     prisma.tagClaim.count(),
     prisma.tagClaim.findMany({
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: {
-        farmer: true,
-        applicant: true,
-        approver: true,
-      },
+      include: tagClaimInclude,
       orderBy: { createdAt: "desc" },
     }),
     prisma.farmer.findMany({
@@ -45,11 +61,7 @@ export default async function TagsPage({
     }),
     prisma.tagClaim.findMany({
       where: { status: "APPROVED", isBalanced: false },
-      include: {
-        farmer: true,
-        applicant: true,
-        approver: true,
-      },
+      include: tagClaimInclude,
       orderBy: { claimDate: "desc" },
     }),
   ]);

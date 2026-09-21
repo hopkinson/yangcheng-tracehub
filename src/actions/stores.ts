@@ -7,10 +7,10 @@ import { revalidatePath } from "next/cache";
 export async function createStoreAction(data: { code: string; name: string; channelId: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const code = data.code.trim().toUpperCase();
-  if (!code) throw new Error("请输入门店编号");
+  if (!code) return { error: "请输入门店编号" };
 
   const duplicate = await prisma.store.findUnique({ where: { code }, select: { id: true } });
-  if (duplicate) throw new Error(`门店编号「${code}」已存在，请更换`);
+  if (duplicate) return { error: `门店编号「${code}」已存在，请更换` };
 
   const store = await prisma.store.create({
     data: {
@@ -33,19 +33,19 @@ export async function createStoreAction(data: { code: string; name: string; chan
 
   revalidatePath("/stores");
   revalidatePath("/outbound");
-  return store;
+  return { store };
 }
 
 export async function updateStoreAction(data: { id: string; code: string; name: string; channelId: string; isActive: boolean; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const code = data.code.trim().toUpperCase();
-  if (!code) throw new Error("请输入门店编号");
+  if (!code) return { error: "请输入门店编号" };
 
   const duplicate = await prisma.store.findFirst({
     where: { code, id: { not: data.id } },
     select: { id: true },
   });
-  if (duplicate) throw new Error(`门店编号「${code}」已存在，请更换`);
+  if (duplicate) return { error: `门店编号「${code}」已存在，请更换` };
 
   const store = await prisma.store.update({
     where: { id: data.id },
@@ -69,18 +69,19 @@ export async function updateStoreAction(data: { id: string; code: string; name: 
 
   revalidatePath("/stores");
   revalidatePath("/outbound");
-  return store;
+  return { store };
 }
 
 export async function deleteStoreAction(data: { id: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const store = await prisma.store.findUniqueOrThrow({
+  const store = await prisma.store.findUnique({
     where: { id: data.id },
     include: { outboundOrders: true },
   });
 
+  if (!store) return { error: "未找到指定门店" };
   if (store.outboundOrders.length > 0) {
-    throw new Error(`门店【${store.name}】已有出库记录，无法删除，可设为停用`);
+    return { error: `门店【${store.name}】已有出库记录，无法删除，可设为停用` };
   }
 
   await prisma.store.delete({
@@ -99,4 +100,5 @@ export async function deleteStoreAction(data: { id: string; userId: string }) {
 
   revalidatePath("/stores");
   revalidatePath("/outbound");
+  return { success: true };
 }
