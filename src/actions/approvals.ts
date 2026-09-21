@@ -25,6 +25,7 @@ export async function approveTagClaimAction(data: {
       include: {
         farmer: {
           include: {
+            batches: true,
             tagClaims: { where: { status: "APPROVED" } },
           },
         },
@@ -36,11 +37,15 @@ export async function approveTagClaimAction(data: {
     }
 
     if (data.approved) {
-      const cumulativeBoundCount = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+      const tagInboundCount = claim.farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
+      const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + (c.id !== claim.id ? c.claimCount : 0), 0);
+      const cumulativeReturned = claim.farmer.tagClaims.reduce((sum, c) => sum + c.returnedCount, 0);
 
       const tagCheck = Invariants.checkTagClaim({
         farmerQuota: claim.farmer.quota,
-        cumulativeBoundCount,
+        tagInboundCount,
+        cumulativeClaimed,
+        cumulativeReturned,
         requestedCount: claim.claimCount,
       });
 

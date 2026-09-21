@@ -501,8 +501,67 @@ testBatchLifecycleLoss();
   console.log("  ✔ 多规格部分清池与全部归零汇总测试通过\n");
 }
 
+{
+  console.log("▶ [Test 19] 原料入池亩数*600硬上限卡控校验");
+  const annualQuota = Invariants.calculateQuota(10); // 10 亩
+  assert.equal(annualQuota, 6000, "10亩核定额度应为 6000 只");
+
+  // 原料入池不得超过 亩数 * 600
+  const quotaCheckValid = Invariants.checkQuota({
+    annualQuota,
+    cumulativeInPool: 3300,
+    newBatchCount: 2700,
+  });
+  assert.equal(quotaCheckValid.valid, true, "3300 + 2700 = 6000 刚好打平额度，允许入池");
+  assert.equal(quotaCheckValid.remainingQuota, 2700);
+
+  const quotaCheckOver = Invariants.checkQuota({
+    annualQuota,
+    cumulativeInPool: 3300,
+    newBatchCount: 3000,
+  });
+  assert.equal(quotaCheckOver.valid, false, "3300 + 3000 = 6300 > 6000 必须被硬性拦截");
+  assert.equal(quotaCheckOver.excess, 300, "超额只数应为 300 只");
+  console.log("  ✔ 原料入池亩数*600上限校验测试通过\n");
+}
+
+{
+  console.log("▶ [Test 20] 蟹扣申请不得超过 蟹扣入仓 - 蟹扣申领数 + 退回数 硬守恒卡控");
+  // 张三案例：签约 6000 只，蟹扣入仓 3300 只，累计已申领 3250 只，已退回 0 只
+  const checkWithin = Invariants.checkTagClaim({
+    farmerQuota: 6000,
+    tagInboundCount: 3300,
+    cumulativeClaimed: 3250,
+    cumulativeReturned: 0,
+    requestedCount: 50,
+  });
+  assert.equal(checkWithin.valid, true, "申请 50 只恰好满足 3300 - 3250 + 0 = 50 只");
+  assert.equal(checkWithin.maxClaimable, 50, "最大可领上限必须为 50 只而非 2750 只");
+
+  const checkOver = Invariants.checkTagClaim({
+    farmerQuota: 6000,
+    tagInboundCount: 3300,
+    cumulativeClaimed: 3250,
+    cumulativeReturned: 0,
+    requestedCount: 51,
+  });
+  assert.equal(checkOver.valid, false, "申请 51 只超出 50 只必须被硬拦截");
+
+  // 退回 20 只后，可用上限恢复为 50 + 20 = 70 只
+  const checkWithReturn = Invariants.checkTagClaim({
+    farmerQuota: 6000,
+    tagInboundCount: 3300,
+    cumulativeClaimed: 3250,
+    cumulativeReturned: 20,
+    requestedCount: 70,
+  });
+  assert.equal(checkWithReturn.valid, true, "退回 20 只后可申请 70 只");
+  assert.equal(checkWithReturn.maxClaimable, 70);
+  console.log("  ✔ 蟹扣申请【蟹扣入仓 - 申领数 + 退回数】守恒拦截测试通过\n");
+}
+
 testPoolSpecLockRelease()
-  .then(() => console.log("🎉 全部 18 项 PRD V2.1 核心卡控规则测试 100% 通过！"))
+  .then(() => console.log("🎉 全部 20 项 PRD V2.1 核心卡控规则测试 100% 通过！"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -46,10 +46,10 @@ async function main() {
       gender: "MALE",
       weightTier: "4.0两",
       inPoolTime: new Date("1800-01-01T00:00:00.000Z"),
-      inPoolCount: 100,
+      inPoolCount: 500,
       createdById: admin.id,
       items: {
-        create: [{ poolId: pool.id, gender: "MALE", weightTier: "4.0两", inPoolCount: 100 }],
+        create: [{ poolId: pool.id, gender: "MALE", weightTier: "4.0两", inPoolCount: 500 }],
       },
     },
   });
@@ -59,7 +59,7 @@ async function main() {
 
   let claimId: string | null = null;
   try {
-    console.log("▶ [1/6] 领扣不受在池数量限制");
+    console.log("▶ [1/6] 蟹扣申请受蟹扣入仓-申领数+退回数硬卡控");
     const requested = await requestTagClaimAction({
       farmerId: farmer.id,
       claimCount: 500,
@@ -68,7 +68,7 @@ async function main() {
     claimId = requested.id;
     assert.equal(requested.claimCount, 500);
     assert.equal(requested.status, "PENDING");
-    console.log("  ✔ 在池仅 100 只，仍可按年度额度申请 500 个蟹扣");
+    console.log("  ✔ 入仓 500 只，成功按入仓上限申请 500 个蟹扣");
 
     await prisma.tagClaim.update({ where: { id: requested.id }, data: { status: "APPROVED" } });
 

@@ -27,6 +27,7 @@ export interface FarmerOption {
   id: string;
   name: string;
   code: string;
+  area?: number;
   quota: number;
   remainingQuota: number;
   status: string;
@@ -247,7 +248,7 @@ export function MultiSpecIntakeDialog({
                 <SelectContent>
                   {farmers.map((f) => (
                     <SelectItem key={f.id} value={f.id} disabled={f.status !== "ACTIVE"} className="text-xs">
-                      {f.name} ({f.code}) · 余量 {f.remainingQuota}只 {f.status !== "ACTIVE" && "⚠️暂停合作"}
+                      {f.name} ({f.code}) · 入池余量 {f.remainingQuota.toLocaleString()}只 {f.area ? `(上限 ${f.quota.toLocaleString()}只)` : ""} {f.status !== "ACTIVE" && "⚠️暂停合作"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -482,7 +483,7 @@ export function MultiSpecIntakeDialog({
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-2 text-xs font-mono border-t">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-muted-foreground">
-                    养殖户剩余额度：<strong className="text-foreground">{remainingQuota.toLocaleString()} 只</strong>
+                    养殖户入池剩余额度 (亩数×600)：<strong className="text-foreground">{remainingQuota.toLocaleString()} 只</strong>
                   </span>
                   {validation.isOverQuota && (
                     <span className="text-destructive font-semibold flex items-center gap-1 bg-destructive/10 px-2 py-0.5 rounded text-[11px]">

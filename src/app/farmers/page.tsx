@@ -69,7 +69,7 @@ export default async function FarmersPage({
       cumulativeClaimed += t.claimCount;
       cumulativeBound += t.boundCount || 0;
     }
-    const remainingQuota = Math.max(0, f.quota - cumulativeBound);
+    const remainingQuota = Math.max(0, f.quota - cumulativeClaimed);
     return {
       ...f,
       cumulativeInPool,
@@ -146,17 +146,21 @@ export default async function FarmersPage({
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="w-[200px]">养殖户主档与类型</TableHead>
-                    <TableHead className="w-[160px]">养殖水域与面积</TableHead>
-                    <TableHead className="min-w-[240px]">年度蟹扣余额与申领</TableHead>
-                    <TableHead className="w-[120px]">合作状态</TableHead>
-                    <TableHead className="text-right w-[140px]">操作</TableHead>
+                    <TableHead className="w-[180px]">养殖户主体与类型</TableHead>
+                    <TableHead className="w-[140px]">养殖水域与总额度</TableHead>
+                    <TableHead className="w-[130px]">蟹扣入仓数</TableHead>
+                    <TableHead className="w-[130px]">蟹扣申领数</TableHead>
+                    <TableHead className="min-w-[180px]">年度蟹扣余额</TableHead>
+                    <TableHead className="w-[100px]">合作状态</TableHead>
+                    <TableHead className="text-right w-[110px]">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {farmers.map((farmer) => {
                     const remainingPct = farmer.quota > 0 ? (farmer.remainingQuota / farmer.quota) * 100 : 0;
                     const pct = Math.min(100, Math.max(0, remainingPct));
+                    const inPoolPct = farmer.quota > 0 ? (farmer.cumulativeInPool / farmer.quota) * 100 : 0;
+                    const claimedPct = farmer.quota > 0 ? (farmer.cumulativeClaimed / farmer.quota) * 100 : 0;
 
                     // 余量颜色：<= 10% 红色警示，<= 30% 黄色，> 30% 翡翠绿
                     const barColor =
@@ -206,21 +210,54 @@ export default async function FarmersPage({
                           </div>
                         </TableCell>
 
-                        {/* 2. 养殖水域与面积 */}
+                        {/* 2. 养殖水域与总额度 */}
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
                             <span className="font-semibold text-foreground text-sm font-mono">
                               {farmer.area} 亩
                             </span>
-                            <span className="font-mono text-xs text-muted-foreground truncate max-w-[150px]" title={enclosureCodes}>
+                            <span className="font-mono text-xs text-muted-foreground truncate max-w-[140px]" title={enclosureCodes}>
                               {enclosureCodes} 围网
+                            </span>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              总额度 {farmer.quota.toLocaleString()} 只
                             </span>
                           </div>
                         </TableCell>
 
-                        {/* 3. 年度蟹扣余额与申领 */}
+                        {/* 3. 蟹扣入仓数 (入池螃蟹数) */}
                         <TableCell>
-                          <div className="flex flex-col gap-1.5 min-w-[180px]">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-mono font-bold text-sm text-foreground">
+                              {farmer.cumulativeInPool.toLocaleString()} 只
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-muted-foreground">入池螃蟹数</span>
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                ({inPoolPct.toFixed(1)}%)
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* 4. 蟹扣申领数 */}
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-mono font-bold text-sm text-amber-600 dark:text-amber-400">
+                              {farmer.cumulativeClaimed.toLocaleString()} 只
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-muted-foreground">向协会申领</span>
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                ({claimedPct.toFixed(1)}%)
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* 5. 年度蟹扣余额 */}
+                        <TableCell>
+                          <div className="flex flex-col gap-1.5 min-w-[160px]">
                             <div className="flex items-baseline justify-between gap-2">
                               <span className={`font-mono font-bold text-sm leading-tight ${textColor}`}>
                                 剩余 {farmer.remainingQuota.toLocaleString()} 只
@@ -237,7 +274,7 @@ export default async function FarmersPage({
                                 />
                               </div>
                               <span className="font-mono text-[10px] text-muted-foreground shrink-0">
-                                {farmer.cumulativeClaimed.toLocaleString()} / {farmer.quota.toLocaleString()}
+                                {farmer.remainingQuota.toLocaleString()} / {farmer.quota.toLocaleString()}
                               </span>
                             </div>
                           </div>

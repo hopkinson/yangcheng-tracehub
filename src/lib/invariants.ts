@@ -10,7 +10,10 @@ export interface FarmerQuotaCheck {
 
 export interface TagClaimCheck {
   farmerQuota: number;
-  cumulativeBoundCount: number;
+  cumulativeBoundCount?: number;
+  tagInboundCount?: number;   // 蟹扣入仓数 = 入池螃蟹数
+  cumulativeClaimed?: number; // 蟹扣申领数
+  cumulativeReturned?: number;// 蟹扣退回数
   requestedCount: number;
 }
 
@@ -129,7 +132,7 @@ export const Invariants = {
   // 1. 额度校验: 面积 * 600 只/亩
   calculateQuota: (areaInMu: number): number => Math.floor(areaInMu * 600),
 
-  // 校验入池是否超额
+  // 校验入池是否超额 (累计入池不得超过 亩数 * 600)
   checkQuota: ({ annualQuota, cumulativeInPool, newBatchCount }: FarmerQuotaCheck) => {
     const isExceeded = cumulativeInPool + newBatchCount > annualQuota;
     return {
@@ -234,9 +237,28 @@ export const Invariants = {
     };
   },
 
-  // 3. 蟹扣领用只受年度额度约束；实际消耗仅在完成捆扎时计入 boundCount
-  checkTagClaim: ({ farmerQuota, cumulativeBoundCount, requestedCount }: TagClaimCheck) => {
-    const remainingQuota = Math.max(0, farmerQuota - cumulativeBoundCount);
+  // 3. 蟹扣领用约束：不得超过 蟹扣入仓 - 蟹扣申领数 + 退回数（且不超过年度总额度结余）
+  checkTagClaim: ({
+    farmerQuota,
+    cumulativeBoundCount,
+    tagInboundCount,
+    cumulativeClaimed,
+    cumulativeReturned = 0,
+    requestedCount,
+  }: TagClaimCheck) => {
+    if (tagInboundCount !== undefined && cumulativeClaimed !== undefined) {
+      const maxClaimable = Math.max(0, Math.min(tagInboundCount, farmerQuota) - cumulativeClaimed + cumulativeReturned);
+      const valid = requestedCount > 0 && requestedCount <= maxClaimable;
+      return {
+        valid,
+        maxClaimable,
+        remainingQuota: maxClaimable,
+        reason: valid
+          ? "领用数量在蟹扣入仓与额度范围内"
+          : `超领拦截: 申请 ${requestedCount} 只，当前可领上限为 ${maxClaimable} 只（蟹扣入仓 ${tagInboundCount} - 申领 ${cumulativeClaimed} + 退回 ${cumulativeReturned}）`,
+      };
+    }
+    const remainingQuota = Math.max(0, farmerQuota - (cumulativeBoundCount ?? 0));
     const valid = requestedCount > 0 && requestedCount <= remainingQuota;
     return {
       valid,
@@ -296,6 +318,41 @@ export const Invariants = {
       reason: isBalanced
         ? "当日蟹扣数量已轧平"
         : `数量未轧平: 当日领扣 ${claimedCount} 只，已核销 ${accounted} 只（绑扣 ${boundCount} + 退回 ${returnedCount} + 作废 ${scrappedCount}），差额 ${diff} 只`,
+    };
+  },
+
+  // 蟹扣后道流向拆解计算 (绑扣 = 出库 + 分拣损耗 + 出库损耗 + 冷库在库)
+  getClaimDownstreamMetrics: (claim: {
+    boundCount: number;
+    bundleBatches?: Array<{
+      sortTasks?: Array<{
+        lossCount?: number;
+        coldLogs?: Array<{
+          outboundLines?: Array<{ count: number }>;
+          outboundLosses?: Array<{ count: number }>;
+        }>;
+      }>;
+    }>;
+  }) => {
+    let outbound = 0;
+    let sortLoss = 0;
+    let outLoss = 0;
+    claim.bundleBatches?.forEach((b) =>
+      b.sortTasks?.forEach((st) => {
+        sortLoss += st.lossCount || 0;
+        st.coldLogs?.forEach((cl) => {
+          cl.outboundLines?.forEach((l) => (outbound += l.count || 0));
+          cl.outboundLosses?.forEach((l) => (outLoss += l.count || 0));
+        });
+      })
+    );
+    const totalLoss = sortLoss + outLoss;
+    return {
+      outboundCount: outbound,
+      sortingLoss: sortLoss,
+      outboundLoss: outLoss,
+      totalDownstreamLoss: totalLoss,
+      inColdStorage: Math.max(0, claim.boundCount - outbound - totalLoss),
     };
   },
 

@@ -14,7 +14,7 @@ import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { BatchFilterSelect } from "@/components/qc/BatchFilterSelect";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import { cn, formatDateTime, getBeijingDayRange } from "@/lib/utils";
+import { cn, formatDateTime, getBeijingDayRange, getBeijingYear } from "@/lib/utils";
 import { Invariants } from "@/lib/invariants";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import Link from "next/link";
@@ -265,15 +265,20 @@ export default async function BatchesPage({
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || isAdmin;
   const canEditQc = isQaOrAdmin || isWarehouseOrAdmin;
 
-  // 格式化养殖户剩余额度
+  // 格式化养殖户入池额度 (按自然年度与面积*600硬卡控)
   const farmerOptions = farmers.map((f: any) => {
-    const cumulative = f.batches.reduce((sum: number, b: any) => sum + b.inPoolCount, 0);
+    const currentYearBatches = f.batches.filter(
+      (b: any) => getBeijingYear(b.inPoolTime) === f.year
+    );
+    const cumulative = currentYearBatches.reduce((sum: number, b: any) => sum + b.inPoolCount, 0);
+    const maxQuota = Invariants.calculateQuota(f.area);
     return {
       id: f.id,
       name: f.name,
       code: f.code,
-      quota: f.quota,
-      remainingQuota: Math.max(0, f.quota - cumulative),
+      area: f.area,
+      quota: maxQuota,
+      remainingQuota: Math.max(0, maxQuota - cumulative),
       status: f.status,
       enclosures: f.enclosures.map((e: any) => ({ id: e.id, code: e.code, description: e.description })),
     };

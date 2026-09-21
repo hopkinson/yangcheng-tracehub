@@ -38,7 +38,8 @@ export default async function TagsPage({
     }),
     prisma.farmer.findMany({
       include: {
-        tagClaims: { where: { status: "APPROVED" } },
+        batches: true,
+        tagClaims: { where: { status: { in: ["APPROVED", "PENDING"] } } },
       },
       where: { status: "ACTIVE" },
     }),
@@ -62,6 +63,9 @@ export default async function TagsPage({
     code: f.code,
     quota: f.quota,
     boundSoFar: f.tagClaims.reduce((sum, c) => sum + c.boundCount, 0),
+    tagInboundCount: f.batches.reduce((sum, b) => sum + b.inPoolCount, 0),
+    tagClaimedCount: f.tagClaims.reduce((sum, c) => sum + c.claimCount, 0),
+    tagReturnedCount: f.tagClaims.reduce((sum, c) => sum + c.returnedCount, 0),
   }));
 
   return (

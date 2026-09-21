@@ -6,12 +6,39 @@ import { getBeijingDateStr } from "../src/lib/utils";
 async function testTagClaimCode() {
   console.log("=== Testing Tag Claim Code Generation ===");
 
-  const farmer = await prisma.farmer.findFirst({ where: { status: "ACTIVE" } });
   const applicant = await prisma.user.findFirst();
-
-  if (!farmer || !applicant) {
-    throw new Error("Missing test seed data (farmer or applicant)");
+  if (!applicant) {
+    throw new Error("Missing test seed data (applicant)");
   }
+
+  const ts = Date.now();
+  const farmer = await prisma.farmer.create({
+    data: {
+      code: `JD-CODE-${ts}`,
+      name: `测试户-${ts}`,
+      phone: `138${String(ts).slice(-8)}`,
+      farmType: "LAKE_CRAB",
+      year: 2026,
+      area: 10,
+      quota: 6000,
+    },
+  });
+  const enclosure = await prisma.enclosure.create({
+    data: { code: `W-CODE-${ts}`, farmerId: farmer.id },
+  });
+  const pool = await prisma.holdingPool.create({
+    data: { code: `ZY-CODE-${ts}`, name: "编码测试池" },
+  });
+  await prisma.batch.create({
+    data: {
+      code: `YL-CODE-${ts}`,
+      farmerId: farmer.id,
+      enclosureId: enclosure.id,
+      poolId: pool.id,
+      inPoolCount: 100,
+      createdById: applicant.id,
+    },
+  });
 
   const claim = await requestTagClaimAction({
     farmerId: farmer.id,

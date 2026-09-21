@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { settleDailyTagClaimAction } from "@/actions/tags";
 import { settleTagClaimFormSchema, type SettleTagClaimFormValues } from "@/lib/validations/schemas";
+import { Invariants } from "@/lib/invariants";
 import { toast } from "sonner";
 import { Scale, CheckCircle2, AlertTriangle } from "lucide-react";
 
@@ -27,6 +28,15 @@ export function SettleTagClaimDialog({
     scrapReason?: string | null;
     isBalanced: boolean;
     farmer: { name: string; code: string };
+    bundleBatches?: Array<{
+      sortTasks?: Array<{
+        lossCount?: number;
+        coldLogs?: Array<{
+          outboundLines?: Array<{ count: number }>;
+          outboundLosses?: Array<{ count: number }>;
+        }>;
+      }>;
+    }>;
   };
   userId: string;
 }) {
@@ -60,6 +70,9 @@ export function SettleTagClaimDialog({
   const totalAccounted = boundVal + returnedVal + scrappedVal;
   const isBalanced = totalAccounted === claim.claimCount;
   const diff = claim.claimCount - totalAccounted;
+
+  const { outboundCount, sortingLoss, outboundLoss, totalDownstreamLoss, inColdStorage } =
+    Invariants.getClaimDownstreamMetrics(claim);
 
   async function onSubmit(data: SettleTagClaimFormValues) {
     if (!isBalanced) {
@@ -113,6 +126,37 @@ export function SettleTagClaimDialog({
             <span className="text-muted-foreground">已完成绑扎数:</span>
             <span>{boundVal} 只</span>
           </div>
+
+          {(outboundCount > 0 || totalDownstreamLoss > 0 || inColdStorage > 0) && (
+            <div className="rounded border border-dashed border-border/80 bg-background/50 p-2 text-[11px] flex flex-col gap-1">
+              <div className="flex justify-between font-medium text-foreground pb-1 border-b border-border/40">
+                <span className="text-muted-foreground">绑扣流向拆解:</span>
+                <span className="font-mono">{boundVal} 只</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>├─ 最终合规出库:</span>
+                <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{outboundCount} 只</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>├─ 后道流转损耗:</span>
+                <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">
+                  {totalDownstreamLoss} 只
+                  {totalDownstreamLoss > 0 && (
+                    <span className="text-[10px] font-normal text-muted-foreground ml-1">
+                      (分拣 {sortingLoss} + 出库 {outboundLoss})
+                    </span>
+                  )}
+                </span>
+              </div>
+              {inColdStorage > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>└─ 冷库在库待发:</span>
+                  <span className="font-mono text-sky-600 dark:text-sky-400 font-semibold">{inColdStorage} 只</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-between border-t pt-1">
             <span className="text-muted-foreground">当前核销合计:</span>
             <span className="font-semibold">
@@ -122,12 +166,13 @@ export function SettleTagClaimDialog({
           <div className="flex items-center gap-1.5 pt-1">
             {isBalanced ? (
               <span className="inline-flex items-center text-emerald-600 font-sans font-medium text-xs">
-                <CheckCircle2 className="size-3.5 mr-1" />
-                数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal} + 退回 {returnedVal} + 作废 {scrappedVal})
+                <CheckCircle2 className="size-3.5 mr-1 shrink-0" />
+                数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal}
+                {totalDownstreamLoss > 0 ? ` [出库 ${outboundCount} + 损耗 ${totalDownstreamLoss}]` : ""} + 退回 {returnedVal} + 作废 {scrappedVal})
               </span>
             ) : (
               <span className="inline-flex items-center text-amber-600 font-sans font-medium text-xs">
-                <AlertTriangle className="size-3.5 mr-1" />
+                <AlertTriangle className="size-3.5 mr-1 shrink-0" />
                 尚有差额 {Math.abs(diff)} 只 ({diff > 0 ? `缺 ${diff} 只` : `多 ${Math.abs(diff)} 只`})
               </span>
             )}

@@ -8,6 +8,7 @@ import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
 import { LedgerTabCarousel } from "@/components/ledgers/LedgerTabCarousel";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { FileCheck } from "lucide-react";
+import { Invariants } from "@/lib/invariants";
 import { cn, formatDate, formatTime, getBeijingDayRange } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -202,9 +203,28 @@ export default async function LedgersPage({
       : prisma.tagClaim.findMany({
           where: dateFilter ? { claimDate: dateFilter } : undefined,
           include: {
-            farmer: { include: { tagClaims: { where: { status: "APPROVED" } } } },
+            farmer: {
+              include: {
+                tagClaims: { where: { status: "APPROVED" } },
+                batches: true,
+              },
+            },
             applicant: true,
             approver: true,
+            bundleBatches: {
+              include: {
+                sortTasks: {
+                  include: {
+                    coldLogs: {
+                      include: {
+                        outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
+                        outboundLosses: { where: { status: { not: "REJECTED" } } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           orderBy: { claimDate: "desc" },
         }),
@@ -428,14 +448,21 @@ export default async function LedgersPage({
   const tagClaimRows = rawTagClaims.map((claim) => {
     const isRejected = claim.status === "REJECTED";
     const cumulativeBound = claim.farmer.tagClaims.reduce((sum, item) => sum + item.boundCount, 0);
+    const tagInboundCount = claim.farmer.batches?.reduce((sum, b) => sum + b.inPoolCount, 0) ?? 0;
     const balanceDiff = claim.claimCount - claim.boundCount - claim.returnedCount - claim.scrappedCount;
+
+    const { outboundCount, totalDownstreamLoss } = Invariants.getClaimDownstreamMetrics(claim);
+
     const exportRow: ExportValue[] = [
       formatDate(claim.claimDate),
       formatTime(claim.claimDate),
       claim.code || "—",
       claim.farmer.name,
+      isRejected ? 0 : tagInboundCount,
       isRejected ? 0 : claim.claimCount,
       isRejected ? 0 : claim.boundCount,
+      isRejected ? 0 : outboundCount,
+      isRejected ? 0 : totalDownstreamLoss,
       isRejected ? 0 : claim.returnedCount,
       isRejected ? 0 : claim.scrappedCount,
       isRejected ? 0 : balanceDiff,
@@ -714,7 +741,7 @@ export default async function LedgersPage({
   const headers = {
     l1: ["编号", "姓名", "养殖类型", "围网", "面积(亩)", "年度额度(只)", "累计入池(只)", "累计领扣(只)", "累计绑扎(只)", "累计作废", "累计回退", "累计出库(只)", "额度结余(只)", "信用评级", "合作状态", "合同附件"],
     l2: ["入库日期", "入库时间", "原料批次", "养殖户", "规格(两)", "公母", "只数", "斤数", "池名", "池号", "在池", "发货", "累计损耗", "损耗率", "农残快检", "品质抽检", "跟车员"],
-    l3: ["申领日期", "申领时间", "蟹扣批次", "蟹扣养殖户", "申领数", "完成绑扎", "退回", "作废", "差额", "轧平校验", "累计绑扎", "剩余额度", "申请人", "复核人", "审核状态"],
+    l3: ["申领日期", "申领时间", "蟹扣批次", "蟹扣养殖户", "蟹扣入仓数", "申领数", "完成绑扎", "其中-已出库", "其中-后道损耗", "退回", "作废", "差额", "轧平校验", "累计绑扎", "剩余额度", "申请人", "复核人", "审核状态"],
     l4: ["入池日期", "入池时间", "池名", "池号", "原料批次", "养殖户", "围网", "入池数量", "绑扎数量", "在池数量", "损耗(只)", "损耗率"],
     l5: ["捆扎日期", "捆扎时间", "捆扎批次", "班组", "班组编号", "原料批次", "蟹扣批次", "蟹绳批次", "养殖户", "池名", "池号", "规格", "状态", "公母", "初始捆扎只数", "捆扎完成只数", "损耗", "损耗率"],
     l6: ["分拣日期", "分拣时间", "分拣批次", "设备名", "设备编号", "原料批次", "绑扎批次", "规格", "公母", "状态", "投入(只)", "合格(只)", "损耗(只)", "损耗率"],

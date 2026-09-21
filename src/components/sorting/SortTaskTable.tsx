@@ -175,7 +175,7 @@ export function SortTaskTable({ tasks }: { tasks: SortTaskItem[] }) {
           <thead className="bg-muted/40 text-muted-foreground border-b font-mono text-[11px]">
             <tr>
               <th className="px-3 py-2 font-medium whitespace-nowrap w-[170px]">任务批次 (FJR)</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap w-[110px]">作业设备</th>
+              <th className="px-3 py-2 font-medium whitespace-nowrap min-w-[110px]">作业设备</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap w-[120px]">原料批次</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap w-[130px]">来源捆扎批次</th>
               <th className="px-3 py-2 font-medium min-w-[200px]">包含规格明细</th>
@@ -239,7 +239,7 @@ export function SortTaskTable({ tasks }: { tasks: SortTaskItem[] }) {
                     {/* 设备 */}
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="font-mono text-foreground font-medium">{group.machine.code}</div>
-                      <div className="text-[10px] text-muted-foreground truncate max-w-[100px]" title={group.machine.name}>
+                      <div className="text-[10px] text-muted-foreground" title={group.machine.name}>
                         {group.machine.name}
                       </div>
                     </td>

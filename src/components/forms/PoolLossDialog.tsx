@@ -260,7 +260,7 @@ export function PoolLossDialog({
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                <span>本次死亡 / 捞出死蟹</span>
+                <span>捞出死蟹/不合格蟹</span>
                 <span className="text-destructive">*</span>
               </label>
               <div className="relative">
@@ -276,7 +276,7 @@ export function PoolLossDialog({
                 />
                 <span className="absolute right-2.5 top-2 text-xs text-muted-foreground">只</span>
               </div>
-              <span className="text-[10px] text-muted-foreground">直接输入本次捞除的死蟹只数</span>
+              <span className="text-[10px] text-muted-foreground">直接输入本次捞出的死蟹/不合格蟹只数</span>
             </div>
 
             <div className="flex flex-col gap-1.5">

@@ -16,15 +16,20 @@ export async function requestTagClaimAction(data: {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
       include: {
-        tagClaims: { where: { status: "APPROVED" } },
+        batches: true,
+        tagClaims: { where: { status: { in: ["APPROVED", "PENDING"] } } },
       },
     });
 
-    const cumulativeBoundCount = farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+    const tagInboundCount = farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
+    const cumulativeClaimed = farmer.tagClaims.reduce((sum, c) => sum + c.claimCount, 0);
+    const cumulativeReturned = farmer.tagClaims.reduce((sum, c) => sum + c.returnedCount, 0);
 
     const tagCheck = Invariants.checkTagClaim({
       farmerQuota: farmer.quota,
-      cumulativeBoundCount,
+      tagInboundCount,
+      cumulativeClaimed,
+      cumulativeReturned,
       requestedCount: data.claimCount,
     });
 
@@ -94,17 +99,22 @@ export async function resubmitTagClaimAction(data: {
       include: {
         farmer: {
           include: {
-            tagClaims: { where: { status: "APPROVED" } },
+            batches: true,
+            tagClaims: { where: { status: { in: ["APPROVED", "PENDING"] } } },
           },
         },
       },
     });
 
-    const cumulativeBoundCount = claim.farmer.tagClaims.reduce((sum, c) => sum + c.boundCount, 0);
+    const tagInboundCount = claim.farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
+    const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + (c.id !== data.claimId ? c.claimCount : 0), 0);
+    const cumulativeReturned = claim.farmer.tagClaims.reduce((sum, c) => sum + c.returnedCount, 0);
 
     const tagCheck = Invariants.checkTagClaim({
       farmerQuota: claim.farmer.quota,
-      cumulativeBoundCount,
+      tagInboundCount,
+      cumulativeClaimed,
+      cumulativeReturned,
       requestedCount: data.claimCount,
     });
 

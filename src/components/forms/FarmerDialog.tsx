@@ -520,29 +520,34 @@ export function FarmerDetailDialog({
 
             <div className="space-y-2.5 text-xs">
               {[
-                { label: "年度额度", val: farmer.quota, pct: 100, bar: "bg-primary", txt: "text-primary" },
-                { label: "累计入池", val: farmer.cumulativeInPool, pct: inPoolPct, bar: "bg-blue-500 dark:bg-blue-400", txt: "text-blue-600 dark:text-blue-400" },
-                { label: "累计领扣", val: farmer.cumulativeClaimed, pct: claimedPct, bar: "bg-amber-500 dark:bg-amber-400", txt: "text-amber-600 dark:text-amber-400" },
+                { label: "年度总额度", val: farmer.quota, pct: 100, bar: "bg-primary", txt: "text-primary" },
+                { label: "蟹扣入仓数", sub: "入池螃蟹", val: farmer.cumulativeInPool, pct: inPoolPct, bar: "bg-blue-500 dark:bg-blue-400", txt: "text-blue-600 dark:text-blue-400" },
+                { label: "蟹扣申领数", sub: "向协会申领", val: farmer.cumulativeClaimed, pct: claimedPct, bar: "bg-amber-500 dark:bg-amber-400", txt: "text-amber-600 dark:text-amber-400" },
+                { label: "年度蟹扣余额", sub: "额度余量", val: farmer.remainingQuota, pct: Math.min(100, (farmer.remainingQuota / quota) * 100), bar: "bg-emerald-600 dark:bg-emerald-400", txt: "text-emerald-600 dark:text-emerald-400" },
                 ...(farmer.cumulativeBound != null
                   ? [{
-                      label: "累计绑扎",
+                      label: "累计绑扎合格",
+                      sub: "带扣成蟹",
                       val: farmer.cumulativeBound,
                       pct: Math.min(100, (farmer.cumulativeBound / quota) * 100),
                       bar: "bg-purple-500 dark:bg-purple-400",
                       txt: "text-purple-600 dark:text-purple-400",
                     }]
                   : []),
-                { label: "累计出库", val: farmer.cumulativeOutbound, pct: outboundPct, bar: "bg-emerald-500 dark:bg-emerald-400", txt: "text-emerald-600 dark:text-emerald-400" },
+                { label: "累计发运出库", sub: "订单出库", val: farmer.cumulativeOutbound, pct: outboundPct, bar: "bg-cyan-500 dark:bg-cyan-400", txt: "text-cyan-600 dark:text-cyan-400" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-3">
-                  <span className="w-16 shrink-0 text-muted-foreground">{item.label}</span>
+                  <div className="w-20 shrink-0 flex flex-col">
+                    <span className="text-foreground font-medium leading-tight">{item.label}</span>
+                    {item.sub && <span className="text-[10px] text-muted-foreground scale-95 origin-left">{item.sub}</span>}
+                  </div>
                   <div className="relative h-2 flex-1 rounded-full bg-muted overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${item.bar}`}
                       style={{ width: `${item.pct}%` }}
                     />
                   </div>
-                  <span className={`w-14 text-right font-mono font-bold ${item.txt}`}>
+                  <span className={`w-16 text-right font-mono font-bold ${item.txt}`}>
                     {item.val.toLocaleString()}
                   </span>
                 </div>
@@ -550,7 +555,7 @@ export function FarmerDetailDialog({
             </div>
 
             <div className="flex items-center justify-between pt-1.5 text-xs border-t border-border/30">
-              <span className="text-muted-foreground">剩余可用额度</span>
+              <span className="text-muted-foreground">年度蟹扣余额 (额度余量)</span>
               <span
                 className={`font-mono font-semibold ${
                   (farmer.remainingQuota / quota) <= 0.1

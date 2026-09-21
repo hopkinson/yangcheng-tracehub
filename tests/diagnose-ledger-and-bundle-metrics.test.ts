@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Invariants } from "../src/lib/invariants";
 
 // Invariant & Helper implementations to test
 function calculateFarmerLedgerRow(farmer: {
@@ -126,6 +127,108 @@ async function runRegressionTests() {
   const dashboardCount = calculateTodayBundleTotalCount(mockBundleBatches);
   console.log(`Dashboard bundle total count: ${dashboardCount} (Expected: 1022)`);
   assert.equal(dashboardCount, 1022, "看板捆扎总数应为 1022 (实际完工合格只数，而非投入只数 1030)");
+
+  // 4. Test Bug 3: Tag Claim Ledger Export Alignment & Inbound Count
+  const TAG_CLAIM_LEDGER_HEADERS = [
+    "申领日期",
+    "申领时间",
+    "蟹扣批次",
+    "蟹扣养殖户",
+    "蟹扣入仓数",
+    "申领数",
+    "完成绑扎",
+    "其中-已出库",
+    "其中-后道损耗",
+    "退回",
+    "作废",
+    "差额",
+    "轧平校验",
+    "累计绑扎",
+    "剩余额度",
+    "申请人",
+    "复核人",
+    "审核状态",
+  ];
+
+  const mockTagClaim = {
+    claimDate: new Date("2026-09-21T08:00:00Z"),
+    code: "XK2026092101",
+    status: "APPROVED",
+    claimCount: 2080,
+    boundCount: 2070,
+    returnedCount: 0,
+    scrappedCount: 0,
+    isBalanced: false,
+    applicant: { fullName: "阳澄股份超级管理员" },
+    approver: { fullName: "阳澄股份超级管理员" },
+    farmer: {
+      name: "张三",
+      quota: 6000,
+      batches: [{ inPoolCount: 2500 }],
+      tagClaims: [{ boundCount: 2070 }],
+    },
+    bundleBatches: [
+      {
+        sortTasks: [
+          {
+            lossCount: 15,
+            coldLogs: [
+              {
+                outboundLines: [{ count: 1800 }],
+                outboundLosses: [{ count: 5 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const isRejected = mockTagClaim.status === "REJECTED";
+  const cumulativeBound = mockTagClaim.farmer.tagClaims.reduce((sum, item) => sum + item.boundCount, 0);
+  const tagInboundCount = mockTagClaim.farmer.batches?.reduce((sum, b) => sum + b.inPoolCount, 0) ?? 0;
+  const balanceDiff = mockTagClaim.claimCount - mockTagClaim.boundCount - mockTagClaim.returnedCount - mockTagClaim.scrappedCount;
+  const { outboundCount, totalDownstreamLoss } = Invariants.getClaimDownstreamMetrics(mockTagClaim);
+
+  const exportRow = [
+    "2026-09-21",
+    "08:00",
+    mockTagClaim.code || "—",
+    mockTagClaim.farmer.name,
+    isRejected ? 0 : tagInboundCount,
+    isRejected ? 0 : mockTagClaim.claimCount,
+    isRejected ? 0 : mockTagClaim.boundCount,
+    isRejected ? 0 : outboundCount,
+    isRejected ? 0 : totalDownstreamLoss,
+    isRejected ? 0 : mockTagClaim.returnedCount,
+    isRejected ? 0 : mockTagClaim.scrappedCount,
+    isRejected ? 0 : balanceDiff,
+    isRejected ? "已驳回" : mockTagClaim.isBalanced ? "已轧平" : "未轧平",
+    isRejected ? 0 : cumulativeBound,
+    isRejected ? mockTagClaim.farmer.quota : Math.max(0, mockTagClaim.farmer.quota - cumulativeBound),
+    mockTagClaim.applicant?.fullName || "—",
+    mockTagClaim.approver?.fullName || "—",
+    mockTagClaim.status === "APPROVED" ? "已通过" : "待审核",
+  ];
+
+  console.log("Tag claim ledger headers count:", TAG_CLAIM_LEDGER_HEADERS.length);
+  console.log("Tag claim export row length:", exportRow.length);
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS.length, exportRow.length, "表头列数必须与数据行严格一致 (18 列)");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[4], "蟹扣入仓数", "第5列表头必须为『蟹扣入仓数』");
+  assert.equal(exportRow[4], 2500, "第5列数据必须为养殖户累计入仓数 (2500)");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[5], "申领数", "第6列表头必须为『申领数』");
+  assert.equal(exportRow[5], 2080, "第6列数据必须为本次申领数 (2080)");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[6], "完成绑扎", "第7列表头必须为『完成绑扎』");
+  assert.equal(exportRow[6], 2070, "第7列数据必须为已完成绑扎数 (2070)");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[11], "差额", "差额列校验");
+  assert.equal(exportRow[11], 10, "差额应为 2080 - 2070 = 10");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[12], "轧平校验", "轧平校验列校验");
+  assert.equal(exportRow[12], "未轧平", "差额 > 0 状态必须为未轧平");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[13], "累计绑扎", "累计绑扎列校验");
+  assert.equal(exportRow[13], 2070, "累计绑扎应为 2070");
+  assert.equal(TAG_CLAIM_LEDGER_HEADERS[14], "剩余额度", "剩余额度列校验");
+  assert.equal(exportRow[14], 3930, "剩余额度应为 6000 - 2070 = 3930");
+  console.log("  ✔ 蟹扣领用台账 18 列表头与数据行 1:1 严格对齐测试通过\n");
 
   console.log("🎉 All regression assertions passed!");
 }

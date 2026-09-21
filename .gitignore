@@ -25,6 +25,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Scratch & Temporary files
+tmp_*
+
+
 # OS
 .DS_Store
 Thumbs.db

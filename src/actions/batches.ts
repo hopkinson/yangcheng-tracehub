@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { getBeijingDateStr } from "@/lib/utils";
+import { getBeijingDateStr, getBeijingYear } from "@/lib/utils";
 import { batchEditFormSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
 import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 import { assertDailyCloseOpen } from "@/actions/daily-close";
@@ -19,6 +19,9 @@ const MULTI_SPEC_WEIGHT_TIERS = new Set<string>([
   "5.5两",
   "6.0两",
 ]);
+
+const getFarmerCumulativeInPool = (farmer: { year: number; batches: Array<{ inPoolTime: Date; inPoolCount: number }> }) =>
+  farmer.batches.reduce((sum, b) => sum + (getBeijingYear(b.inPoolTime) === farmer.year ? b.inPoolCount : 0), 0);
 
 export async function createBatchAction(data: {
   farmerId: string;
@@ -45,9 +48,10 @@ export async function createBatchAction(data: {
       throw new Error("该养殖户合作状态异常，禁止入池登记");
     }
 
-    const cumulativeInPool = farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
+    const cumulativeInPool = getFarmerCumulativeInPool(farmer);
+    const maxQuota = Invariants.calculateQuota(farmer.area);
     const quotaCheck = Invariants.checkQuota({
-      annualQuota: farmer.quota,
+      annualQuota: maxQuota,
       cumulativeInPool,
       newBatchCount: data.inPoolCount,
     });
@@ -66,7 +70,7 @@ export async function createBatchAction(data: {
           },
         });
       } else {
-        throw new Error(`超出年度额度: 当年已入池 ${cumulativeInPool} 只，本批 ${data.inPoolCount} 只，总额度 ${farmer.quota} 只（超 ${quotaCheck.excess} 只）`);
+        throw new Error(`超出年度核定额度（亩数×600）: 该户核定产能 ${farmer.area} 亩 × 600 = ${maxQuota} 只，当年已入池 ${cumulativeInPool} 只，本批 ${data.inPoolCount} 只（超额 ${quotaCheck.excess} 只，严禁入池）`);
       }
     }
 
@@ -197,15 +201,16 @@ export async function createMultiSpecBatchAction(data: {
       }
 
       const totalBatchCount = data.items.reduce((sum, it) => sum + it.inPoolCount, 0);
-      const cumulativeInPool = farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
+      const cumulativeInPool = getFarmerCumulativeInPool(farmer);
+      const maxQuota = Invariants.calculateQuota(farmer.area);
       const quotaCheck = Invariants.checkQuota({
-        annualQuota: farmer.quota,
+        annualQuota: maxQuota,
         cumulativeInPool,
         newBatchCount: totalBatchCount,
       });
 
       if (!quotaCheck.valid) {
-        throw new Error(`超出年度额度: 当年已入池 ${cumulativeInPool} 只，本批 ${totalBatchCount} 只，总额度 ${farmer.quota} 只（超 ${quotaCheck.excess} 只）`);
+        throw new Error(`超出年度核定额度（亩数×600）: 该户核定产能 ${farmer.area} 亩 × 600 = ${maxQuota} 只，当年已入池 ${cumulativeInPool} 只，本批 ${totalBatchCount} 只（超额 ${quotaCheck.excess} 只，严禁入池）`);
       }
 
       // 校验每个明细行入池规则：必须分配到空暂养池且同单不得重复分配同一池

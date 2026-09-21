@@ -299,25 +299,21 @@ export default async function SortingPage() {
                     : "border-border/80 hover:border-primary/40"
                 }`}
               >
-                {/* 头部：设备名与操作 */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="text-xs font-semibold text-foreground truncate" title={m.name}>
-                        {m.name}
-                      </h3>
-                      {isDisabled && (
-                        <Badge variant="secondary" className="text-[9px] h-3.5 px-1 shrink-0">
-                          已停用
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-[10px] font-mono text-muted-foreground truncate">
-                      {m.code}
-                    </p>
-                  </div>
-                  <MachineCardActions machine={m} tasksCount={m.tasks.length} />
+                {/* 头部：设备名独占整行，操作按钮另起一行，避免名称被挤压截断 */}
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-semibold text-foreground" title={m.name}>
+                    {m.name}
+                  </h3>
+                  {isDisabled && (
+                    <Badge variant="secondary" className="text-[9px] h-3.5 px-1 shrink-0">
+                      已停用
+                    </Badge>
+                  )}
                 </div>
+                <p className="text-[10px] font-mono text-muted-foreground truncate">
+                  {m.code}
+                </p>
+                <MachineCardActions machine={m} tasksCount={m.tasks.length} />
 
                 {/* 中间状态：异常联锁警告或校准与巡检信息 */}
                 {isException ? (

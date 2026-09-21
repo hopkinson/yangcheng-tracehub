@@ -39,7 +39,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 本系统是**数量闭环管控与供应链合规证明系统**（非防伪防串货系统），证明：**发出的带扣蟹总量 $\le$ 签约养殖户的理论核定产量**。
 
 1. **源头额度卡控**：$\sum \text{Batch.inPoolCount}_{\text{year}} \le \text{Farmer.area} \times 600$（超额须 `ADMIN` 特批并在 `SpecialApproval` 表留痕）。
-2. **蟹扣领用额度**：领用申请不与暂养池在池数或生产流转数量绑定；$\text{TagClaim.claimCount} \le \text{Farmer.quota} - \sum \text{TagClaim.boundCount}$，其中 `boundCount` 仅在捆扎完成时按合格只数增加。
+2. **蟹扣领用额度**：领用申请不得超过 $\text{蟹扣入仓} - \text{蟹扣申领数} + \text{退回数}$（且 $\le \text{Farmer.quota} - \text{蟹扣申领数} + \text{退回数}$），其中蟹扣入仓为原料活蟹到库入池累计数。
 3. **批次在池存活**：$\text{BookInPool} = \text{inPool} - \text{outPool} - \text{lossCount} \ge 0$。
 4. **单票出库校验**：$\text{OutboundCount} = \text{ChannelOrderCount} \le \text{Batch.BookInPool}$。
 5. **蟹扣日结轧平**：$\text{当日领扣数} = \text{当日完成绑扎数} + \text{当日退回数} + \text{当日作废数}$；已完成绑扎数由系统自动归集，日结不可手工修改。

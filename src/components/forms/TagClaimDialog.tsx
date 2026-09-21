@@ -23,6 +23,9 @@ export function TagClaimDialog({
     code: string;
     quota: number;
     boundSoFar: number;
+    tagInboundCount?: number;
+    tagClaimedCount?: number;
+    tagReturnedCount?: number;
   }>;
   userId: string;
 }) {
@@ -48,14 +51,18 @@ export function TagClaimDialog({
 
   const selectedFarmerId = form.watch("farmerId");
   const currentFarmer = farmers.find((f) => f.id === selectedFarmerId);
-  const remainingQuota = currentFarmer ? Math.max(0, currentFarmer.quota - currentFarmer.boundSoFar) : 0;
-  const maxClaimable = remainingQuota;
+  const tagInbound = currentFarmer?.tagInboundCount ?? 0;
+  const tagClaimed = currentFarmer?.tagClaimedCount ?? 0;
+  const tagReturned = currentFarmer?.tagReturnedCount ?? 0;
+  const calcMaxClaimable = (f?: (typeof farmers)[number]) =>
+    f ? Math.max(0, Math.min(f.tagInboundCount ?? 0, f.quota) - (f.tagClaimedCount ?? 0) + (f.tagReturnedCount ?? 0)) : 0;
+  const maxClaimable = calcMaxClaimable(currentFarmer);
 
   async function onSubmit(data: TagClaimFormValues) {
     const count = Number(data.claimCount);
     if (count > maxClaimable) {
       form.setError("claimCount", {
-        message: `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只`,
+        message: `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只（蟹扣入仓 ${tagInbound} - 申领 ${tagClaimed} + 退回 ${tagReturned}）`,
       });
       return;
     }
@@ -110,14 +117,11 @@ export function TagClaimDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {farmers.map((f) => {
-                        const rem = Math.max(0, f.quota - f.boundSoFar);
-                        return (
-                          <SelectItem key={f.id} value={f.id}>
-                            {f.code} - {f.name} (额度余量: {rem} 只)
-                          </SelectItem>
-                        );
-                      })}
+                      {farmers.map((f) => (
+                        <SelectItem key={f.id} value={f.id}>
+                          {f.code} - {f.name} (可领余量: {calcMaxClaimable(f)} 只)
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -132,11 +136,21 @@ export function TagClaimDialog({
                   <span>{currentFarmer.quota.toLocaleString()} 只</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">累计已完成绑扎:</span>
-                  <span>{currentFarmer.boundSoFar.toLocaleString()} 只</span>
+                  <span className="text-muted-foreground">蟹扣入仓数 (入池数):</span>
+                  <span className="font-semibold">{tagInbound.toLocaleString()} 只</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">累计已申领蟹扣:</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold">{tagClaimed.toLocaleString()} 只</span>
+                </div>
+                {tagReturned > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">累计已退回蟹扣:</span>
+                    <span className="text-emerald-600 font-semibold">+{tagReturned.toLocaleString()} 只</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-1 font-bold text-emerald-600">
-                  <span>当前年度额度余量:</span>
+                  <span>当前最大可领扣余量:</span>
                   <span className="text-sm">{maxClaimable.toLocaleString()} 只</span>
                 </div>
               </div>
