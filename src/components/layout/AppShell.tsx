@@ -44,7 +44,7 @@ interface NavGroup {
   items: NavItem[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
+export const NAV_GROUPS: NavGroup[] = [
   {
     title: "工作台",
     items: [
@@ -83,10 +83,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
-  FARMER_ADMIN: ["/", "/batches", "/pools", "/outbound", "/farmers", "/tags", "/reports", "/ledgers", "/trace"],
-  WAREHOUSE_ADMIN: ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/outbound", "/tags", "/stores", "/ledgers", "/trace"],
-  QA_DIRECTOR: ["/", "/batches", "/pools", "/reports", "/ledgers", "/trace"],
+export const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
+  FARMER_ADMIN: ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/outbound", "/farmers", "/tags", "/stores", "/reports", "/ledgers", "/trace"],
+  WAREHOUSE_ADMIN: ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/outbound", "/farmers", "/tags", "/stores", "/reports", "/ledgers", "/trace"],
+  QA_DIRECTOR: ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/outbound", "/farmers", "/tags", "/stores", "/reports", "/ledgers", "/trace"],
   CHANNEL_VIEWER: ["/", "/ledgers", "/trace"],
 };
 
