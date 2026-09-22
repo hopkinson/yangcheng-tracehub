@@ -134,7 +134,11 @@ jobs:
             cd "$TARGET_DIR"
 
             # 4. 确保生产与测试的持久化目录存在
-            mkdir -p data/db data/uploads data-test/db data-test/uploads
+            mkdir -p data/db data/uploads data-test/db data-test/uploads nginx/ssl
+            if [ ! -f nginx/ssl/test_fullchain.pem ] && [ -f nginx/ssl/fullchain.pem ]; then
+              cp nginx/ssl/fullchain.pem nginx/ssl/test_fullchain.pem 2>/dev/null || true
+              cp nginx/ssl/privkey.pem nginx/ssl/test_privkey.pem 2>/dev/null || true
+            fi
 
             # 5. 更新 docker-compose.yml (生产 + 测试双服务)
             cat << 'COMPOSE_EOF' > docker-compose.yml
@@ -308,7 +312,11 @@ jobs:
             cd "$TARGET_DIR"
 
             # 4. 确保生产与测试的持久化目录存在
-            mkdir -p data/db data/uploads data-test/db data-test/uploads
+            mkdir -p data/db data/uploads data-test/db data-test/uploads nginx/ssl
+            if [ ! -f nginx/ssl/test_fullchain.pem ] && [ -f nginx/ssl/fullchain.pem ]; then
+              cp nginx/ssl/fullchain.pem nginx/ssl/test_fullchain.pem 2>/dev/null || true
+              cp nginx/ssl/privkey.pem nginx/ssl/test_privkey.pem 2>/dev/null || true
+            fi
 
             # 5. 更新 docker-compose.yml (生产 + 测试双服务)
             cat << 'COMPOSE_EOF' > docker-compose.yml
