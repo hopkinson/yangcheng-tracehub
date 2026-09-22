@@ -53,14 +53,14 @@ export default async function ApprovalsPage({
   const typeFilter = params.type || "ALL"; // ALL | TAG | OUTBOUND
   const canApproveTagClaims = canApprove(currentUser?.role, approvalSetting.tagClaimRole);
   const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
-  const canHandleExceptions = currentUser?.role === "QA_DIRECTOR" || currentUser?.role === "ADMIN";
-  const defaultTab = !canApproveTagClaims && !canApproveOutbound && canHandleExceptions ? "exceptions" : "pending";
-  const requestedTab = params.tab || defaultTab;
-  const activeTab = requestedTab === "exceptions" && !canHandleExceptions ? "pending" : requestedTab;
+  const canHandleExceptions = canApproveTagClaims || canApproveOutbound;
 
-  if (!canApproveTagClaims && !canApproveOutbound && !canHandleExceptions) {
+  if (!canApproveTagClaims && !canApproveOutbound) {
     redirect("/");
   }
+
+  const requestedTab = params.tab || "pending";
+  const activeTab = requestedTab === "exceptions" && !canHandleExceptions ? "pending" : requestedTab;
 
   // 待审批查询
   const [

@@ -581,7 +581,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
         { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
         { label: "来源围网", value: `${batch?.enclosure?.code || (farmer as any).enclosureCode || (farmer as any).enclosures?.[0]?.code || "W-01"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"})` },
         { label: "入池只数", value: `${matchedItem?.inPoolCount || batch?.inPoolCount || 5000} 只` },
-        { label: "农残快检", value: "已检测合格 (留痕可验)" },
+        { label: "药残及重金属快检", value: "已检测合格 (留痕可验)" },
       ],
       qcBadges: [],
       status: "PREVIEW",

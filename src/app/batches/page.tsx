@@ -36,8 +36,8 @@ export const dynamic = "force-dynamic";
 
 const QUICK_QC_PRESET = {
   cat: "QUICK_CHECK",
-  categoryLabel: "农残快速检测记录表",
-  defaultTitle: "原料兽药农残快检",
+  categoryLabel: "药残及重金属快检",
+  defaultTitle: "药残及重金属快检",
   formNoPreset: "YCGF-PZZX-202601",
   refType: "BATCH",
 };
@@ -317,7 +317,7 @@ export default async function BatchesPage({
             原料批次
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            原料大闸蟹多规格入库码单流水 · 兽药农残快检与品质试吃双时间戳合规品控留痕
+            原料大闸蟹多规格入库码单流水 · 药残及重金属快检与品质试吃双时间戳合规品控留痕
           </p>
         </div>
         {isWarehouseOrAdmin && (
@@ -631,10 +631,10 @@ export default async function BatchesPage({
               <div>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <ClipboardList className="size-4 text-primary" />
-                  原料品控留痕台账 (农残快检 / 抽检试吃)
+                  原料品控留痕台账 (药残及重金属快检 / 抽检试吃)
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  巡检实际发生时间 vs 系统上传时间双时间戳留痕 · 支持按批次号/类别/日期精准检索与纸质原件穿透
+                  记录实际发生时间 vs 系统上传时间双时间戳留痕 · 支持按批次号/类别/日期精准检索与纸质原件穿透
                 </p>
               </div>
 
@@ -646,7 +646,7 @@ export default async function BatchesPage({
                       refId: activeBatchRefId,
                       refOptions: batchRefOptions,
                     }}
-                    triggerLabel="录入农残快检"
+                    triggerLabel="录入药残及重金属快检"
                   />
                   <QCRecordDialog
                     config={{
@@ -683,7 +683,7 @@ export default async function BatchesPage({
                         }`}
                       >
                         <ShieldCheck className="size-3" />
-                        农残快检
+                        药残及重金属快检
                       </Link>
                       <Link
                         href={`/batches?tab=qc&cat=TASTE_CHECK${qcBase}`}
@@ -729,10 +729,10 @@ export default async function BatchesPage({
                       <TableHead className="w-[130px]">记录编号</TableHead>
                       <TableHead className="w-[170px]">记录类别 / 表号</TableHead>
                       <TableHead className="w-[130px]">关联批次</TableHead>
-                      <TableHead className="w-[150px]">巡检发生时间</TableHead>
+                      <TableHead className="w-[150px]">记录时间</TableHead>
                       <TableHead className="w-[150px]">系统上传时间</TableHead>
                       <TableHead className="w-[100px]">判定结果</TableHead>
-                      <TableHead>巡检结论 / 异常整改说明</TableHead>
+                      <TableHead>检查结论 / 异常整改说明</TableHead>
                       <TableHead className="w-[90px]">质检员</TableHead>
                       <TableHead className="w-[80px] text-right">纸质原件</TableHead>
                     </TableRow>
@@ -764,7 +764,7 @@ export default async function BatchesPage({
                                   ) : (
                                     <Utensils className="size-3 text-indigo-500" />
                                   )}
-                                  {isQuick ? "原料兽药农残快检" : "品质抽检与试吃记录"}
+                                  {isQuick ? "药残及重金属快检" : "品质抽检与试吃记录"}
                                 </span>
                                 <span className="font-mono text-[10px] text-muted-foreground">
                                   {record.formNo || (isQuick ? "YCGF-PZZX-202601" : "YCGF-PZZX-202602")}
@@ -823,7 +823,7 @@ export default async function BatchesPage({
                                   <QCRecordDialog
                                     config={{
                                       cat: record.cat,
-                                      categoryLabel: record.cat === "QUICK_CHECK" ? "农残快检" : "品质抽检/试吃",
+                                      categoryLabel: record.cat === "QUICK_CHECK" ? "药残及重金属快检" : "品质抽检/试吃",
                                       defaultTitle: record.title,
                                       refType: record.refType,
                                       refId: record.refId,

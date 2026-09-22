@@ -212,7 +212,7 @@ export const qcRecordFormSchema = z
   .object({
     refId: z.string().trim().min(1, "请选择或输入关联对象/批次"),
     formNo: z.string().trim().optional(),
-    checkTime: z.string().trim().min(1, "请选择实际巡检/校准时间"),
+    checkTime: z.string().trim().min(1, "请选择记录时间"),
     uploader: z.string().trim().min(1, "请选择质检人员"),
     conclusion: z.string().trim().min(1, "请选择检查结论判定"),
     reason: z.string().trim().optional(),

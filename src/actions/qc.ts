@@ -21,7 +21,7 @@ export interface CreateQCRecordData {
 }
 
 const FIXED_QC_TITLES: Record<string, string> = {
-  QUICK_CHECK: "原料兽药农残快检",
+  QUICK_CHECK: "药残及重金属快检",
   TASTE_CHECK: "品质抽检与试吃记录",
   POOL_INSPECT: "暂养巡检记录",
   WATER_QUALITY: "暂养水质监测记录",

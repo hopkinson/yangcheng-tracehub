@@ -11,6 +11,18 @@ services:
       - ./data/db:/app/data
       - ./data/uploads:/app/public/uploads
 
+  app-test:
+    image: ghcr.io/hopkinson/yangcheng-tracehub:latest
+    container_name: yangcheng-tracehub-test
+    restart: always
+    ports:
+      - "3001:3000"
+    env_file:
+      - .env.test
+    volumes:
+      - ./data-test/db:/app/data
+      - ./data-test/uploads:/app/public/uploads
+
   nginx:
     image: nginx:alpine
     container_name: yangcheng-nginx
@@ -23,3 +35,4 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - app
+      - app-test

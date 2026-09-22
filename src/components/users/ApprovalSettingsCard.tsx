@@ -47,7 +47,7 @@ export function ApprovalSettingsCard({
           审批配置
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          当前仅配置蟹扣领用与出库两个审批节点；超级管理员始终拥有兜底审批权限。
+          审批节点统一由审核员负责处理；管理员始终拥有兜底特批与审批权限。
         </p>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">

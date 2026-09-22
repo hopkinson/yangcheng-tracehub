@@ -141,7 +141,7 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
             <ShieldCheck className="size-4 text-primary shrink-0" />
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">农残快检：</span>
+                <span className="text-muted-foreground">药残及重金属快检：</span>
                 {batch.quickCheck === "QUALIFIED" ? (
                   <>
                     <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px]">
@@ -150,9 +150,9 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
                     {(batch.quickCheckUrl || batch.reportUrl) && (
                       <BatchReportViewDialog
                         batchCode={batch.code}
-                        reportName={batch.quickCheckName || batch.reportName || `${batch.code}_农残快检报告`}
+                        reportName={batch.quickCheckName || batch.reportName || `${batch.code}_药残及重金属快检报告`}
                         reportUrl={batch.quickCheckUrl || batch.reportUrl!}
-                        title={`农残快检报告 (${batch.code})`}
+                        title={`药残及重金属快检报告 (${batch.code})`}
                         trigger={
                           <Button variant="link" size="sm" className="h-5 px-1 text-[11px] text-primary gap-0.5">
                             <FileCheck className="size-3" /> 查看报告

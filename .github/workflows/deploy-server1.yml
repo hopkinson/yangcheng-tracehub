@@ -118,9 +118,9 @@ jobs:
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
 
-            # 2. 准备纯净部署目录（保留 data 与 .env.production 等持久化文件，清理历史代码残留）
+            # 2. 准备纯净部署目录（保留 data/data-test 与 .env* 等持久化文件，清理历史代码残留）
             if [ -d "$TARGET_DIR" ]; then
-              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
+              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data*' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
             fi
             mkdir -p "$TARGET_DIR"
 
@@ -133,10 +133,10 @@ jobs:
             fi
             cd "$TARGET_DIR"
 
-            # 4. 确保持久化目录存在
-            mkdir -p data/db data/uploads
+            # 4. 确保生产与测试的持久化目录存在
+            mkdir -p data/db data/uploads data-test/db data-test/uploads
 
-            # 5. 更新 docker-compose.yml (本地构建)
+            # 5. 更新 docker-compose.yml (生产 + 测试双服务)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
@@ -154,6 +154,18 @@ jobs:
                   - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
 
+              app-test:
+                image: yangcheng-tracehub:latest
+                container_name: yangcheng-tracehub-test
+                restart: always
+                ports:
+                  - "3001:3000"
+                env_file:
+                  - .env.test
+                volumes:
+                  - ./data-test/db:/app/data
+                  - ./data-test/uploads:/app/public/uploads
+
               nginx:
                 image: nginx:alpine
                 container_name: yangcheng-nginx
@@ -166,9 +178,10 @@ jobs:
                   - ./nginx/ssl:/etc/nginx/ssl:ro
                 depends_on:
                   - app
+                  - app-test
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置
+            # 6. 如果不存在生产/测试环境配置，写入默认配置
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
@@ -179,6 +192,17 @@ jobs:
             ENV_EOF
             fi
 
+            if [ ! -f .env.test ]; then
+              cat << 'TEST_ENV_EOF' > .env.test
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="file:/app/data/app.db"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-test-2026-auth-session"
+            NEXT_PUBLIC_TENANT=default
+            NEXT_PUBLIC_ENV_TAG=test
+            TEST_ENV_EOF
+            fi
+
             # 7. 检测 Docker Compose 命令行工具
             DOCKER_COMPOSE="docker compose"
             if ! docker compose version >/dev/null 2>&1; then
@@ -187,12 +211,12 @@ jobs:
               fi
             fi
 
-            # 8. 本地镜像构建并平滑上线
+            # 8. 本地镜像构建并平滑上线 (复用同一构建镜像)
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
             $DOCKER_COMPOSE build app
 
-            echo "🔄 启动并平滑上线容器..."
-            $DOCKER_COMPOSE up -d app
+            echo "🔄 启动并平滑上线生产与测试容器..."
+            $DOCKER_COMPOSE up -d app app-test
             if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
               $DOCKER_COMPOSE up -d nginx || true
             fi
@@ -200,30 +224,45 @@ jobs:
             # 9. 清理悬空未使用的旧镜像，保持磁盘干净
             docker image prune -f || true
 
-            # 10. 状态检查与真实健康探活
+            # 10. 状态检查与真实健康探活 (双环境探活)
             echo "🔍 检查容器运行状态..."
             $DOCKER_COMPOSE ps
-            echo "📄 查看应用容器最新日志 (前 30 行)..."
-            $DOCKER_COMPOSE logs --tail=30 app || true
+            echo "📄 查看生产容器最新日志 (前 20 行)..."
+            $DOCKER_COMPOSE logs --tail=20 app || true
+            echo "📄 查看测试容器最新日志 (前 20 行)..."
+            $DOCKER_COMPOSE logs --tail=20 app-test || true
 
-            echo "🩺 执行本地健康探活 (http://127.0.0.1:3000)..."
+            echo "🩺 执行生产服务健康探活 (http://127.0.0.1:3000)..."
             PROBE_SUCCESS=false
             for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:3000/api/health > /dev/null 2>&1 || curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
-                echo "✅ 第 $i 次尝试：应用探活成功，HTTP 正常响应！"
+              if curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
+                echo "✅ 第 $i 次尝试：生产应用探活成功，HTTP 正常响应！"
                 PROBE_SUCCESS=true
                 break
               fi
-              echo "⏳ 等待应用就绪... ($i/15)"
+              echo "⏳ 等待生产应用就绪... ($i/15)"
               sleep 2
             done
 
-            if [ "$PROBE_SUCCESS" != "true" ]; then
-              echo "❌ 错误：应用未能正常启动并对外提供服务！容器崩溃日志："
-              $DOCKER_COMPOSE logs --tail=100 app
+            echo "🩺 执行测试服务健康探活 (http://127.0.0.1:3001)..."
+            TEST_PROBE_SUCCESS=false
+            for i in $(seq 1 15); do
+              if curl -sf http://127.0.0.1:3001/ > /dev/null 2>&1; then
+                echo "✅ 第 $i 次尝试：测试应用探活成功，HTTP 正常响应！"
+                TEST_PROBE_SUCCESS=true
+                break
+              fi
+              echo "⏳ 等待测试应用就绪... ($i/15)"
+              sleep 2
+            done
+
+            if [ "$PROBE_SUCCESS" != "true" ] || [ "$TEST_PROBE_SUCCESS" != "true" ]; then
+              echo "❌ 错误：服务未能正常启动并对外提供服务！"
+              [ "$PROBE_SUCCESS" != "true" ] && echo "--- 生产崩溃日志 ---" && $DOCKER_COMPOSE logs --tail=100 app
+              [ "$TEST_PROBE_SUCCESS" != "true" ] && echo "--- 测试崩溃日志 ---" && $DOCKER_COMPOSE logs --tail=100 app-test
               exit 1
             fi
-            echo "✅ 服务器 1 部署成功且服务探活正常！"
+            echo "✅ 服务器 1 (生产 + 测试) 双环境部署成功且服务探活正常！"
 
       - name: "SSH 部署并平滑上线 (服务器 1 - 密钥认证)"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
@@ -253,9 +292,9 @@ jobs:
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
 
-            # 2. 准备纯净部署目录（保留 data 与 .env.production 等持久化文件，清理历史代码残留）
+            # 2. 准备纯净部署目录（保留 data/data-test 与 .env* 等持久化文件，清理历史代码残留）
             if [ -d "$TARGET_DIR" ]; then
-              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
+              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data*' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
             fi
             mkdir -p "$TARGET_DIR"
 
@@ -268,10 +307,10 @@ jobs:
             fi
             cd "$TARGET_DIR"
 
-            # 4. 确保持久化目录存在
-            mkdir -p data/db data/uploads
+            # 4. 确保生产与测试的持久化目录存在
+            mkdir -p data/db data/uploads data-test/db data-test/uploads
 
-            # 5. 更新 docker-compose.yml (本地构建)
+            # 5. 更新 docker-compose.yml (生产 + 测试双服务)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
@@ -289,6 +328,18 @@ jobs:
                   - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
 
+              app-test:
+                image: yangcheng-tracehub:latest
+                container_name: yangcheng-tracehub-test
+                restart: always
+                ports:
+                  - "3001:3000"
+                env_file:
+                  - .env.test
+                volumes:
+                  - ./data-test/db:/app/data
+                  - ./data-test/uploads:/app/public/uploads
+
               nginx:
                 image: nginx:alpine
                 container_name: yangcheng-nginx
@@ -301,9 +352,10 @@ jobs:
                   - ./nginx/ssl:/etc/nginx/ssl:ro
                 depends_on:
                   - app
+                  - app-test
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置
+            # 6. 如果不存在生产/测试环境配置，写入默认配置
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
@@ -314,6 +366,17 @@ jobs:
             ENV_EOF
             fi
 
+            if [ ! -f .env.test ]; then
+              cat << 'TEST_ENV_EOF' > .env.test
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="file:/app/data/app.db"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-test-2026-auth-session"
+            NEXT_PUBLIC_TENANT=default
+            NEXT_PUBLIC_ENV_TAG=test
+            TEST_ENV_EOF
+            fi
+
             # 7. 检测 Docker Compose 命令行工具
             DOCKER_COMPOSE="docker compose"
             if ! docker compose version >/dev/null 2>&1; then
@@ -322,12 +385,12 @@ jobs:
               fi
             fi
 
-            # 8. 本地镜像构建并平滑上线
+            # 8. 本地镜像构建并平滑上线 (复用同一构建镜像)
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
             $DOCKER_COMPOSE build app
 
-            echo "🔄 启动并平滑上线容器..."
-            $DOCKER_COMPOSE up -d app
+            echo "🔄 启动并平滑上线生产与测试容器..."
+            $DOCKER_COMPOSE up -d app app-test
             if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
               $DOCKER_COMPOSE up -d nginx || true
             fi
@@ -335,27 +398,42 @@ jobs:
             # 9. 清理悬空未使用的旧镜像，保持磁盘干净
             docker image prune -f || true
 
-            # 10. 状态检查与真实健康探活
+            # 10. 状态检查与真实健康探活 (双环境探活)
             echo "🔍 检查容器运行状态..."
             $DOCKER_COMPOSE ps
-            echo "📄 查看应用容器最新日志 (前 30 行)..."
-            $DOCKER_COMPOSE logs --tail=30 app || true
+            echo "📄 查看生产容器最新日志 (前 20 行)..."
+            $DOCKER_COMPOSE logs --tail=20 app || true
+            echo "📄 查看测试容器最新日志 (前 20 行)..."
+            $DOCKER_COMPOSE logs --tail=20 app-test || true
 
-            echo "🩺 执行本地健康探活 (http://127.0.0.1:3000)..."
+            echo "🩺 执行生产服务健康探活 (http://127.0.0.1:3000)..."
             PROBE_SUCCESS=false
             for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:3000/api/health > /dev/null 2>&1 || curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
-                echo "✅ 第 $i 次尝试：应用探活成功，HTTP 正常响应！"
+              if curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
+                echo "✅ 第 $i 次尝试：生产应用探活成功，HTTP 正常响应！"
                 PROBE_SUCCESS=true
                 break
               fi
-              echo "⏳ 等待应用就绪... ($i/15)"
+              echo "⏳ 等待生产应用就绪... ($i/15)"
               sleep 2
             done
 
-            if [ "$PROBE_SUCCESS" != "true" ]; then
-              echo "❌ 错误：应用未能正常启动并对外提供服务！容器崩溃日志："
-              $DOCKER_COMPOSE logs --tail=100 app
+            echo "🩺 执行测试服务健康探活 (http://127.0.0.1:3001)..."
+            TEST_PROBE_SUCCESS=false
+            for i in $(seq 1 15); do
+              if curl -sf http://127.0.0.1:3001/ > /dev/null 2>&1; then
+                echo "✅ 第 $i 次尝试：测试应用探活成功，HTTP 正常响应！"
+                TEST_PROBE_SUCCESS=true
+                break
+              fi
+              echo "⏳ 等待测试应用就绪... ($i/15)"
+              sleep 2
+            done
+
+            if [ "$PROBE_SUCCESS" != "true" ] || [ "$TEST_PROBE_SUCCESS" != "true" ]; then
+              echo "❌ 错误：服务未能正常启动并对外提供服务！"
+              [ "$PROBE_SUCCESS" != "true" ] && echo "--- 生产崩溃日志 ---" && $DOCKER_COMPOSE logs --tail=100 app
+              [ "$TEST_PROBE_SUCCESS" != "true" ] && echo "--- 测试崩溃日志 ---" && $DOCKER_COMPOSE logs --tail=100 app-test
               exit 1
             fi
-            echo "✅ 服务器 1 部署成功且服务探活正常！"
+            echo "✅ 服务器 1 (生产 + 测试) 双环境部署成功且服务探活正常！"

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { UserRoleSwitcher } from "./UserRoleSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
@@ -82,12 +83,11 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const PROD_ROUTES = ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/stores", "/reports", "/tags", "/outbound", "/ledgers", "/trace"];
 const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
-  QA_DIRECTOR: PROD_ROUTES,
-  WAREHOUSE_ADMIN: PROD_ROUTES,
-  FARMER_ADMIN: ["/", "/farmers", "/tags", "/ledgers", "/trace"],
-  CHANNEL_VIEWER: ["/", "/trace"],
+  FARMER_ADMIN: ["/", "/batches", "/pools", "/outbound", "/farmers", "/tags", "/reports", "/ledgers", "/trace"],
+  WAREHOUSE_ADMIN: ["/", "/orders", "/batches", "/pools", "/bundling", "/sorting", "/cold-storage", "/outbound", "/tags", "/stores", "/ledgers", "/trace"],
+  QA_DIRECTOR: ["/", "/batches", "/pools", "/reports", "/ledgers", "/trace"],
+  CHANNEL_VIEWER: ["/", "/ledgers", "/trace"],
 };
 
 export function AppShell({
@@ -110,6 +110,7 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const tenant = getTenant();
   const isMaoshi = tenant.id === "maoshi";
+  const isTestEnv = process.env.NEXT_PUBLIC_ENV_TAG === "test" || process.env.NEXT_PUBLIC_IS_TEST === "true";
 
   if (pathname === "/login") return <>{children}</>;
 
@@ -364,6 +365,12 @@ export function AppShell({
             >
               <Menu className="size-4" />
             </Button>
+            {isTestEnv && (
+              <Badge variant="secondary" className="gap-1.5 px-2.5 py-0.5 text-xs font-semibold border border-border text-foreground">
+                <span className="size-1.5 rounded-full bg-primary animate-pulse" />
+                【测试环境 · admin-test】
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

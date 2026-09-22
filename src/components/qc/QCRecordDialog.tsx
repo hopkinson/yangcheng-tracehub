@@ -121,6 +121,8 @@ export function QCRecordDialog({
   const isRectifying = conclusion === "待整改";
   const isExceptionConclusion = isUnqualified || isRectifying;
 
+  const timeLabel = config.cat.endsWith("_CHECK") ? "记录时间" : "实际巡检/校准时间";
+
   useEffect(() => {
     if (open && userList.length === 0) {
       getQCInspectorsAction().then((res) => {
@@ -235,10 +237,10 @@ export function QCRecordDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <FileCheck className="size-5 text-primary" />
-            {isEdit ? `修改${config.categoryLabel}记录【${record?.code || record?.id}】` : `${config.categoryLabel}留痕上传`}
+            {isEdit ? `修改${config.categoryLabel}记录【${record?.code || record?.id}】` : config.categoryLabel}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            关联对象：<span className="font-mono font-bold text-foreground">{form.watch("refId") || config.refId || "待选择"}</span> · 强制填报实际巡检时间以暴露后填补录问题。
+            关联对象：<span className="font-mono font-bold text-foreground">{form.watch("refId") || config.refId || "待选择"}</span> · 强制填报实际{timeLabel}以暴露后填补录问题。
           </DialogDescription>
         </DialogHeader>
 
@@ -302,7 +304,7 @@ export function QCRecordDialog({
                 name="checkTime"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs font-semibold text-primary">实际巡检/校准时间 (必填)</FormLabel>
+                    <FormLabel className="text-xs font-semibold text-primary">{timeLabel} (必填)</FormLabel>
                     <FormControl>
                       <Input
                         type="datetime-local"

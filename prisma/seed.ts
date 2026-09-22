@@ -38,7 +38,7 @@ async function main() {
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON;").catch(() => {});
 
   await prisma.$executeRawUnsafe(
-    'INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole") VALUES (\'default\', \'FARMER_ADMIN\', \'QA_DIRECTOR\')'
+    'INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole") VALUES (\'default\', \'FARMER_ADMIN\', \'FARMER_ADMIN\')'
   );
 
   // 2. 用户与角色
@@ -74,7 +74,7 @@ async function main() {
       username: "audit_mgr",
       phone: "13800000002",
       passwordHash: "000002",
-      fullName: "张核验 (内部核验员)",
+      fullName: "张审核 (审核员)",
       role: "FARMER_ADMIN",
     },
   });

@@ -1,16 +1,14 @@
-export const APPROVAL_ROLES = ["FARMER_ADMIN", "QA_DIRECTOR", "WAREHOUSE_ADMIN"] as const;
+export const APPROVAL_ROLES = ["FARMER_ADMIN"] as const;
 
 export type ApprovalRole = (typeof APPROVAL_ROLES)[number];
 
 export const APPROVAL_ROLE_LABELS: Record<ApprovalRole, string> = {
-  FARMER_ADMIN: "内部核验员",
-  QA_DIRECTOR: "品控主管",
-  WAREHOUSE_ADMIN: "仓库管理员",
+  FARMER_ADMIN: "审核员",
 };
 
 export const DEFAULT_APPROVAL_SETTING = {
   tagClaimRole: "FARMER_ADMIN" as ApprovalRole,
-  outboundRole: "QA_DIRECTOR" as ApprovalRole,
+  outboundRole: "FARMER_ADMIN" as ApprovalRole,
 };
 
 export const TAG_CLAIM_APPROVAL = {

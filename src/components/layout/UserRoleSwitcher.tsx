@@ -15,11 +15,11 @@ export interface CurrentUser {
 }
 
 const ROLE_MAP: Record<string, string> = {
-  ADMIN: "超级管理员",
-  QA_DIRECTOR: "质检主管",
+  ADMIN: "管理员",
+  FARMER_ADMIN: "审核员",
   WAREHOUSE_ADMIN: "库管员",
-  FARMER_ADMIN: "内部核验员",
-  CHANNEL_VIEWER: "渠道审计员",
+  QA_DIRECTOR: "质检员",
+  CHANNEL_VIEWER: "渠道审计员 (山姆)",
 };
 
 export function UserRoleSwitcher({

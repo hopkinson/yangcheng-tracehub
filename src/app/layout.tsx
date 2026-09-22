@@ -44,8 +44,7 @@ export default async function RootLayout({
 
   const canApproveTagClaims = canApprove(currentUser?.role, approvalSetting.tagClaimRole);
   const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
-  const canHandleExceptions = currentUser?.role === "QA_DIRECTOR" || currentUser?.role === "ADMIN";
-  const canAccessApprovals = canApproveTagClaims || canApproveOutbound || canHandleExceptions;
+  const canAccessApprovals = canApproveTagClaims || canApproveOutbound;
 
   let pendingAlertCount = 0;
   if (currentUser && (canApproveTagClaims || canApproveOutbound)) {
