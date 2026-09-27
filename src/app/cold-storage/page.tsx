@@ -6,8 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ColdIntakeDialog } from "@/components/coldStore/ColdIntakeDialog";
 import { ColdStoreDialog } from "@/components/coldStore/ColdStoreDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
+import { getCurrentUser } from "@/lib/auth";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import { ThermometerSnowflake, CheckSquare, Plus, Activity, ShieldCheck, AlertTriangle } from "lucide-react";
+import { ThermometerSnowflake, CheckSquare, Plus, Activity, ShieldCheck, AlertTriangle, Pencil } from "lucide-react";
 import { formatISODate, formatShortDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ export default async function ColdStoragePage({
   const params = await searchParams;
   const page = Math.max(1, Number(params?.page) || 1);
   const pageSize = Math.max(1, Number(params?.pageSize) || 10);
+  const currentUser = await getCurrentUser();
+  const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role);
   // 1. 查询保鲜库及其入库流水
   const stores = await prisma.coldStore.findMany({
     orderBy: { code: "asc" },
@@ -406,14 +409,15 @@ export default async function ColdStoragePage({
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[130px]">巡检库位</th>
                 <th className="px-3 py-2.5 font-medium min-w-[220px]">温湿度与巡检结论</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[110px]">状态</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[140px]">巡检时间</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[140px]">记录时间</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[120px]">质检员</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[80px] text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
               {qcRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <td colSpan={7} className="text-center py-8 text-muted-foreground">
                     暂无保鲜库温湿度记录
                   </td>
                 </tr>
@@ -456,6 +460,26 @@ export default async function ColdStoragePage({
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {qc.uploader}
+                      </td>
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        {canEditQc && (
+                          <QCRecordDialog
+                            config={{
+                              cat: qc.cat,
+                              categoryLabel: "保鲜温湿度巡检",
+                              defaultTitle: qc.title,
+                              refType: qc.refType,
+                              refId: qc.refId,
+                              formNoPreset: qc.formNo || undefined,
+                            }}
+                            record={qc}
+                            trigger={
+                              <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-primary" title="编辑保鲜巡检记录">
+                                <Pencil className="size-3" /> 编辑
+                              </Button>
+                            }
+                          />
+                        )}
                       </td>
                     </tr>
                   );

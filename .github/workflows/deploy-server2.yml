@@ -16,6 +16,7 @@ jobs:
   build-and-deploy:
     name: "构建并发布到服务器 2"
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
       packages: write
@@ -161,6 +162,10 @@ jobs:
 
             # 4. 确保持久化目录存在
             mkdir -p data/db data/uploads
+            if [ -f data/db/app.db ]; then
+              echo "🛡️ 部署前创建生产数据库一致性备份..."
+              bash scripts/backup-production-db.sh --label pre-deploy
+            fi
 
             # 5. 更新 docker-compose.yml (本地构建)
             cat << 'COMPOSE_EOF' > docker-compose.yml
@@ -296,6 +301,10 @@ jobs:
 
             # 4. 确保持久化目录存在
             mkdir -p data/db data/uploads
+            if [ -f data/db/app.db ]; then
+              echo "🛡️ 部署前创建生产数据库一致性备份..."
+              bash scripts/backup-production-db.sh --label pre-deploy
+            fi
 
             # 5. 更新 docker-compose.yml (本地构建)
             cat << 'COMPOSE_EOF' > docker-compose.yml

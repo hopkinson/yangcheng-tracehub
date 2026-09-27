@@ -34,10 +34,12 @@ type SpecStock = {
   qualified: number;
   used: number;
   loss: number;
+  packagingLoss: number;
+  clearanceLoss: number;
   available: number;
 };
 
-const PRESET_REASONS = ["当日收尾清库盘点结算", "发货前死蟹", "装箱挑损", "残损不可发"];
+const PRESET_REASONS = ["当日收尾清库盘点结算", "账实盘点差异", "清库发现死蟹", "收尾清库核减"];
 
 export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) {
   const availableStocks = specStocks.filter((s) => s.available > 0);
@@ -114,8 +116,6 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
   const totalAvailable = availableStocks.reduce((sum, s) => sum + s.available, 0);
   const totalLoss = availableStocks.reduce((sum, s) => sum + getRowLoss(s), 0);
   const totalPhysical = totalAvailable - totalLoss;
-  const totalQualified = availableStocks.reduce((sum, s) => sum + s.qualified, 0);
-  const totalHistoricalLoss = availableStocks.reduce((sum, s) => sum + s.loss, 0);
 
   const specLossDetails = availableStocks.map((stock) => {
     const rowLoss = getRowLoss(stock);
@@ -124,20 +124,24 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
       bookInPool: stock.available,
       physicalCount: rowPhysical,
       inPoolCount: stock.qualified,
-      historicalLoss: stock.loss,
+      historicalLoss: stock.clearanceLoss,
     });
     return { stock, rowLoss, rowPhysical, lossResult };
   });
+  const affectedLossDetails = specLossDetails.filter((detail) => detail.rowLoss > 0);
+  const affectedAvailable = affectedLossDetails.reduce((sum, detail) => sum + detail.stock.available, 0);
+  const totalQualified = affectedLossDetails.reduce((sum, detail) => sum + detail.stock.qualified, 0);
+  const totalHistoricalLoss = affectedLossDetails.reduce((sum, detail) => sum + detail.stock.clearanceLoss, 0);
 
   const overallLossResult = Invariants.calculateLoss({
-    bookInPool: totalAvailable,
-    physicalCount: totalPhysical,
+    bookInPool: affectedAvailable,
+    physicalCount: affectedAvailable - totalLoss,
     inPoolCount: totalQualified,
     historicalLoss: totalHistoricalLoss,
   });
 
   const isHighLoss =
-    specLossDetails.some((d) => d.lossResult.isException) || Boolean(overallLossResult.isException);
+    affectedLossDetails.some((d) => d.lossResult.isException) || Boolean(overallLossResult.isException);
 
   async function handleSubmit() {
     if (totalLoss <= 0) {
@@ -145,13 +149,11 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
       return;
     }
     if (isHighLoss && !reason.trim()) {
-      toast.error("累计出库损耗率超过 5%，请务必详细填写损耗原因说明");
+      toast.error("累计清库损耗率超过 5%，请务必详细填写损耗原因说明");
       return;
     }
 
-    const items = specLossDetails
-      .filter((d) => d.rowLoss > 0)
-      .map((d) => ({
+    const items = affectedLossDetails.map((d) => ({
         gender: d.stock.gender,
         weightTier: d.stock.weightTier,
         lossCount: d.rowLoss,
@@ -159,13 +161,13 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
 
     setLoading(true);
     try {
-      const result = await batchRegisterOutboundLossAction({ items, reason });
+      const result = await batchRegisterOutboundLossAction({ items, reason, lossType: "CLEARANCE" });
       toast.success(
-        `出库损耗 / 清库盘点已成功登记！共核减 ${result.totalLossRecorded} 只，涉及 ${result.results.length} 个规格`
+        `清库损耗已提交审核！共锁定核减 ${result.totalLossRecorded} 只，涉及 ${result.results.length} 个规格`
       );
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "出库损耗登记失败");
+      toast.error(error instanceof Error ? error.message : "清库损耗登记失败");
     } finally {
       setLoading(false);
     }
@@ -176,7 +178,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="h-8 gap-1.5" disabled={availableStocks.length === 0}>
           <ClipboardList className="size-3.5" />
-          出库损耗 / 清库盘点
+          清库损耗 / 清库盘点
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
@@ -185,14 +187,14 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-semibold flex items-center gap-2">
               <ClipboardList className="size-4 text-primary" />
-              出库损耗 / 清库盘点
+              清库损耗 / 清库盘点
             </DialogTitle>
             <Badge variant="secondary" className="font-mono text-[11px] h-5">
               共 {availableStocks.length} 个在库规格
             </Badge>
           </div>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            平铺填报各规格挑残、死蟹损耗并核减可发库存；每日收尾清库时可点击【一键全清归零】快速结算。
+            平铺填报每日收尾清库盘点差异并锁定可发库存；可点击【一键全清归零】快速结算，审核通过后核销。
           </DialogDescription>
         </DialogHeader>
 
@@ -273,7 +275,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
                           htmlFor={`loss-${key}`}
                           className="text-[11px] font-semibold text-destructive flex items-center justify-between"
                         >
-                          <span>本次损耗 / 剔除 *</span>
+                          <span>本次清库损耗 *</span>
                           <span className="text-[10px] text-muted-foreground font-normal">直接扣减</span>
                         </Label>
                         <div className="relative">
@@ -357,7 +359,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
                 <span className="font-bold text-primary text-sm">{totalPhysical.toLocaleString()} 只</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-muted-foreground text-[11px]">综合出库损耗率</span>
+                <span className="text-muted-foreground text-[11px]">清库损耗率</span>
                 <span className={`font-bold text-sm ${isHighLoss ? "text-destructive" : "text-emerald-600"}`}>
                   {Number(overallLossResult.lossRate).toFixed(2)}%
                 </span>
@@ -367,7 +369,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
             {isHighLoss && (
               <div className="pt-2 text-[11px] text-destructive flex items-center gap-1.5 font-medium border-t border-destructive/20">
                 <AlertTriangle className="size-3.5 shrink-0" />
-                <span>累计出库损耗率已超过 5% 警戒阈值，系统强制要求填写损耗原因说明留痕！</span>
+                <span>累计清库损耗率已超过 5% 警戒阈值，系统强制要求填写损耗原因说明留痕！</span>
               </div>
             )}
           </div>
@@ -376,7 +378,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
           <div className="space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <Label className="font-medium text-foreground">
-                损耗与清库原因说明 {isHighLoss && <span className="text-destructive">*</span>}
+                清库损耗原因说明 {isHighLoss && <span className="text-destructive">*</span>}
               </Label>
               <span className="text-[10px] text-muted-foreground">点击快捷标签填入</span>
             </div>
@@ -395,7 +397,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="请输入本次发货损耗或收尾清库的具体原因..."
+              placeholder="请输入本次清库盘点损耗的具体原因..."
               className="min-h-[56px] text-xs resize-none"
               required={isHighLoss}
             />

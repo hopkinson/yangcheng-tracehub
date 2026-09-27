@@ -59,24 +59,26 @@ export function aggregatePipelineStocks({
   }
 
   // 2. 捆扎在制与待分拣（已起池但尚未被分拣机完全承接）
-  const sortInputByBundle = new Map<string, number>();
+  const sortInputByBundleSpec = new Map<string, number>();
   for (const st of sortTasks) {
     if (st.bundleBatchId) {
-      sortInputByBundle.set(st.bundleBatchId, (sortInputByBundle.get(st.bundleBatchId) || 0) + (st.inputCount || 0));
+      const key = `${st.bundleBatchId}_${st.gender}_${Invariants.normalizeWeightTier(st.weightTier)}`;
+      sortInputByBundleSpec.set(key, (sortInputByBundleSpec.get(key) || 0) + (st.inputCount || 0));
     }
   }
 
   for (const bb of bundleBatches) {
-    const lines = bb.lines || [];
-    const totalLineCount = lines.reduce((s: number, l: any) => s + (l.count || 0), 0);
-    const consumedCount = sortInputByBundle.get(bb.id) || 0;
-    const remainingRatio = totalLineCount > 0 ? Math.max(0, (totalLineCount - consumedCount) / totalLineCount) : 0;
-
-    for (const l of lines) {
-      const activeCount = Math.round((l.count || 0) * remainingRatio);
-      if (activeCount > 0) {
-        getEntry(l.gender, l.weightTier).bundling += activeCount;
-      }
+    const availableBySpec = new Map<string, { gender: string; weightTier: string; count: number }>();
+    for (const l of bb.lines || []) {
+      const weightTier = Invariants.normalizeWeightTier(l.weightTier);
+      const key = `${bb.id}_${l.gender}_${weightTier}`;
+      const entry = availableBySpec.get(key) || { gender: l.gender, weightTier, count: 0 };
+      entry.count += bb.status === "COMPLETED" ? (l.qualifiedCount ?? l.count ?? 0) : (l.count || 0);
+      availableBySpec.set(key, entry);
+    }
+    for (const [key, entry] of availableBySpec) {
+      const remaining = Math.max(0, entry.count - (sortInputByBundleSpec.get(key) || 0));
+      if (remaining > 0) getEntry(entry.gender, entry.weightTier).bundling += remaining;
     }
   }
 

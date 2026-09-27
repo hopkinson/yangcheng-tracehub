@@ -11,6 +11,7 @@ jobs:
   build-and-deploy:
     name: "构建 GHCR 镜像并发布到服务器 1"
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
       packages: write
@@ -135,6 +136,10 @@ jobs:
 
             # 4. 确保生产与测试的持久化目录存在
             mkdir -p data/db data/uploads data-test/db data-test/uploads nginx/ssl
+            if [ -f data/db/app.db ]; then
+              echo "🛡️ 部署前创建生产数据库一致性备份..."
+              bash scripts/backup-production-db.sh --label pre-deploy
+            fi
             if [ ! -f nginx/ssl/test_fullchain.pem ] && [ -f nginx/ssl/fullchain.pem ]; then
               cp nginx/ssl/fullchain.pem nginx/ssl/test_fullchain.pem 2>/dev/null || true
               cp nginx/ssl/privkey.pem nginx/ssl/test_privkey.pem 2>/dev/null || true
@@ -166,6 +171,8 @@ jobs:
                   - "3001:3000"
                 env_file:
                   - .env.test
+                environment:
+                  ALLOW_DATA_RESET: "test-only"
                 volumes:
                   - ./data-test/db:/app/data
                   - ./data-test/uploads:/app/public/uploads
@@ -313,6 +320,10 @@ jobs:
 
             # 4. 确保生产与测试的持久化目录存在
             mkdir -p data/db data/uploads data-test/db data-test/uploads nginx/ssl
+            if [ -f data/db/app.db ]; then
+              echo "🛡️ 部署前创建生产数据库一致性备份..."
+              bash scripts/backup-production-db.sh --label pre-deploy
+            fi
             if [ ! -f nginx/ssl/test_fullchain.pem ] && [ -f nginx/ssl/fullchain.pem ]; then
               cp nginx/ssl/fullchain.pem nginx/ssl/test_fullchain.pem 2>/dev/null || true
               cp nginx/ssl/privkey.pem nginx/ssl/test_privkey.pem 2>/dev/null || true
@@ -344,6 +355,8 @@ jobs:
                   - "3001:3000"
                 env_file:
                   - .env.test
+                environment:
+                  ALLOW_DATA_RESET: "test-only"
                 volumes:
                   - ./data-test/db:/app/data
                   - ./data-test/uploads:/app/public/uploads

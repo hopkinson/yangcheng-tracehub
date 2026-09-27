@@ -66,7 +66,7 @@ export function QCViewDialog({
           </div>
           <DialogDescription className="text-xs text-muted-foreground flex items-center gap-3 pt-1">
             <span className="flex items-center gap-1">
-              <Clock className="size-3" /> 检查时间：{checkDateStr}
+              <Clock className="size-3" /> 记录时间：{checkDateStr}
             </span>
             <span>·</span>
             <span>质检人：{record.uploader}</span>

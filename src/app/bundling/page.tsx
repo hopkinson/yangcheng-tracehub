@@ -1,5 +1,6 @@
 import Link from "next/link";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,6 +22,7 @@ import {
   AlertTriangle,
   Upload,
   X,
+  Pencil,
 } from "lucide-react";
 import { formatDateTime, cn, getBeijingDayRange } from "@/lib/utils";
 
@@ -34,6 +36,8 @@ export default async function BundlingPage({
   const params = await searchParams;
   const selectedDateStr = params?.date?.trim();
   const selectedGroupId = params?.group?.trim();
+  const currentUser = await getCurrentUser();
+  const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role || "");
 
   const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 
@@ -531,7 +535,7 @@ export default async function BundlingPage({
             <div>
               <CardTitle className="text-xs font-semibold">捆扎现场与绑扣规范巡检台账</CardTitle>
               <p className="text-[11px] text-muted-foreground">
-                车间现场巡检留痕 · 巡检时间（现场发生）与上传时间（系统登记）比对 · 两段结论合规判定
+                车间现场巡检留痕 · 记录时间与上传时间比对 · 两段结论合规判定
               </p>
             </div>
           </div>
@@ -556,11 +560,11 @@ export default async function BundlingPage({
               <tr>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">巡检记录号 (KZ)</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[140px]">纸质表号</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">现场巡检时间</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">记录时间</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">系统上传时间</th>
                 <th className="px-3 py-2.5 font-medium min-w-[200px]">巡检结论判定</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[110px]">质检责任人</th>
-                <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap w-[100px]">原始凭证</th>
+                <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap w-[150px]">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -644,7 +648,27 @@ export default async function BundlingPage({
                         {qc.uploader}
                       </td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
-                        <QCViewDialog record={qc} triggerText="查看留痕" />
+                        <div className="flex items-center justify-end gap-1.5">
+                          {canEditQc && (
+                            <QCRecordDialog
+                              config={{
+                                cat: "BUNDLE_INSPECT",
+                                categoryLabel: "捆扎巡检",
+                                defaultTitle: qc.title,
+                                formNoPreset: qc.formNo || undefined,
+                                refType: "WORKSHOP",
+                                refId: qc.refId,
+                              }}
+                              record={qc}
+                              trigger={
+                                <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" title="编辑捆扎巡检记录">
+                                  <Pencil className="size-3" /> 编辑
+                                </button>
+                              }
+                            />
+                          )}
+                          <QCViewDialog record={qc} triggerText="查看留痕" />
+                        </div>
                       </td>
                     </tr>
                   );

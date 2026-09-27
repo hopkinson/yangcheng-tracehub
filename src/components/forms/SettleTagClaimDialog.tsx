@@ -10,6 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { settleDailyTagClaimAction } from "@/actions/tags";
 import { settleTagClaimFormSchema, type SettleTagClaimFormValues } from "@/lib/validations/schemas";
 import { Invariants } from "@/lib/invariants";
+import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 import { toast } from "sonner";
 import { Scale, CheckCircle2, AlertTriangle } from "lucide-react";
 
@@ -106,12 +107,12 @@ export function SettleTagClaimDialog({
       <DialogTrigger asChild>
         <Button variant={claim.isBalanced ? "ghost" : "outline"} size="sm" className="h-7 text-xs gap-1">
           <Scale className="size-3" />
-          {claim.isBalanced ? "查看核销" : "登记退废"}
+          {claim.isBalanced ? "查看核销" : SHOW_TAG_RETURN ? "登记退废" : "登记作废"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>蟹扣退回与作废登记 (日结核销)</DialogTitle>
+          <DialogTitle>{SHOW_TAG_RETURN ? "蟹扣退回与作废登记" : "蟹扣作废登记"} (日结核销)</DialogTitle>
           <DialogDescription>
             养殖户：{claim.farmer.name} ({claim.farmer.code})
           </DialogDescription>
@@ -167,8 +168,15 @@ export function SettleTagClaimDialog({
             {isBalanced ? (
               <span className="inline-flex items-center text-emerald-600 font-sans font-medium text-xs">
                 <CheckCircle2 className="size-3.5 mr-1 shrink-0" />
-                数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal}
-                {totalDownstreamLoss > 0 ? ` [出库 ${outboundCount} + 损耗 ${totalDownstreamLoss}]` : ""} + 退回 {returnedVal} + 作废 {scrappedVal})
+                {!SHOW_TAG_RETURN && returnedVal > 0 ? (
+                  "数量已完全轧平（系统已按历史数据完成核销）"
+                ) : (
+                  <>
+                    数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal}
+                    {totalDownstreamLoss > 0 ? ` [出库 ${outboundCount} + 损耗 ${totalDownstreamLoss}]` : ""}
+                    {SHOW_TAG_RETURN && returnedVal > 0 ? ` + 退回 ${returnedVal}` : ""} + 作废 {scrappedVal})
+                  </>
+                )}
               </span>
             ) : (
               <span className="inline-flex items-center text-amber-600 font-sans font-medium text-xs">
@@ -185,34 +193,36 @@ export function SettleTagClaimDialog({
               已完成绑扎数由系统在捆扎完成时自动归集，不支持日结手工修改。
             </p>
 
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
-                name="returnedCount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>当日退回数量 (只)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="0" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="returnReason"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>退回原因</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：未用完退回库房" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            {SHOW_TAG_RETURN && (
+              <div className="grid grid-cols-2 gap-3">
+                <FormField
+                  control={form.control}
+                  name="returnedCount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>当日退回数量 (只)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="returnReason"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>退回原因</FormLabel>
+                      <FormControl>
+                        <Input placeholder="如：未用完退回库房" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <FormField

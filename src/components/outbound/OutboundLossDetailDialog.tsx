@@ -32,6 +32,7 @@ export interface OutboundLossOrderDetail {
   code: string;
   inventoryDate: Date | string;
   totalLossCount: number;
+  lossType?: "PACKAGING" | "CLEARANCE" | string;
   lossRate: number;
   isException: boolean;
   reason: string;
@@ -81,6 +82,7 @@ export function OutboundLossDetailDialog({
   const isPending = order.status === "PENDING";
   const isApproved = order.status === "APPROVED";
   const isRejected = order.status === "REJECTED";
+  const isPackaging = order.lossType === "PACKAGING";
 
   return (
     <>
@@ -110,7 +112,7 @@ export function OutboundLossDetailDialog({
                 variant="outline"
                 className="text-[10px] font-medium px-2 py-0.5 bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
               >
-                损耗出库单
+                {isPackaging ? "包装损耗" : "清库损耗"}
               </Badge>
               <Badge
                 variant={isApproved ? "default" : isRejected ? "destructive" : "secondary"}
@@ -135,7 +137,9 @@ export function OutboundLossDetailDialog({
               )}
             </div>
             <DialogDescription className="text-xs text-muted-foreground">
-              发货前死蟹挑损/清库盘点核减，多规格明细与审核留痕
+              {isPackaging
+                ? "包装作业挑残核减，多规格明细与即时核销留痕（无需审批）"
+                : "每日收尾清库盘点核减，多规格明细与审核留痕"}
             </DialogDescription>
           </DialogHeader>
 
@@ -308,7 +312,7 @@ export function OutboundLossDetailDialog({
             <div className="p-3 rounded-lg border bg-muted/10 space-y-1.5">
               <span className="font-semibold text-foreground flex items-center gap-1.5 text-xs">
                 <ShieldCheck className="size-3.5 text-primary" />
-                审批流程轨迹
+                {isPackaging ? "即时核销轨迹" : "审批流程轨迹"}
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
                 <div>

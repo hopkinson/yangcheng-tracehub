@@ -23,11 +23,17 @@ function tierVariants(rawWeightTier: string) {
 }
 
 // 唯一库存来源：ColdLog -> SortTask -> BundleBatch -> Batch。
-async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = prisma): Promise<FifoColdLot[]> {
+async function getFifoColdLots(
+  gender: string,
+  rawWeightTier: string,
+  db: any = prisma,
+  coldStoreId?: string,
+): Promise<FifoColdLot[]> {
   const tiers = tierVariants(rawWeightTier);
   const logs = await db.coldLog.findMany({
     where: {
       type: "INTAKE",
+      ...(coldStoreId ? { storeId: coldStoreId } : {}),
       sortTask: {
         is: {
           status: "COMPLETED",
@@ -85,11 +91,24 @@ async function getFifoColdLots(gender: string, rawWeightTier: string, db: any = 
   );
 }
 
-async function getColdStorageStock(gender: string, rawWeightTier: string, db: any = prisma) {
+async function getColdStorageStock(
+  gender: string,
+  rawWeightTier: string,
+  db: any = prisma,
+  coldStoreId?: string,
+  lossType?: "PACKAGING" | "CLEARANCE",
+) {
   const tiers = tierVariants(rawWeightTier);
-  const lots = await getFifoColdLots(gender, rawWeightTier, db);
+  const lots = await getFifoColdLots(gender, rawWeightTier, db, coldStoreId);
+  const lotIds = lots.map((lot) => lot.coldLogId);
   const lossAgg = await db.outboundLossRecord.aggregate({
-    where: { gender, weightTier: { in: tiers }, status: { not: "REJECTED" } },
+    where: {
+      gender,
+      weightTier: { in: tiers },
+      status: { not: "REJECTED" },
+      coldLogId: { in: lotIds },
+      ...(lossType ? { lossType } : {}),
+    },
     _sum: { count: true },
   });
   return {
@@ -99,8 +118,8 @@ async function getColdStorageStock(gender: string, rawWeightTier: string, db: an
   };
 }
 
-async function allocateColdStockFIFO(gender: string, weightTier: string, count: number, db: any) {
-  const lots = await getFifoColdLots(gender, weightTier, db);
+async function allocateColdStockFIFO(gender: string, weightTier: string, count: number, db: any, coldStoreId?: string) {
+  const lots = await getFifoColdLots(gender, weightTier, db, coldStoreId);
   const available = lots.reduce((sum, lot) => sum + lot.availableCount, 0);
   if (available < count) {
     const label = `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${Invariants.normalizeWeightTier(weightTier)}`;
@@ -179,9 +198,9 @@ export type OutboundLossItemInput = {
   lossCount: number;
 };
 
-async function nextOutboundLossCode(tx: any): Promise<string> {
+async function nextOutboundLossCode(tx: any, lossType: "PACKAGING" | "CLEARANCE"): Promise<string> {
   const dateStr = getBeijingDateStr().replace(/-/g, "");
-  const prefix = `SH${dateStr}`;
+  const prefix = `${lossType === "PACKAGING" ? "BZ" : "QK"}${dateStr}`;
   const count = await tx.outboundLossOrder.count({ where: { code: { startsWith: prefix } } });
   return `${prefix}${String(count + 1).padStart(2, "0")}`;
 }
@@ -189,8 +208,14 @@ async function nextOutboundLossCode(tx: any): Promise<string> {
 export async function batchRegisterOutboundLossAction(data: {
   items: OutboundLossItemInput[];
   reason?: string;
+  lossType?: "PACKAGING" | "CLEARANCE";
+  coldStoreId?: string;
 }) {
   const user = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const lossType = data.lossType === "PACKAGING" ? "PACKAGING" : "CLEARANCE";
+  if (lossType === "PACKAGING" && !data.coldStoreId) {
+    throw new Error("包装损耗必须选择具体库位");
+  }
   const validItems = (data.items || [])
     .map((item) => {
       const gender = item.gender === "FEMALE" ? "FEMALE" : item.gender === "MALE" ? "MALE" : "";
@@ -206,11 +231,11 @@ export async function batchRegisterOutboundLossAction(data: {
     throw new Error("请至少填入一个规格的有效损耗数量（大于 0）");
   }
 
-  const reason = data.reason?.trim() || "发货环节损耗盘点";
+  const reason = data.reason?.trim() || (lossType === "PACKAGING" ? "包装环节损耗" : "清库盘点损耗");
   const totalLossCount = validItems.reduce((sum, item) => sum + item.lossCount, 0);
 
   const transactionResult = await prisma.$transaction(async (tx) => {
-    const code = await nextOutboundLossCode(tx);
+    const code = await nextOutboundLossCode(tx, lossType);
     const itemPlans: Array<{
       item: { gender: string; weightTier: string; lossCount: number };
       stock: { totalQualified: number; totalLoss: number; availableCount: number };
@@ -224,7 +249,7 @@ export async function batchRegisterOutboundLossAction(data: {
 
     for (const item of validItems) {
       const { gender, weightTier, lossCount } = item;
-      const stock = await getColdStorageStock(gender, weightTier, tx);
+      const stock = await getColdStorageStock(gender, weightTier, tx, data.coldStoreId, lossType);
       if (lossCount > stock.availableCount) {
         throw new Error(
           `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier} 损耗数量 (${lossCount} 只) 不能超过当前可发库存 (${stock.availableCount} 只)`
@@ -239,7 +264,7 @@ export async function batchRegisterOutboundLossAction(data: {
       });
       if (!lossResult.valid) throw new Error(lossResult.reason);
 
-      const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx);
+      const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx, data.coldStoreId);
 
       totalAvailable += stock.availableCount;
       totalQualified += stock.totalQualified;
@@ -259,20 +284,27 @@ export async function batchRegisterOutboundLossAction(data: {
       itemPlans.some((p) => p.lossResult.isException) || Boolean(overallLossResult.isException);
 
     if (isException && !data.reason?.trim()) {
-      throw new Error("累计出库损耗率超 5% 警戒线，请详细填写损耗原因说明");
+      throw new Error(
+        `累计${lossType === "PACKAGING" ? "包装" : "清库"}损耗率超 5% 警戒线，请详细填写损耗原因说明`
+      );
     }
 
-    // 1. 创建损耗出库主单 (PENDING 待审核)
+    const status = lossType === "PACKAGING" ? "APPROVED" : "PENDING";
+
+    // 包装损耗即时核销；清库损耗沿用待审批流程。
     const lossOrder = await tx.outboundLossOrder.create({
       data: {
         code,
         inventoryDate: new Date(),
         totalLossCount,
+        lossType,
         lossRate: overallLossResult.lossRate,
         isException,
         reason,
-        status: "PENDING",
+        status,
         applicantId: user.id,
+        approvedAt: lossType === "PACKAGING" ? new Date() : null,
+        approvalComment: lossType === "PACKAGING" ? "包装损耗即时核销（无需审批）" : null,
       },
     });
 
@@ -300,8 +332,9 @@ export async function batchRegisterOutboundLossAction(data: {
             gender: item.gender,
             weightTier: item.weightTier,
             count: allocation.count,
+            lossType,
             reason,
-            status: "PENDING",
+            status,
             coldLogId: allocation.coldLogId,
             operatorId: user.id,
           },
@@ -319,11 +352,13 @@ export async function batchRegisterOutboundLossAction(data: {
     await tx.auditLog.create({
       data: {
         operatorId: user.id,
-        action: "OUTBOUND_LOSS_CREATE",
+        action: lossType === "PACKAGING" ? "PACKAGING_LOSS_CREATE" : "CLEARANCE_LOSS_CREATE",
         entityType: "OUTBOUND_LOSS_ORDER",
         entityId: lossOrder.id,
         details: JSON.stringify({
           code,
+          lossType,
+          coldStoreId: data.coldStoreId,
           totalLossCount,
           lossRate: overallLossResult.lossRate,
           isException,
@@ -357,8 +392,16 @@ export async function registerOutboundLossAction(data: {
   lossCount: number;
   reason?: string;
 }) {
-  const result = await batchRegisterOutboundLossAction({ items: [data], reason: data.reason });
+  const result = await batchRegisterOutboundLossAction({ items: [data], reason: data.reason, lossType: "CLEARANCE" });
   return { availableAfter: result.results[0]?.availableAfter ?? 0 };
+}
+
+export async function batchRegisterPackagingLossAction(data: {
+  coldStoreId: string;
+  items: OutboundLossItemInput[];
+  reason?: string;
+}) {
+  return batchRegisterOutboundLossAction({ ...data, lossType: "PACKAGING" });
 }
 
 // 辅助：生成当日唯一的出库单号

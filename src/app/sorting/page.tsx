@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SortTaskDialog } from "@/components/sorting/SortTaskDialog";
@@ -8,6 +9,7 @@ import { SortMachineDialog } from "@/components/sorting/SortMachineDialog";
 import { MachineCardActions } from "@/components/sorting/MachineCardActions";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { QCViewDialog } from "@/components/qc/QCViewDialog";
+import { getCurrentUser } from "@/lib/auth";
 import {
   Scale,
   CheckCircle2,
@@ -16,6 +18,7 @@ import {
   Cpu,
   ClipboardCheck,
   ShieldAlert,
+  Pencil,
 } from "lucide-react";
 import { formatTime, formatShortDateTime, formatDateTime } from "@/lib/utils";
 
@@ -40,6 +43,8 @@ const QC_PRESETS = {
 };
 
 export default async function SortingPage() {
+  const currentUser = await getCurrentUser();
+  const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role);
   // 1. 查询分拣设备列表
   const machines = await prisma.sortMachine.findMany({
     orderBy: { code: "asc" },
@@ -49,6 +54,7 @@ export default async function SortingPage() {
       },
     },
   });
+  const machineRefOptions = machines.map((machine) => ({ label: machine.code, value: machine.code }));
 
   // 2. 查询捆扎流转中的原料来源。BUNDLING 也参与 FIFO，避免后批次跨过尚未完成捆扎的前批次。
   const workflowBundles = await prisma.bundleBatch.findMany({
@@ -404,7 +410,7 @@ export default async function SortingPage() {
           </div>
           <div className="flex items-center flex-wrap gap-2 shrink-0">
             <QCRecordDialog
-              config={{ ...QC_PRESETS.calibrate, refId: machines[0]?.code || "FJ-01" }}
+              config={{ ...QC_PRESETS.calibrate, refId: machines[0]?.code || "FJ-01", refOptions: machineRefOptions }}
               triggerLabel="登记精度校验 (202607)"
             />
             <QCRecordDialog
@@ -420,11 +426,11 @@ export default async function SortingPage() {
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[140px]">品控编号</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[180px]">类目 / 纸质表号</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[110px]">关联设备</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">现场校验时间</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">记录时间</th>
                 <th className="px-3 py-2.5 font-medium min-w-[200px]">校验/巡检结论</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[100px]">质检员</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[110px]">状态</th>
-                <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap w-[90px]">原件档案</th>
+                <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap w-[150px]">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -491,7 +497,24 @@ export default async function SortingPage() {
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                        <QCViewDialog record={qc} triggerText="查验原件" />
+                        <div className="inline-flex items-center justify-end gap-1">
+                          {canEditQc && (
+                            <QCRecordDialog
+                              config={{
+                                ...(qc.cat === "SORT_CALIBRATE" ? QC_PRESETS.calibrate : QC_PRESETS.inspect),
+                                refId: qc.refId,
+                                refOptions: qc.cat === "SORT_CALIBRATE" ? machineRefOptions : undefined,
+                              }}
+                              record={qc}
+                              trigger={
+                                <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-primary" title="编辑品控记录">
+                                  <Pencil className="size-3" /> 编辑
+                                </Button>
+                              }
+                            />
+                          )}
+                          <QCViewDialog record={qc} triggerText="查验原件" />
+                        </div>
                       </td>
                     </tr>
                   );

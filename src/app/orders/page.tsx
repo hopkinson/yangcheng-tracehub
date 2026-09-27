@@ -75,7 +75,7 @@ export default async function OrdersPage({
       select: { batchId: true, gender: true, weightTier: true, inPoolCount: true, outPoolCount: true, lossCount: true },
     }),
     prisma.bundleBatch.findMany({
-      select: { id: true, lines: { select: { gender: true, weightTier: true, count: true } } },
+      select: { id: true, status: true, lines: { select: { gender: true, weightTier: true, count: true, qualifiedCount: true } } },
     }),
     prisma.sortTask.findMany({
       select: { id: true, bundleBatchId: true, gender: true, weightTier: true, inputCount: true, qualifiedCount: true },

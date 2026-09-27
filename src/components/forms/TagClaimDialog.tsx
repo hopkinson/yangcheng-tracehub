@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { requestTagClaimAction } from "@/actions/tags";
 import { tagClaimFormSchema, type TagClaimFormValues } from "@/lib/validations/schemas";
+import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 import { toast } from "sonner";
 import { Plus, Tag } from "lucide-react";
 
@@ -62,7 +63,9 @@ export function TagClaimDialog({
     const count = Number(data.claimCount);
     if (count > maxClaimable) {
       form.setError("claimCount", {
-        message: `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只（蟹扣入仓 ${tagInbound} - 申领 ${tagClaimed} + 退回 ${tagReturned}）`,
+        message: SHOW_TAG_RETURN
+          ? `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只（蟹扣入仓 ${tagInbound} - 申领 ${tagClaimed} + 退回 ${tagReturned}）`
+          : `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只`,
       });
       return;
     }
@@ -143,7 +146,7 @@ export function TagClaimDialog({
                   <span className="text-muted-foreground">累计已申领蟹扣:</span>
                   <span className="text-amber-600 dark:text-amber-400 font-semibold">{tagClaimed.toLocaleString()} 只</span>
                 </div>
-                {tagReturned > 0 && (
+                {SHOW_TAG_RETURN && tagReturned > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">累计已退回蟹扣:</span>
                     <span className="text-emerald-600 font-semibold">+{tagReturned.toLocaleString()} 只</span>

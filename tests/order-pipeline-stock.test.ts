@@ -57,4 +57,22 @@ const needed = 100;
 const gap = needed > stock25F.total ? needed - stock25F.total : 0;
 assert.equal(gap, 0, "全链存量 120 >= 待发需求 100，不应触发缺口！");
 
+// 完工后损耗不再是库存；分拣投入须按规格扣减，出库后全链归零。
+const shippedStocks = aggregatePipelineStocks({
+  bundleBatches: [{
+    id: "BB_SHIPPED", status: "COMPLETED",
+    lines: [
+      { gender: "FEMALE", weightTier: "2.5两", count: 100, qualifiedCount: 80 },
+      { gender: "MALE", weightTier: "3.5两", count: 50, qualifiedCount: 50 },
+    ],
+  }],
+  sortTasks: [{
+    id: "ST_SHIPPED", bundleBatchId: "BB_SHIPPED", gender: "FEMALE", weightTier: "2.5两", inputCount: 80, qualifiedCount: 80,
+  }],
+  coldLogs: [{ id: "CL_SHIPPED", type: "INTAKE", sortTaskId: "ST_SHIPPED", count: 80 }],
+  outboundLines: [{ count: 80, coldLogId: "CL_SHIPPED" }],
+});
+assert.equal(shippedStocks["FEMALE_2.5两"].total, 0, "合格品全部出库后，捆扎损耗 20 只不应算库存");
+assert.equal(shippedStocks["MALE_3.5两"].bundling, 50, "其他规格尚未分拣的 50 只仍应在捆扎库存");
+
 console.log("✔ 协同全链路工序盘点验证 100% 通过，成功根治虚假缺口误报！");

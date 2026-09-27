@@ -230,7 +230,7 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
                   </div>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-[11px]">质检员 / 巡检时间</span>
+                  <span className="text-muted-foreground text-[11px]">质检员 / 记录时间</span>
                   <div className="font-medium text-foreground mt-0.5">
                     {selectedQC.uploader} · {formatDateTime(selectedQC.checkTime)}
                   </div>

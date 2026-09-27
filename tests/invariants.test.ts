@@ -450,7 +450,7 @@ async function testPoolSpecLockRelease() {
 }
 
 function testBatchLifecycleLoss() {
-  console.log("▶ [Test 17] 批次全环节生命周期损耗汇聚 (暂养+捆扎+分拣+冷库)");
+  console.log("▶ [Test 17] 批次工艺损耗与总损耗分层汇聚");
   const mockBatch = {
     inPoolCount: 1000,
     lossCount: 10,
@@ -464,7 +464,10 @@ function testBatchLifecycleLoss() {
             lossCount: 5,
             coldLogs: [
               {
-                outboundLosses: [{ count: 3 }],
+                outboundLosses: [
+                  { count: 3, lossType: "PACKAGING" },
+                  { count: 7, lossType: "CLEARANCE" },
+                ],
               },
             ],
           },
@@ -477,11 +480,14 @@ function testBatchLifecycleLoss() {
   assert.equal(res.holdingLoss, 10);
   assert.equal(res.bundlingLoss, 8);
   assert.equal(res.sortingLoss, 5);
-  assert.equal(res.coldLoss, 3);
-  assert.equal(res.totalLoss, 26);
-  assert.equal(res.totalLossRate, 2.6);
+  assert.equal(res.packagingLoss, 3);
+  assert.equal(res.clearanceLoss, 7);
+  assert.equal(res.processLoss, 26);
+  assert.equal(res.processLossRate, 2.6);
+  assert.equal(res.totalLoss, 33);
+  assert.equal(res.totalLossRate, 3.3);
   assert.equal(res.isLossOverLimit, false);
-  console.log("  ✔ 全环节损耗跨链聚合计算测试通过\n");
+  console.log("  ✔ 工艺损耗排除清库损耗、总损耗包含清库损耗测试通过\n");
 }
 
 testBatchLifecycleLoss();

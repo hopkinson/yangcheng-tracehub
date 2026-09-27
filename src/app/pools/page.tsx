@@ -24,6 +24,7 @@ import {
   ClipboardList,
   Layers,
   ArrowRight,
+  Pencil,
 } from "lucide-react";
 import { StaggerContainer, FadeIn, PulseBadge } from "@/components/motion/MotionWrapper";
 import { formatDateTime, getBeijingDayRange } from "@/lib/utils";
@@ -108,6 +109,7 @@ export default async function PoolsPage({
 
   const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
+  const canEditQc = isWarehouseOrAdmin || currentUser?.role === "QA_DIRECTOR";
 
   // 全场指标与各池流转聚合
   let totalLiveAll = 0;
@@ -138,7 +140,7 @@ export default async function PoolsPage({
     );
     const isMerged = activeBatches.length >= 2;
 
-    // 当天巡检记录 (严格按巡检时间 checkTime 口径)
+    // 当天质检记录 (按记录时间 checkTime 口径)
     const poolTodayQCs = todayQCs.filter(
       (q: any) => q.refId === pool.code || q.refId === "全部暂养池" || q.refId === "ALL"
     );
@@ -558,7 +560,7 @@ export default async function PoolsPage({
                   暂养品控留痕台账 (水质监测 / 暂养巡检)
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  巡检实际发生时间 vs 系统上传时间双时间戳留痕 · 支持按池号/类别/日期精准检索与纸质原件穿透
+                  记录时间 vs 系统上传时间双时间戳留痕 · 支持按池号/类别/日期精准检索与纸质原件穿透
                 </p>
               </div>
 
@@ -583,7 +585,7 @@ export default async function PoolsPage({
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3">
-              {/* 台账一体化过滤栏：类别 + 关联池 + 巡检日期 + 重置 */}
+              {/* 台账一体化过滤栏：类别 + 关联池 + 记录日期 + 重置 */}
               {(() => {
                 const qcBase = `${selectedPool ? `&pool=${selectedPool}` : ""}${selectedDateStr ? `&date=${selectedDateStr}` : ""}`;
                 return (
@@ -629,9 +631,9 @@ export default async function PoolsPage({
 
                       <div className="h-4 w-px bg-border/80 hidden sm:block shrink-0" />
 
-                      {/* 巡检日期 */}
+                      {/* 记录日期 */}
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-muted-foreground font-medium shrink-0 whitespace-nowrap">巡检日期:</span>
+                        <span className="text-muted-foreground font-medium shrink-0 whitespace-nowrap">记录日期:</span>
                         <LedgerDateFilter selectedDate={selectedDateStr} />
                       </div>
                     </div>
@@ -656,12 +658,12 @@ export default async function PoolsPage({
                       <TableHead className="w-[130px]">记录编号</TableHead>
                       <TableHead className="w-[160px]">记录类别 / 表号</TableHead>
                       <TableHead className="w-[100px]">关联池</TableHead>
-                      <TableHead className="w-[150px]">巡检发生时间</TableHead>
+                      <TableHead className="w-[150px]">记录时间</TableHead>
                       <TableHead className="w-[150px]">系统上传时间</TableHead>
                       <TableHead className="w-[100px]">判定结果</TableHead>
                       <TableHead>巡检结论 / 异常整改说明</TableHead>
                       <TableHead className="w-[90px]">质检员</TableHead>
-                      <TableHead className="w-[80px] text-right">纸质原件</TableHead>
+                      <TableHead className="w-[120px] text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -708,8 +710,11 @@ export default async function PoolsPage({
                               </span>
                             </TableCell>
                             <TableCell className="font-mono text-muted-foreground">
-                              <span className="flex items-center gap-1 text-[11px]">
-                                {formatDateTime(record.uploadTime)}
+                              <span className="flex flex-col gap-0.5 text-[11px]">
+                                <span>{formatDateTime(record.uploadTime)}</span>
+                                {record.updatedAt > record.createdAt && (
+                                  <span>已修改 {formatDateTime(record.updatedAt)}</span>
+                                )}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -743,7 +748,28 @@ export default async function PoolsPage({
                             </TableCell>
                             <TableCell className="text-muted-foreground">{record.uploader}</TableCell>
                             <TableCell className="text-right">
-                              <QCViewDialog record={record} triggerText="查看原件" />
+                              <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                                {canEditQc && (
+                                  <QCRecordDialog
+                                    config={{
+                                      cat: record.cat,
+                                      categoryLabel: isWater ? "水质监测" : "暂养巡检",
+                                      defaultTitle: record.title,
+                                      refType: record.refType,
+                                      refId: record.refId,
+                                      refOptions: poolRefOptions,
+                                      formNoPreset: record.formNo || undefined,
+                                    }}
+                                    record={record}
+                                    trigger={
+                                      <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" title="编辑品控记录">
+                                        <Pencil className="size-3" /> 编辑
+                                      </button>
+                                    }
+                                  />
+                                )}
+                                <QCViewDialog record={record} triggerText="查看原件" />
+                              </div>
                             </TableCell>
                           </TableRow>
                         );

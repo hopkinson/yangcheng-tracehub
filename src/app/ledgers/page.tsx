@@ -9,6 +9,7 @@ import { LedgerTabCarousel } from "@/components/ledgers/LedgerTabCarousel";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { FileCheck } from "lucide-react";
 import { Invariants } from "@/lib/invariants";
+import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 import { cn, formatDate, formatTime, getBeijingDayRange } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -405,7 +406,7 @@ export default async function LedgersPage({
       cumulativeClaimed,
       cumulativeBound,
       cumulativeScrapped,
-      cumulativeReturned,
+      ...(SHOW_TAG_RETURN ? [cumulativeReturned] : []),
       cumulativeOutbound,
       Math.max(0, farmer.quota - cumulativeBound),
       farmer.creditRating || "A",
@@ -439,7 +440,8 @@ export default async function LedgersPage({
     return items.map((item) => {
       const itemTier = Invariants.normalizeWeightTier(item.weightTier);
       let downstreamShipped = 0;
-      let downstreamLoss = 0;
+      let downstreamProcessLoss = 0;
+      let clearanceLoss = 0;
       let hasDownstream = false;
 
       if (batch.bundleBatches?.length) {
@@ -448,19 +450,20 @@ export default async function LedgersPage({
             if (line.gender === item.gender && Invariants.normalizeWeightTier(line.weightTier) === itemTier) {
               hasDownstream = true;
               const lineLoss = line.lossCount ?? (bb.lines.length === 1 ? bb.lossCount : 0);
-              downstreamLoss += lineLoss || 0;
+              downstreamProcessLoss += lineLoss || 0;
             }
           }
           for (const st of bb.sortTasks) {
             if (st.gender === item.gender && Invariants.normalizeWeightTier(st.weightTier) === itemTier) {
               hasDownstream = true;
-              downstreamLoss += st.lossCount || 0;
+              downstreamProcessLoss += st.lossCount || 0;
               for (const cl of st.coldLogs) {
                 for (const ol of cl.outboundLines) {
                   downstreamShipped += ol.count || 0;
                 }
                 for (const loss of cl.outboundLosses) {
-                  downstreamLoss += loss.count || 0;
+                  if (loss.lossType === "PACKAGING") downstreamProcessLoss += loss.count || 0;
+                  else clearanceLoss += loss.count || 0;
                 }
               }
             }
@@ -468,9 +471,10 @@ export default async function LedgersPage({
         }
       }
 
-      // ponytail: 穿透后道工序数据，发货取真实出库单发货数，累计损耗取 (暂养损耗 + 捆扎损耗 + 分拣损耗 + 发货损耗)
+      // 穿透后道工序：工艺损耗含包装损耗但不含清库损耗，总损耗再加清库损耗。
       const shipped = hasDownstream ? downstreamShipped : item.outPoolCount;
-      const totalLoss = hasDownstream ? item.lossCount + downstreamLoss : item.lossCount;
+      const processLoss = hasDownstream ? item.lossCount + downstreamProcessLoss : item.lossCount;
+      const totalLoss = processLoss + clearanceLoss;
 
       const exportRow: ExportValue[] = [
         formatDate(batch.inPoolTime),
@@ -485,6 +489,8 @@ export default async function LedgersPage({
         item.pool.code,
         Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
         shipped,
+        processLoss,
+        rateText(processLoss, item.inPoolCount),
         totalLoss,
         rateText(totalLoss, item.inPoolCount),
         qcText(batch.quickCheck),
@@ -513,7 +519,7 @@ export default async function LedgersPage({
       isRejected ? 0 : claim.boundCount,
       isRejected ? 0 : outboundCount,
       isRejected ? 0 : totalDownstreamLoss,
-      isRejected ? 0 : claim.returnedCount,
+      ...(SHOW_TAG_RETURN ? [isRejected ? 0 : claim.returnedCount] : []),
       isRejected ? 0 : claim.scrappedCount,
       isRejected ? 0 : balanceDiff,
       isRejected ? "已驳回" : claim.isBalanced ? "已轧平" : "未轧平",
@@ -624,7 +630,9 @@ export default async function LedgersPage({
 
   const coldRows = coldLogs.map((log) => {
     const shipped = log.outboundLines.reduce((sum, line) => sum + line.count, 0);
-    const loss = log.outboundLosses.reduce((sum, item) => sum + item.count, 0);
+    const packagingLoss = log.outboundLosses.reduce((sum, item) => sum + (item.lossType === "PACKAGING" ? item.count : 0), 0);
+    const clearanceLoss = log.outboundLosses.reduce((sum, item) => sum + (item.lossType === "PACKAGING" ? 0 : item.count), 0);
+    const loss = packagingLoss + clearanceLoss;
     const exportRow: ExportValue[] = [
       formatDate(log.createdAt),
       formatTime(log.createdAt),
@@ -637,7 +645,8 @@ export default async function LedgersPage({
       specText(log.sortTask.gender, log.sortTask.weightTier),
       log.count,
       shipped,
-      loss,
+      packagingLoss,
+      clearanceLoss,
       Math.max(0, log.count - shipped - loss),
       log.operator,
     ];
@@ -789,13 +798,13 @@ export default async function LedgersPage({
     });
 
   const headers = {
-    l1: ["编号", "姓名", "养殖类型", "围网", "面积(亩)", "年度额度(只)", "累计入池(只)", "累计领扣(只)", "累计绑扎(只)", "累计作废", "累计回退", "累计出库(只)", "额度结余(只)", "信用评级", "合作状态", "合同附件"],
-    l2: ["入库日期", "入库时间", "原料批次", "养殖户", "规格(两)", "公母", "只数", "斤数", "池名", "池号", "在池", "发货", "累计损耗", "损耗率", "药残及重金属快检", "品质抽检", "跟车员"],
-    l3: ["申领日期", "申领时间", "蟹扣批次", "蟹扣养殖户", "蟹扣入仓数", "申领数", "完成绑扎", "其中-已出库", "其中-后道损耗", "退回", "作废", "差额", "轧平校验", "累计绑扎", "剩余额度", "申请人", "复核人", "审核状态"],
+    l1: ["编号", "姓名", "养殖类型", "围网", "面积(亩)", "年度额度(只)", "累计入池(只)", "累计领扣(只)", "累计绑扎(只)", "累计作废", ...(SHOW_TAG_RETURN ? ["累计回退"] : []), "累计出库(只)", "额度结余(只)", "信用评级", "合作状态", "合同附件"],
+    l2: ["入库日期", "入库时间", "原料批次", "养殖户", "规格(两)", "公母", "只数", "斤数", "池名", "池号", "在池", "发货", "工艺损耗", "工艺损耗率", "总损耗", "总损耗率", "药残及重金属快检", "品质抽检", "跟车员"],
+    l3: ["申领日期", "申领时间", "蟹扣批次", "蟹扣养殖户", "蟹扣入仓数", "申领数", "完成绑扎", "其中-已出库", "其中-后道损耗", ...(SHOW_TAG_RETURN ? ["退回"] : []), "作废", "差额", "轧平校验", "累计绑扎", "剩余额度", "申请人", "复核人", "审核状态"],
     l4: ["入池日期", "入池时间", "池名", "池号", "原料批次", "养殖户", "围网", "入池数量", "绑扎数量", "在池数量", "损耗(只)", "损耗率"],
     l5: ["捆扎日期", "捆扎时间", "捆扎批次", "班组", "班组编号", "原料批次", "蟹扣批次", "蟹绳批次", "养殖户", "池名", "池号", "规格", "状态", "公母", "初始捆扎只数", "捆扎完成只数", "损耗", "损耗率"],
     l6: ["分拣日期", "分拣时间", "分拣批次", "设备名", "设备编号", "原料批次", "绑扎批次", "规格", "公母", "状态", "投入(只)", "合格(只)", "损耗(只)", "损耗率"],
-    l7: ["日期", "入库时间", "入库单号", "库名", "库位", "原料批次", "捆扎批次", "分拣任务", "规格", "入库(只)", "已发货(只)", "发货损耗(只)", "当前余量", "经手人"],
+    l7: ["日期", "入库时间", "入库单号", "库名", "库位", "原料批次", "捆扎批次", "分拣任务", "规格", "入库(只)", "已发货(只)", "包装损耗(只)", "清库损耗(只)", "当前余量", "经手人"],
     l8: ["出库日期", "出库时间", "出库批次", "出库类型", "合计数量(只)", "承运物流公司", "联系人", "联系方式", "出库申请人", "复核人"],
     l9: ["出库日期", "出库时间", "CK 单号", "原料批次", "捆扎批次", "分拣任务", "预冷单", "规格", "公母", "数量(只)", "来源池", "养殖户", "围网"],
     l10: ["记录日期", "记录时间", "记录编号", "记录类型", "表格编号", "质检人员", "结论", "异常原因", "附件", "记录人"],

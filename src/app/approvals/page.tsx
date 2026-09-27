@@ -101,7 +101,7 @@ export default async function ApprovalsPage({
       : Promise.resolve([]),
     canApproveOutbound
       ? prisma.outboundLossOrder.findMany({
-          where: { status: "PENDING" },
+          where: { status: "PENDING", lossType: "CLEARANCE" },
           include: {
             applicant: true,
             items: true,
@@ -139,7 +139,7 @@ export default async function ApprovalsPage({
       : Promise.resolve([]),
     canApproveOutbound
       ? prisma.outboundLossOrder.findMany({
-          where: { status: { in: ["APPROVED", "REJECTED"] } },
+          where: { status: { in: ["APPROVED", "REJECTED"] }, lossType: "CLEARANCE" },
           take: 50,
           include: {
             applicant: true,

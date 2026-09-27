@@ -19,6 +19,8 @@ services:
       - "3001:3000"
     env_file:
       - .env.test
+    environment:
+      ALLOW_DATA_RESET: "test-only"
     volumes:
       - ./data-test/db:/app/data
       - ./data-test/uploads:/app/public/uploads

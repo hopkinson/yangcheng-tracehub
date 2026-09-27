@@ -10,6 +10,7 @@ import { UnbalancedClaimsBanner } from "@/components/tags/UnbalancedClaimsBanner
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { formatDate } from "@/lib/utils";
 import { TAG_CLAIM_APPROVAL } from "@/config/approval";
+import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 import { Tag } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +87,9 @@ export default async function TagsPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">蟹扣管理</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            蟹扣领用审批与日清日结轧平（领用数 = 完成绑扎 + 当日退回 + 当日作废）
+            {SHOW_TAG_RETURN
+              ? "蟹扣领用审批与日清日结轧平（领用数 = 完成绑扎 + 当日退回 + 当日作废）"
+              : "蟹扣领用审批与日清日结轧平（领用数 = 完成绑扎 + 当日作废）"}
           </p>
         </div>
         {isWarehouseOrAdmin && <TagClaimDialog farmers={farmerOptions} userId={currentUserId} />}

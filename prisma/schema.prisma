@@ -491,6 +491,7 @@ model OutboundLossRecord {
   gender      String   // MALE, FEMALE
   weightTier  String   // 标准化规格，如 4.0两
   count       Int      // 本次损耗只数
+  lossType    String   @default("CLEARANCE") // PACKAGING 包装损耗；CLEARANCE 清库损耗（兼容历史出库损耗）
   reason      String
   status      String   @default("APPROVED") // PENDING, APPROVED, REJECTED
   lossOrderId String?
@@ -511,6 +512,7 @@ model OutboundLossOrder {
   code            String      @unique // SH+YYYYMMDD+XX, 如 SH2026092101
   inventoryDate   DateTime    @default(now()) // 盘点日期
   totalLossCount  Int         @default(0) // 核减总数
+  lossType        String      @default("CLEARANCE") // PACKAGING 包装损耗；CLEARANCE 清库损耗
   lossRate        Float       @default(0) // 综合损耗率 (%)
   isException     Boolean     @default(false) // 综合损耗率 > 5% 标记超标
   reason          String      // 原因说明

@@ -18,7 +18,8 @@ fi
 
 # ponytail: db push 失败必须终止启动 —— 带病启动只会把错误推迟成运行期的 no such table
 if [ -n "$PRISMA_BIN" ]; then
-  "$PRISMA_BIN" db push --accept-data-loss --skip-generate
+  # 生产启动只允许非破坏性结构同步；如 Prisma 检测到数据丢失风险会直接拒绝启动。
+  "$PRISMA_BIN" db push --skip-generate
   # 自动自愈：若存在指向已删除用户的历史孤儿损耗单，将 applicantId 置为 NULL，杜绝关联查询崩溃
   node -e '
     const { PrismaClient } = require("@prisma/client");

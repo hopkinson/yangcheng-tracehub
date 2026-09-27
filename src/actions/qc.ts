@@ -33,12 +33,13 @@ const FIXED_QC_TITLES: Record<string, string> = {
 
 export async function createQCRecordAction(data: CreateQCRecordData) {
   try {
+    const editor = data.id ? await requireRole(["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"]) : null;
     if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
       await requireRole(["QA_DIRECTOR", "ADMIN", "WAREHOUSE_ADMIN"]);
     }
 
     if (!data.cat?.trim() || !data.refId?.trim() || !data.checkTime?.trim() || !data.uploader?.trim()) {
-      return { success: false, message: "记录类别、关联对象、巡检时间与质检人员均为必填项" };
+      return { success: false, message: "记录类别、关联对象、记录时间与质检人员均为必填项" };
     }
 
     // 结论推导: 合格 (QUALIFIED)、不合格 (UNQUALIFIED)、待整改 (RECTIFYING)
@@ -79,14 +80,14 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
         if (!existing) {
           throw new Error("待修改的品控记录不存在");
         }
-        await tx.qCRecord.update({
+        if (existing.cat !== data.cat || existing.refType !== data.refType) {
+          throw new Error("记录类别或关联类型不可修改");
+        }
+        const updated = await tx.qCRecord.update({
           where: { id: data.id },
           data: {
-            cat: data.cat,
             formNo: data.formNo || null,
-            refType: data.refType,
             refId: data.refId,
-            title: FIXED_QC_TITLES[data.cat] || data.title,
             checkTime: parseBeijingDateTime(data.checkTime),
             result,
             conclusion: data.conclusion || "合格",
@@ -94,6 +95,15 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
             uploader: (data.uploader || "").trim(),
             fileName: data.fileUrl ? (data.fileName || existing.fileName || `${existing.code}_质检留痕原件.jpg`) : null,
             fileUrl: data.fileUrl || null,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            operatorId: editor!.id,
+            action: "UPDATE_QC_RECORD",
+            entityType: "QC_RECORD",
+            entityId: existing.id,
+            details: JSON.stringify({ before: existing, after: updated }),
           },
         });
         recordCode = existing.code;

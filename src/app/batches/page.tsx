@@ -198,7 +198,10 @@ export default async function BatchesPage({
                 coldLogs: {
                   include: {
                     store: true,
-                    outboundLosses: { include: { operator: true } },
+                    outboundLosses: {
+                      where: { status: { not: "REJECTED" } },
+                      include: { operator: true },
+                    },
                   },
                 },
               },
@@ -365,7 +368,7 @@ export default async function BatchesPage({
                         <TableHead className="w-[130px] min-w-[120px]">来源养殖户</TableHead>
                         <TableHead className="w-[240px] min-w-[220px]">入库规格明细</TableHead>
                         <TableHead className="w-[110px] min-w-[100px]">入库合计</TableHead>
-                        <TableHead className="w-[110px] min-w-[100px]">总损耗</TableHead>
+                        <TableHead className="w-[130px] min-w-[120px]">工艺 / 总损耗</TableHead>
                         <TableHead className="w-[140px] min-w-[130px]">品控快检 / 抽检</TableHead>
                         <TableHead className="w-[85px] min-w-[70px]">状态</TableHead>
                         <TableHead className="text-right w-[100px] min-w-[90px]">操作</TableHead>
@@ -476,7 +479,7 @@ export default async function BatchesPage({
                               </div>
                             </TableCell>
 
-                            {/* 5. 总损耗 */}
+                            {/* 5. 工艺损耗优先、总损耗其次 */}
                             <TableCell className="align-middle">
                               <BatchLossHistoryDialog
                                 batch={batch}
@@ -489,25 +492,25 @@ export default async function BatchesPage({
                                     <div
                                       className={cn(
                                         "font-mono font-bold text-xs inline-flex items-center gap-1 group-hover:underline",
-                                        stageLoss.isLossOverLimit
+                                        stageLoss.isProcessLossOverLimit
                                           ? "text-destructive"
-                                          : stageLoss.totalLoss > 0
+                                          : stageLoss.processLoss > 0
                                           ? "text-foreground"
                                           : "text-muted-foreground"
                                       )}
                                     >
-                                      <span>{stageLoss.totalLoss.toLocaleString()} 只</span>
-                                      {stageLoss.isLossOverLimit && (
+                                      <span>工艺 {stageLoss.processLoss.toLocaleString()} 只</span>
+                                      {stageLoss.isProcessLossOverLimit && (
                                         <AlertTriangle className="size-3 text-destructive shrink-0" />
                                       )}
                                     </div>
                                     <span
                                       className={cn(
                                         "text-[10px] font-mono",
-                                        stageLoss.isLossOverLimit ? "text-destructive font-medium" : "text-muted-foreground"
+                                        stageLoss.isProcessLossOverLimit ? "text-destructive font-medium" : "text-muted-foreground"
                                       )}
                                     >
-                                      损耗率 {stageLoss.totalLossRate.toFixed(1)}%
+                                      {stageLoss.processLossRate.toFixed(1)}% · 总损耗 {stageLoss.totalLoss.toLocaleString()} 只 / {stageLoss.totalLossRate.toFixed(1)}%
                                     </span>
                                   </button>
                                 }
@@ -661,7 +664,7 @@ export default async function BatchesPage({
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3">
-              {/* 台账一体化过滤栏：类别 + 关联批次 + 巡检日期 + 重置 */}
+              {/* 台账一体化过滤栏：类别 + 关联批次 + 记录日期 + 重置 */}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-2.5 text-xs">
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                   {/* 类别胶囊切换 */}
@@ -704,9 +707,9 @@ export default async function BatchesPage({
 
                   <div className="h-4 w-px bg-border/80 hidden sm:block shrink-0" />
 
-                  {/* 巡检日期 */}
+                  {/* 记录日期 */}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-muted-foreground font-medium shrink-0 whitespace-nowrap">巡检日期:</span>
+                    <span className="text-muted-foreground font-medium shrink-0 whitespace-nowrap">记录日期:</span>
                     <LedgerDateFilter selectedDate={selectedDateStr} />
                   </div>
                 </div>

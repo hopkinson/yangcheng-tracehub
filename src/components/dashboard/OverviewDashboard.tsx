@@ -34,6 +34,7 @@ import { getTenant } from "@/config/tenant";
 import { completeDailyCloseAction, type DailyCloseType } from "@/actions/daily-close";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
+import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 
 export interface DashboardProps {
   metrics: {
@@ -290,7 +291,9 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         catLabel: "蟹扣日结",
         target: `${c.farmerName}`,
         title: `蟹扣日结未轧平 (差额 ${c.diff} 只)`,
-        reason: `领扣 ${c.claimCount} 只，已核销 ${c.accountedCount} 只（绑扣/退回/作废），请及时完成日结轧平`,
+        reason: SHOW_TAG_RETURN
+          ? `领扣 ${c.claimCount} 只，已核销 ${c.accountedCount} 只（绑扣/退回/作废），请及时完成日结轧平`
+          : `领扣 ${c.claimCount} 只，系统已核销 ${c.accountedCount} 只，请及时完成日结轧平`,
         time: c.claimDate ? formatDate(c.claimDate) : "今日",
       });
     });

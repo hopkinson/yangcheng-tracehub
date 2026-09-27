@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
-import { aggregateTraceableColdStocks } from "@/lib/cold-stock";
+import { aggregateTraceableColdStocks, aggregateTraceableColdStocksByStore } from "@/lib/cold-stock";
 import { getCurrentUser } from "@/lib/auth";
 import { getTenant } from "@/config/tenant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { CardOutboundDialog } from "@/components/outbound/CardOutboundDialog";
 import { LogisticsBatchImportDialog } from "@/components/outbound/LogisticsBatchImportDialog";
 import { OutboundDetailDialog } from "@/components/outbound/OutboundDetailDialog";
 import { OutboundLossDialog } from "@/components/outbound/OutboundLossDialog";
+import { PackagingLossDialog } from "@/components/outbound/PackagingLossDialog";
 import { OutboundLossDetailDialog } from "@/components/outbound/OutboundLossDetailDialog";
 import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
@@ -158,6 +159,12 @@ export default async function OutboundPage({
   });
 
   const specStockMap = new Map(specStocks.map((s) => [`${s.gender}_${s.weightTier}`, s]));
+  const locationStocks = aggregateTraceableColdStocksByStore({
+    sortTasks,
+    coldLogs,
+    outboundLines,
+    outboundLosses,
+  });
 
   // 格式化保鲜库在库批次信息（供出库调拨核对，与规格库存精确同步）
   const coldBatchOptions = coldLogs.flatMap((log: any) => {
@@ -263,7 +270,8 @@ export default async function OutboundPage({
             ))}
           </div>
           {isWarehouseOrAdmin && (
-            <div className="shrink-0 pl-2 border-l border-border/70">
+            <div className="shrink-0 pl-2 border-l border-border/70 flex items-center gap-2">
+              <PackagingLossDialog locations={locationStocks} />
               <OutboundLossDialog specStocks={specStocks} />
             </div>
           )}
@@ -280,7 +288,7 @@ export default async function OutboundPage({
                 出库台账
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                发货出库与损耗出库分类管理，损耗出库只核减库存/库存盘停，不产生发货
+                发货出库、包装损耗与清库损耗分类管理；损耗仅核减库存，不产生发货
               </p>
             </div>
             <div className="flex items-center gap-1.5 bg-muted/40 p-1 rounded-lg border border-border/70">
@@ -305,7 +313,7 @@ export default async function OutboundPage({
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                <span>损耗出库单</span>
+                <span>损耗记录</span>
                 <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalLossOrders}</span>
                 {pendingLossOrdersCount > 0 && (
                   <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -530,7 +538,7 @@ export default async function OutboundPage({
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
-                        <TableHead className="w-[140px]">损耗单号</TableHead>
+                        <TableHead className="w-[140px]">损耗单号 / 类型</TableHead>
                         <TableHead className="w-[110px]">盘点日期</TableHead>
                         <TableHead className="min-w-[200px]">损耗明细</TableHead>
                         <TableHead className="w-[100px]">核减总数</TableHead>
@@ -545,7 +553,7 @@ export default async function OutboundPage({
                       {lossOrders.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center py-8 text-xs text-muted-foreground">
-                            暂无出库损耗单记录
+                            暂无包装或清库损耗记录
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -558,9 +566,12 @@ export default async function OutboundPage({
                             <TableRow key={loss.id} className="hover:bg-muted/30 transition-colors text-xs">
                               {/* 1. 损耗单号 */}
                               <TableCell className="align-middle">
-                                <span className="font-mono font-bold text-foreground text-xs">
+                                <span className="font-mono font-bold text-foreground text-xs block">
                                   {loss.code}
                                 </span>
+                                <Badge variant="outline" className="mt-1 text-[10px] font-normal">
+                                  {loss.lossType === "PACKAGING" ? "包装损耗" : "清库损耗"}
+                                </Badge>
                               </TableCell>
 
                               {/* 2. 盘点日期 */}
@@ -649,6 +660,7 @@ export default async function OutboundPage({
                                     code: loss.code,
                                     inventoryDate: loss.inventoryDate,
                                     totalLossCount: loss.totalLossCount,
+                                    lossType: loss.lossType,
                                     lossRate: loss.lossRate,
                                     isException: loss.isException,
                                     reason: loss.reason,

@@ -92,6 +92,7 @@ export interface BatchLossHistoryDialogProps {
             gender: string;
             weightTier: string;
             count: number;
+            lossType?: string;
             reason: string;
             createdAt: Date | string;
             operator?: { fullName: string } | null;
@@ -137,7 +138,7 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
     });
   }
 
-  // 2. 加工与流转环节损耗 (捆扎 / 分拣 / 冷库发货)
+  // 2. 加工与流转环节损耗 (捆扎 / 分拣 / 包装 / 清库)
   for (const bb of batch.bundleBatches || []) {
     if (bb.lossCount > 0) {
       timeline.push({
@@ -173,14 +174,14 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
           if (ol.count > 0) {
             timeline.push({
               id: `cold-${ol.id}`,
-              stage: "冷库发货",
+              stage: ol.lossType === "PACKAGING" ? "包装损耗" : "清库损耗",
               stageIcon: "cold",
               date: ol.createdAt,
               operator: ol.operator?.fullName || "冷库仓管",
               target: `${cl.code} · ${ol.gender === "FEMALE" ? "母蟹" : "公蟹"} ${ol.weightTier}`,
-              change: `发货前实盘核减`,
+              change: ol.lossType === "PACKAGING" ? "包装作业核减" : "清库盘点核减",
               lossCount: ol.count,
-              reason: ol.reason || "保鲜暂存及发货前残损盘点",
+              reason: ol.reason || (ol.lossType === "PACKAGING" ? "包装环节残损" : "收尾清库盘点损耗"),
             });
           }
         }
@@ -205,7 +206,7 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
             title="点击查看全环节损耗记录"
           >
             <span>
-              {stageLoss.totalLoss.toLocaleString()} 只 ({stageLoss.totalLossRate.toFixed(1)}%)
+              工艺 {stageLoss.processLoss.toLocaleString()} 只 ({stageLoss.processLossRate.toFixed(1)}%) · 总损耗 {stageLoss.totalLoss.toLocaleString()} 只 ({stageLoss.totalLossRate.toFixed(1)}%)
             </span>
             {stageLoss.isLossOverLimit && <AlertTriangle className="size-3.5 text-destructive shrink-0" />}
           </button>
@@ -243,7 +244,7 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
 
         <div className="flex flex-col gap-3 py-1">
           {/* 核心指标概览 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
             <div>
               <span className="text-[11px] text-muted-foreground">累计入池</span>
               <p className="font-mono font-medium">{batch.inPoolCount.toLocaleString()} 只</p>
@@ -257,6 +258,12 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
               <p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{liveInPool.toLocaleString()} 只</p>
             </div>
             <div>
+              <span className="text-[11px] text-muted-foreground">工艺损耗 (工艺损耗率)</span>
+              <p className={`font-mono font-semibold ${stageLoss.isProcessLossOverLimit ? "text-destructive" : "text-foreground"}`}>
+                {stageLoss.processLoss.toLocaleString()} 只 ({stageLoss.processLossRate.toFixed(1)}%)
+              </p>
+            </div>
+            <div>
               <span className="text-[11px] text-muted-foreground">全环节总损耗 (总损耗率)</span>
               <p className={`font-mono font-semibold ${stageLoss.isLossOverLimit ? "text-destructive" : "text-foreground"}`}>
                 {stageLoss.totalLoss.toLocaleString()} 只 ({stageLoss.totalLossRate.toFixed(1)}%)
@@ -265,7 +272,7 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
           </div>
 
           {/* 各环节损耗流转分布栏 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/20">
               <Package className="size-3.5 text-blue-500 shrink-0" />
               <div className="min-w-0">
@@ -290,8 +297,15 @@ export function BatchLossHistoryDialog({ batch, trigger }: BatchLossHistoryDialo
             <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/20">
               <Snowflake className="size-3.5 text-cyan-500 shrink-0" />
               <div className="min-w-0">
-                <span className="text-[10px] text-muted-foreground block truncate">冷库发货损耗</span>
-                <span className="font-mono font-semibold">{stageLoss.coldLoss.toLocaleString()} 只</span>
+                <span className="text-[10px] text-muted-foreground block truncate">包装损耗</span>
+                <span className="font-mono font-semibold">{stageLoss.packagingLoss.toLocaleString()} 只</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/20">
+              <Snowflake className="size-3.5 text-muted-foreground shrink-0" />
+              <div className="min-w-0">
+                <span className="text-[10px] text-muted-foreground block truncate">清库损耗</span>
+                <span className="font-mono font-semibold">{stageLoss.clearanceLoss.toLocaleString()} 只</span>
               </div>
             </div>
           </div>

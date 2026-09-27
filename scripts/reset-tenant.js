@@ -30,6 +30,11 @@ for (const envFile of [`.env.${tenant.id}`, ".env.production", ".env"]) {
   try { process.loadEnvFile?.(path.resolve(process.cwd(), envFile)); } catch {}
 }
 
+// 生产容器硬拒绝清库。只有显式标记的隔离测试容器可以在 NODE_ENV=production 时重置。
+if (process.env.NODE_ENV === "production" && process.env.ALLOW_DATA_RESET !== "test-only") {
+  throw new Error("Data reset is disabled in production. Use the isolated test environment.");
+}
+
 const customDbUrl = args.db || process.env.DATABASE_URL;
 const prisma = new PrismaClient(customDbUrl ? { datasources: { db: { url: customDbUrl } } } : undefined);
 
