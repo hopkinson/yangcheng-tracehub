@@ -10,7 +10,7 @@ import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { FileCheck } from "lucide-react";
 import { Invariants } from "@/lib/invariants";
 import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
-import { cn, formatDate, formatTime, getBeijingDayRange } from "@/lib/utils";
+import { cn, formatDate, formatTime, getBeijingDayRange, getPreviewFileUrl } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -156,7 +156,7 @@ const rateText = (loss: number, total: number) => (total > 0 ? `${((loss / total
 const qcText = (value?: string | null) =>
   value === "QUALIFIED" ? "合格" : value === "RECTIFYING" ? "待整改" : value === "UNQUALIFIED" ? "不合格" : "—";
 const orderStatusText = (status: string) => (status === "SHIPPED" ? "已发货" : "待发货");
-const outboundTypeText = (type: string) => (type === "CRAB_CARD" ? "蟹卡提货" : "门店订单");
+const outboundTypeText = (type: string) => (type === "CRAB_CARD" ? "提蟹订单" : "门店订单");
 const claimStatusText = (status: string) =>
   status === "APPROVED" ? "已通过" : status === "REJECTED" ? "已驳回" : "待审核";
 const cooperationText = (status: string) =>
@@ -415,7 +415,7 @@ export default async function LedgersPage({
     const displayRow = toDisplayRow(exportRow);
     if (farmer.contractUrl) {
       displayRow[displayRow.length - 1] = (
-        <a href={farmer.contractUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+        <a href={getPreviewFileUrl(farmer.contractUrl, farmer.contractName || undefined)} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
           {farmer.contractName || "查看附件"}
         </a>
       );
@@ -734,7 +734,7 @@ export default async function LedgersPage({
     const displayRow = toDisplayRow(exportRow);
     if (record.fileUrl) {
       displayRow[8] = (
-        <a href={record.fileUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+        <a href={getPreviewFileUrl(record.fileUrl, record.fileName || undefined)} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
           {record.fileName || "查看附件"}
         </a>
       );
@@ -823,7 +823,7 @@ export default async function LedgersPage({
     { key: "ledger9", no: 9, label: "09 出库明细", title: "09 出库明细", sheet: "09 出库明细", headers: headers.l9, rows: outboundDetailRows, empty: "暂无出库明细" },
     { key: "ledger10", no: 10, label: "10 品控记录", title: "10 品控记录表", sheet: "10 品控记录表", headers: headers.l10, rows: qcRows, empty: "暂无品控记录" },
     { key: "ledger11", no: 11, label: "11 门店订单", title: "11 门店订单台账", sheet: "11 门店订单台账", headers: headers.l11, rows: storeOrderRows, empty: "暂无门店订单数据" },
-    { key: "ledger12", no: 12, label: "12 蟹卡提货", title: "12 蟹卡提货台账", sheet: "12 蟹卡提货台账", headers: headers.l12, rows: crabCardRows, empty: "暂无蟹卡提货数据" },
+    { key: "ledger12", no: 12, label: "12 提蟹订单", title: "12 提蟹订单台账", sheet: "12 提蟹订单台账", headers: headers.l12, rows: crabCardRows, empty: "暂无提蟹订单数据" },
   ];
 
   const validTab = params.tab && ledgers.some((l) => l.key === params.tab) ? params.tab : "ledger1";

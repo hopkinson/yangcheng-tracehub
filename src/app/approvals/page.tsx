@@ -217,7 +217,7 @@ export default async function ApprovalsPage({
           type: "OUTBOUND" as const,
           code: order.code,
           createdAt: new Date(order.createdAt),
-          summary: order.type === "CRAB_CARD" ? "蟹卡提货 · 统一出库" : order.channel.name,
+          summary: order.type === "CRAB_CARD" ? "提蟹订单 · 统一出库" : order.channel.name,
           quantityLabel: `出库 ${order.outboundCount.toLocaleString()} 只`,
           subSummary: `${order.type === "CRAB_CARD" ? "" : `门店 ${order.store.name} · `}批次 ${order.batch.code} · ${order.batch.farmer.name} · ${genderLabel} ${order.batch.weightTier}`,
           checkDescription: `冷库与在池校验 · 出库 ${order.outboundCount.toLocaleString()} 只 · 在池 ${liveInBatch.toLocaleString()} 只 · 物流 ${order.logisticsNo || "门店自配"}`,

@@ -172,7 +172,7 @@ export default async function OutboundPage({
     : null;
 
   const outboundRefOptions = orders.map((o) => ({
-    label: `${o.code} (${o.type === "STORE_ORDER" ? "门店订单" : "提货订单"}${o.store?.name ? ` - ${o.store.name}` : ""})`,
+    label: `${o.code} (${o.type === "STORE_ORDER" ? "门店订单" : "提蟹订单"}${o.store?.name ? ` - ${o.store.name}` : ""})`,
     value: o.code,
   }));
 

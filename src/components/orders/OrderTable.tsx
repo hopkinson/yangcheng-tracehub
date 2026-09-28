@@ -159,7 +159,7 @@ export function OrderTable({
                     </td>
                     <td className="px-3 py-2.5">
                       <Badge variant="outline" className="text-[10px]">
-                        {order.type === "CRAB_CARD" ? "蟹卡提货" : "门店订单"}
+                        {order.type === "CRAB_CARD" ? "提蟹订单" : "门店订单"}
                       </Badge>
                     </td>
                     <td className="px-3 py-2.5">

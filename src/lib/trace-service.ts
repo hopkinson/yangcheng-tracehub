@@ -327,7 +327,7 @@ async function buildTraceFromOutbound(
     const nodeOutbound: TraceChainNode = {
       step: 6,
       stageName: "出库",
-      title: `${outOrder.code} · ${outOrder.type === "STORE_ORDER" ? "门店订单发货" : "蟹卡提货直发"}`,
+      title: `${outOrder.code} · ${outOrder.type === "STORE_ORDER" ? "门店订单发货" : "提蟹订单直发"}`,
       subtitle: `去向: ${outOrder.store?.name || outOrder.storeName || "指定门店"} · 物流: ${outboundLogistics}`,
       details: [
         { label: "出库单号", value: outOrder.code },
