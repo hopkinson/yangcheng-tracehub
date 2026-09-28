@@ -120,7 +120,7 @@ export default async function OutboundPage({
     }),
     prisma.outboundLossRecord.findMany({
       where: { status: { not: "REJECTED" } },
-      select: { gender: true, weightTier: true, count: true, coldLogId: true, status: true },
+      select: { gender: true, weightTier: true, count: true, coldLogId: true, status: true, lossType: true },
     }),
     prisma.qCRecord.findMany({
       where: {

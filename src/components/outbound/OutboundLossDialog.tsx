@@ -162,8 +162,12 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
     setLoading(true);
     try {
       const result = await batchRegisterOutboundLossAction({ items, reason, lossType: "CLEARANCE" });
+      if (!result.success) {
+        toast.error(result.message || "清库损耗登记失败");
+        return;
+      }
       toast.success(
-        `清库损耗已提交审核！共锁定核减 ${result.totalLossRecorded} 只，涉及 ${result.results.length} 个规格`
+        `清库损耗已提交审核！共锁定核减 ${result.totalLossRecorded} 只，涉及 ${result.results?.length ?? 0} 个规格`
       );
       setOpen(false);
     } catch (error) {

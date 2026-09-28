@@ -54,7 +54,12 @@ export function PackagingLossDialog({ locations }: { locations: ColdLocationStoc
   const totalQualified = affectedLosses.reduce((sum, item) => sum + item.stock.qualified, 0);
   const totalHistoricalLoss = affectedLosses.reduce((sum, item) => sum + item.stock.packagingLoss, 0);
   const lossRate = totalQualified > 0 ? ((totalHistoricalLoss + totalLoss) / totalQualified) * 100 : 0;
-  const isHighLoss = lossRate > 5;
+  const isAnyItemHighLoss = affectedLosses.some((item) => {
+    const qualified = item.stock.qualified || 0;
+    const historical = item.stock.packagingLoss || 0;
+    return qualified > 0 && ((historical + item.count) / qualified) * 100 > 5;
+  });
+  const isHighLoss = lossRate > 5 || isAnyItemHighLoss;
 
   const onSubmit = (values: FormValues) => {
     const items = affectedLosses.map(({ stock, count }) => ({
@@ -67,7 +72,7 @@ export function PackagingLossDialog({ locations }: { locations: ColdLocationStoc
       return;
     }
     if (isHighLoss && !values.reason.trim()) {
-      form.setError("reason", { message: "包装损耗率超过 5%，请填写原因说明" });
+      form.setError("reason", { message: "累计包装损耗率超过 5% 警戒线，请填写损耗原因说明" });
       return;
     }
 
@@ -78,6 +83,10 @@ export function PackagingLossDialog({ locations }: { locations: ColdLocationStoc
           items,
           reason: values.reason,
         });
+        if (!result.success) {
+          toast.error(result.message || "包装损耗登记失败");
+          return;
+        }
         toast.success(`包装损耗已即时核销 ${result.totalLossRecorded} 只，无需审批`);
         form.reset({ coldStoreId: values.coldStoreId, losses: {}, reason: "" });
         setOpen(false);
@@ -176,14 +185,22 @@ export function PackagingLossDialog({ locations }: { locations: ColdLocationStoc
               <div><span className="text-muted-foreground">累计包装损耗率：</span><strong className={isHighLoss ? "text-destructive" : "text-foreground"}>{lossRate.toFixed(2)}%</strong></div>
             </div>
 
+            {isHighLoss && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive flex items-center gap-1.5">
+                <span>⚠️ 累计包装损耗率已超 5% 预警红线，必须在下方填写损耗原因说明后方可提交登记。</span>
+              </div>
+            )}
+
             <FormField
               control={form.control}
               name="reason"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>损耗原因说明 {isHighLoss && <span className="text-destructive">*</span>}</FormLabel>
+                  <FormLabel>
+                    损耗原因说明 {isHighLoss ? <span className="text-destructive font-semibold">* (超 5% 必填)</span> : <span className="text-xs text-muted-foreground font-normal">(选填)</span>}
+                  </FormLabel>
                   <FormControl>
-                    <Textarea {...field} placeholder="如装箱挑残、包装破损等" rows={3} />
+                    <Textarea {...field} placeholder="如装箱挑残、包装破损等（超 5% 时必填）" rows={3} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

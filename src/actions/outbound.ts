@@ -210,180 +210,199 @@ export async function batchRegisterOutboundLossAction(data: {
   reason?: string;
   lossType?: "PACKAGING" | "CLEARANCE";
   coldStoreId?: string;
-}) {
-  const user = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const lossType = data.lossType === "PACKAGING" ? "PACKAGING" : "CLEARANCE";
-  if (lossType === "PACKAGING" && !data.coldStoreId) {
-    throw new Error("包装损耗必须选择具体库位");
-  }
-  const validItems = (data.items || [])
-    .map((item) => {
-      const gender = item.gender === "FEMALE" ? "FEMALE" : item.gender === "MALE" ? "MALE" : "";
-      const weightTier = Invariants.normalizeWeightTier(item.weightTier);
-      const lossCount = Math.floor(Number(item.lossCount) || 0);
-      if (lossCount > 0 && !gender) throw new Error("请选择有效的公母规格");
-      if (lossCount > 0 && !weightTier) throw new Error("请选择有效的重量规格");
-      return { gender, weightTier, lossCount };
-    })
-    .filter((item) => item.lossCount > 0);
+}): Promise<{
+  success: boolean;
+  message?: string;
+  lossOrder?: any;
+  results?: Array<{ gender: string; weightTier: string; availableAfter: number; lossCount: number }>;
+  totalLossRecorded?: number;
+}> {
+  try {
+    const user = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+    const lossType = data.lossType === "PACKAGING" ? "PACKAGING" : "CLEARANCE";
+    if (lossType === "PACKAGING" && !data.coldStoreId) {
+      return { success: false, message: "包装损耗必须选择具体库位", totalLossRecorded: 0, results: [] };
+    }
+    const validItems = (data.items || [])
+      .map((item) => {
+        const gender = item.gender === "FEMALE" ? "FEMALE" : item.gender === "MALE" ? "MALE" : "";
+        const weightTier = Invariants.normalizeWeightTier(item.weightTier);
+        const lossCount = Math.floor(Number(item.lossCount) || 0);
+        if (lossCount > 0 && !gender) throw new Error("请选择有效的公母规格");
+        if (lossCount > 0 && !weightTier) throw new Error("请选择有效的重量规格");
+        return { gender, weightTier, lossCount };
+      })
+      .filter((item) => item.lossCount > 0);
 
-  if (validItems.length === 0) {
-    throw new Error("请至少填入一个规格的有效损耗数量（大于 0）");
-  }
+    if (validItems.length === 0) {
+      return { success: false, message: "请至少填入一个规格的有效损耗数量（大于 0）", totalLossRecorded: 0, results: [] };
+    }
 
-  const reason = data.reason?.trim() || (lossType === "PACKAGING" ? "包装环节损耗" : "清库盘点损耗");
-  const totalLossCount = validItems.reduce((sum, item) => sum + item.lossCount, 0);
+    const reason = data.reason?.trim() || (lossType === "PACKAGING" ? "包装环节损耗" : "清库盘点损耗");
+    const totalLossCount = validItems.reduce((sum, item) => sum + item.lossCount, 0);
 
-  const transactionResult = await prisma.$transaction(async (tx) => {
-    const code = await nextOutboundLossCode(tx, lossType);
-    const itemPlans: Array<{
-      item: { gender: string; weightTier: string; lossCount: number };
-      stock: { totalQualified: number; totalLoss: number; availableCount: number };
-      lossResult: any;
-      allocations: Array<{ coldLogId: string; count: number }>;
-    }> = [];
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const code = await nextOutboundLossCode(tx, lossType);
+      const itemPlans: Array<{
+        item: { gender: string; weightTier: string; lossCount: number };
+        stock: { totalQualified: number; totalLoss: number; availableCount: number };
+        lossResult: any;
+        allocations: Array<{ coldLogId: string; count: number }>;
+      }> = [];
 
-    let totalAvailable = 0;
-    let totalQualified = 0;
-    let totalHistoricalLoss = 0;
+      let totalAvailable = 0;
+      let totalQualified = 0;
+      let totalHistoricalLoss = 0;
 
-    for (const item of validItems) {
-      const { gender, weightTier, lossCount } = item;
-      const stock = await getColdStorageStock(gender, weightTier, tx, data.coldStoreId, lossType);
-      if (lossCount > stock.availableCount) {
+      for (const item of validItems) {
+        const { gender, weightTier, lossCount } = item;
+        const stock = await getColdStorageStock(gender, weightTier, tx, data.coldStoreId, lossType);
+        if (lossCount > stock.availableCount) {
+          throw new Error(
+            `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier} 损耗数量 (${lossCount} 只) 不能超过当前可发库存 (${stock.availableCount} 只)`
+          );
+        }
+
+        const lossResult = Invariants.calculateLoss({
+          bookInPool: stock.availableCount,
+          physicalCount: stock.availableCount - lossCount,
+          inPoolCount: stock.totalQualified,
+          historicalLoss: stock.totalLoss,
+        });
+        if (!lossResult.valid) throw new Error(lossResult.reason);
+
+        const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx, data.coldStoreId);
+
+        totalAvailable += stock.availableCount;
+        totalQualified += stock.totalQualified;
+        totalHistoricalLoss += stock.totalLoss;
+
+        itemPlans.push({ item, stock, lossResult, allocations });
+      }
+
+      const overallLossResult = Invariants.calculateLoss({
+        bookInPool: totalAvailable,
+        physicalCount: totalAvailable - totalLossCount,
+        inPoolCount: totalQualified,
+        historicalLoss: totalHistoricalLoss,
+      });
+
+      const isException =
+        itemPlans.some((p) => p.lossResult.isException) || Boolean(overallLossResult.isException);
+
+      if (isException && !data.reason?.trim()) {
         throw new Error(
-          `${gender === "FEMALE" ? "母蟹" : "公蟹"} ${weightTier} 损耗数量 (${lossCount} 只) 不能超过当前可发库存 (${stock.availableCount} 只)`
+          `累计${lossType === "PACKAGING" ? "包装" : "清库"}损耗率超 5% 警戒线，请详细填写损耗原因说明`
         );
       }
 
-      const lossResult = Invariants.calculateLoss({
-        bookInPool: stock.availableCount,
-        physicalCount: stock.availableCount - lossCount,
-        inPoolCount: stock.totalQualified,
-        historicalLoss: stock.totalLoss,
-      });
-      if (!lossResult.valid) throw new Error(lossResult.reason);
+      const status = lossType === "PACKAGING" ? "APPROVED" : "PENDING";
 
-      const allocations = await allocateColdStockFIFO(gender, weightTier, lossCount, tx, data.coldStoreId);
-
-      totalAvailable += stock.availableCount;
-      totalQualified += stock.totalQualified;
-      totalHistoricalLoss += stock.totalLoss;
-
-      itemPlans.push({ item, stock, lossResult, allocations });
-    }
-
-    const overallLossResult = Invariants.calculateLoss({
-      bookInPool: totalAvailable,
-      physicalCount: totalAvailable - totalLossCount,
-      inPoolCount: totalQualified,
-      historicalLoss: totalHistoricalLoss,
-    });
-
-    const isException =
-      itemPlans.some((p) => p.lossResult.isException) || Boolean(overallLossResult.isException);
-
-    if (isException && !data.reason?.trim()) {
-      throw new Error(
-        `累计${lossType === "PACKAGING" ? "包装" : "清库"}损耗率超 5% 警戒线，请详细填写损耗原因说明`
-      );
-    }
-
-    const status = lossType === "PACKAGING" ? "APPROVED" : "PENDING";
-
-    // 包装损耗即时核销；清库损耗沿用待审批流程。
-    const lossOrder = await tx.outboundLossOrder.create({
-      data: {
-        code,
-        inventoryDate: new Date(),
-        totalLossCount,
-        lossType,
-        lossRate: overallLossResult.lossRate,
-        isException,
-        reason,
-        status,
-        applicantId: user.id,
-        approvedAt: lossType === "PACKAGING" ? new Date() : null,
-        approvalComment: lossType === "PACKAGING" ? "包装损耗即时核销（无需审批）" : null,
-      },
-    });
-
-    // 2. 创建各规格明细条目与 FIFO 扣减分配
-    const results: Array<{ gender: string; weightTier: string; availableAfter: number; lossCount: number }> = [];
-
-    for (const plan of itemPlans) {
-      const { item, stock, lossResult, allocations } = plan;
-
-      await tx.outboundLossItem.create({
+      // 包装损耗即时核销；清库损耗沿用待审批流程。
+      const lossOrder = await tx.outboundLossOrder.create({
         data: {
-          lossOrderId: lossOrder.id,
-          gender: item.gender,
-          weightTier: item.weightTier,
-          lossCount: item.lossCount,
-          lossRate: lossResult.lossRate,
-          isException: Boolean(lossResult.isException),
+          code,
+          inventoryDate: new Date(),
+          totalLossCount,
+          lossType,
+          lossRate: overallLossResult.lossRate,
+          isException,
+          reason,
+          status,
+          applicantId: user.id,
+          approvedAt: lossType === "PACKAGING" ? new Date() : null,
+          approvalComment: lossType === "PACKAGING" ? "包装损耗即时核销（无需审批）" : null,
         },
       });
 
-      for (const allocation of allocations) {
-        await tx.outboundLossRecord.create({
+      // 2. 创建各规格明细条目与 FIFO 扣减分配
+      const results: Array<{ gender: string; weightTier: string; availableAfter: number; lossCount: number }> = [];
+
+      for (const plan of itemPlans) {
+        const { item, stock, lossResult, allocations } = plan;
+
+        await tx.outboundLossItem.create({
           data: {
             lossOrderId: lossOrder.id,
             gender: item.gender,
             weightTier: item.weightTier,
-            count: allocation.count,
-            lossType,
-            reason,
-            status,
-            coldLogId: allocation.coldLogId,
-            operatorId: user.id,
+            lossCount: item.lossCount,
+            lossRate: lossResult.lossRate,
+            isException: Boolean(lossResult.isException),
           },
+        });
+
+        for (const allocation of allocations) {
+          await tx.outboundLossRecord.create({
+            data: {
+              lossOrderId: lossOrder.id,
+              gender: item.gender,
+              weightTier: item.weightTier,
+              count: allocation.count,
+              lossType,
+              reason,
+              status,
+              coldLogId: allocation.coldLogId,
+              operatorId: user.id,
+            },
+          });
+        }
+
+        results.push({
+          gender: item.gender,
+          weightTier: item.weightTier,
+          availableAfter: stock.availableCount - item.lossCount,
+          lossCount: item.lossCount,
         });
       }
 
-      results.push({
-        gender: item.gender,
-        weightTier: item.weightTier,
-        availableAfter: stock.availableCount - item.lossCount,
-        lossCount: item.lossCount,
+      await tx.auditLog.create({
+        data: {
+          operatorId: user.id,
+          action: lossType === "PACKAGING" ? "PACKAGING_LOSS_CREATE" : "CLEARANCE_LOSS_CREATE",
+          entityType: "OUTBOUND_LOSS_ORDER",
+          entityId: lossOrder.id,
+          details: JSON.stringify({
+            code,
+            lossType,
+            coldStoreId: data.coldStoreId,
+            totalLossCount,
+            lossRate: overallLossResult.lossRate,
+            isException,
+            reason,
+            items: validItems,
+          }),
+        },
       });
-    }
 
-    await tx.auditLog.create({
-      data: {
-        operatorId: user.id,
-        action: lossType === "PACKAGING" ? "PACKAGING_LOSS_CREATE" : "CLEARANCE_LOSS_CREATE",
-        entityType: "OUTBOUND_LOSS_ORDER",
-        entityId: lossOrder.id,
-        details: JSON.stringify({
-          code,
-          lossType,
-          coldStoreId: data.coldStoreId,
-          totalLossCount,
-          lossRate: overallLossResult.lossRate,
-          isException,
-          reason,
-          items: validItems,
-        }),
-      },
-    });
+      return {
+        lossOrder,
+        results,
+        totalLossRecorded: totalLossCount,
+      };
+    }, { isolationLevel: "Serializable" });
+
+    try {
+      revalidatePath("/outbound");
+      revalidatePath("/cold-storage");
+      revalidatePath("/approvals");
+      revalidatePath("/ledgers");
+      revalidatePath("/");
+    } catch {}
 
     return {
-      lossOrder,
-      results,
-      totalLossRecorded: totalLossCount,
+      success: true,
+      ...transactionResult,
     };
-  }, { isolationLevel: "Serializable" });
-
-  try {
-    revalidatePath("/outbound");
-    revalidatePath("/cold-storage");
-    revalidatePath("/approvals");
-    revalidatePath("/ledgers");
-    revalidatePath("/");
-  } catch {}
-
-  return transactionResult;
+  } catch (error: any) {
+    console.error("登记出库/包装损耗异常:", error);
+    return {
+      success: false,
+      message: error?.message || "损耗登记处理失败",
+      totalLossRecorded: 0,
+      results: [],
+    };
+  }
 }
 
 export async function registerOutboundLossAction(data: {
@@ -393,7 +412,10 @@ export async function registerOutboundLossAction(data: {
   reason?: string;
 }) {
   const result = await batchRegisterOutboundLossAction({ items: [data], reason: data.reason, lossType: "CLEARANCE" });
-  return { availableAfter: result.results[0]?.availableAfter ?? 0 };
+  if (!result.success) {
+    throw new Error(result.message || "出库损耗登记失败");
+  }
+  return { availableAfter: result.results?.[0]?.availableAfter ?? 0 };
 }
 
 export async function batchRegisterPackagingLossAction(data: {
