@@ -105,6 +105,10 @@ export function FarmerDialog({
       const formData = new FormData();
       formData.append("file", file);
       const res = await uploadFileAction(formData);
+      if (!res.success) {
+        toast.error(res.message || "合同上传失败");
+        return;
+      }
       form.setValue("contractUrl", res.url, { shouldDirty: true, shouldValidate: true });
       form.setValue("contractName", res.name, { shouldDirty: true, shouldValidate: true });
       toast.success(`合同上传成功: ${res.name}`);

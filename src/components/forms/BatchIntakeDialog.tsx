@@ -116,6 +116,10 @@ export function BatchIntakeDialog({
       const formData = new FormData();
       formData.append("file", file);
       const res = await uploadFileAction(formData);
+      if (!res.success) {
+        toast.error(res.message || "文件上传失败");
+        return;
+      }
       form.setValue("reportUrl", res.url);
       form.setValue("reportName", res.name);
       toast.success(`报告已上传: ${res.name}`);

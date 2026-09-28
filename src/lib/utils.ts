@@ -141,10 +141,11 @@ export function parseBeijingDateTime(value?: string | Date | null): Date {
   if (value instanceof Date) return value;
   const trimmed = value.trim();
   if (!trimmed) return new Date();
-  if (trimmed.endsWith("Z") || /[+-]\d{2}(:\d{2})?$/.test(trimmed)) {
-    return new Date(trimmed);
+  const normalizedDate = trimmed.replace(/\//g, "-");
+  if (normalizedDate.endsWith("Z") || /[+-]\d{2}(:\d{2})?$/.test(normalizedDate)) {
+    return new Date(normalizedDate);
   }
-  const normalized = trimmed.replace(" ", "T");
+  const normalized = normalizedDate.replace(" ", "T");
   const withSeconds = normalized.length === 16 ? `${normalized}:00` : normalized;
   return new Date(`${withSeconds}+08:00`);
 }

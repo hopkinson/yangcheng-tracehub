@@ -141,6 +141,10 @@ export function MultiSpecIntakeDialog({
       const formData = new FormData();
       formData.append("file", file);
       const res = await uploadFileAction(formData);
+      if (!res.success) {
+        toast.error(res.message || "码单照片上传失败");
+        return;
+      }
       setSlipUrl(res.url);
       setSlipName(res.name);
       toast.success(`码单照片已上传: ${res.name}`);

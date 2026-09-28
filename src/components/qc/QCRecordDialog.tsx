@@ -142,6 +142,10 @@ export function QCRecordDialog({
       const formData = new FormData();
       formData.append("file", file);
       const res = await uploadFileAction(formData);
+      if (!res.success) {
+        toast.error(res.message || "文件上传失败");
+        return;
+      }
       setFileUrl(res.url);
       setFileName(res.name);
       toast.success(`文件已上传: ${res.name}`);
@@ -162,26 +166,32 @@ export function QCRecordDialog({
 
   const onSubmit = (data: QCRecordFormValues) => {
     startTransition(async () => {
-      const res = await createQCRecordAction({
-        id: record?.id,
-        cat: config.cat,
-        formNo: data.formNo?.trim() || undefined,
-        refType: config.refType,
-        refId: data.refId.trim(),
-        title: config.defaultTitle,
-        checkTime: data.checkTime,
-        conclusion: data.conclusion,
-        reason: data.reason?.trim() || undefined,
-        uploader: data.uploader.trim(),
-        fileName: fileName || undefined,
-        fileUrl: fileUrl || undefined,
-      });
+      try {
+        const res = await createQCRecordAction({
+          id: record?.id,
+          cat: config.cat,
+          formNo: data.formNo?.trim() || undefined,
+          refType: config.refType,
+          refId: data.refId.trim(),
+          title: config.defaultTitle,
+          checkTime: data.checkTime,
+          conclusion: data.conclusion,
+          reason: data.reason?.trim() || undefined,
+          uploader: data.uploader.trim(),
+          fileName: fileName || undefined,
+          fileUrl: fileUrl || undefined,
+        });
 
-      if (res.success) {
-        toast.success(res.message);
-        setOpen(false);
-      } else {
-        toast.error(res.message);
+        if (res.success) {
+          toast.success(res.message);
+          setOpen(false);
+        } else {
+          toast.error(res.message);
+        }
+      } catch (err: unknown) {
+        console.error("提交品控记录异常:", err);
+        const msg = err instanceof Error ? err.message : "提交保存失败，请稍后重试";
+        toast.error(msg);
       }
     });
   };

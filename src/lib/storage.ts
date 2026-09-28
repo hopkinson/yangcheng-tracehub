@@ -113,11 +113,17 @@ async function uploadToLocalStorage(buffer: Buffer, originalName: string): Promi
   const filename = `${timestamp}_${safeName}`;
   const uploadDir = path.join(process.cwd(), "public", "uploads");
 
-  await fs.mkdir(uploadDir, { recursive: true });
-  const filePath = path.join(uploadDir, filename);
-  await fs.writeFile(filePath, buffer);
-
-  return `/uploads/${filename}`;
+  try {
+    await fs.mkdir(uploadDir, { recursive: true });
+    const filePath = path.join(uploadDir, filename);
+    await fs.writeFile(filePath, buffer);
+    return `/uploads/${filename}`;
+  } catch (error: any) {
+    console.error("[LOCAL_STORAGE_ERROR] 无法写入本地存储目录 public/uploads:", error);
+    throw new Error(
+      `本地文件存储失败 (${error.code || error.message})。若在生产环境部署，请在环境变量中配置阿里云 OSS (OSS_BUCKET, OSS_ACCESS_KEY_ID 等) 或确保 public/uploads 目录具备写权限`
+    );
+  }
 }
 
 /**

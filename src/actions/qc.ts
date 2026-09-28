@@ -108,8 +108,20 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
         });
         recordCode = existing.code;
       } else {
-        const count = await tx.qCRecord.count();
-        recordCode = `${prefix}${dateStr}${String(count + 1).padStart(2, "0")}`;
+        const todayPrefix = `${prefix}${dateStr}`;
+        const latestRecord = await tx.qCRecord.findFirst({
+          where: { code: { startsWith: todayPrefix } },
+          orderBy: { code: "desc" },
+          select: { code: true },
+        });
+        let nextSeq = 1;
+        if (latestRecord?.code) {
+          const seqPart = parseInt(latestRecord.code.slice(todayPrefix.length), 10);
+          if (!isNaN(seqPart)) {
+            nextSeq = seqPart + 1;
+          }
+        }
+        recordCode = `${todayPrefix}${String(nextSeq).padStart(2, "0")}`;
 
         await tx.qCRecord.create({
           data: {
@@ -154,7 +166,12 @@ export async function createQCRecordAction(data: CreateQCRecordData) {
     });
 
     try {
-      revalidatePath("/", "layout");
+      revalidatePath("/batches");
+      revalidatePath("/pools");
+      revalidatePath("/sorting");
+      revalidatePath("/bundling");
+      revalidatePath("/cold-storage");
+      revalidatePath("/outbound");
     } catch {}
     return {
       success: true,
@@ -173,7 +190,12 @@ export async function deleteQCRecordAction(recordId: string) {
   try {
     await prisma.qCRecord.delete({ where: { id: recordId } });
     try {
-      revalidatePath("/", "layout");
+      revalidatePath("/batches");
+      revalidatePath("/pools");
+      revalidatePath("/sorting");
+      revalidatePath("/bundling");
+      revalidatePath("/cold-storage");
+      revalidatePath("/outbound");
     } catch {}
     return { success: true, message: "品控记录已删除" };
   } catch (error: any) {
