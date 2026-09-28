@@ -11,17 +11,14 @@ on:
           - "1-test (服务器 1: admin-test)"
           - "2-test (服务器 2: 测试环境)"
       confirm:
-        description: "确认重置所选测试环境"
-        type: choice
-        default: "NO"
-        options:
-          - "NO"
-          - "RESET-TEST-DATA"
+        description: "我已知晓该操作将清空所选测试数据库并确认执行"
+        type: boolean
+        default: false
 
 jobs:
   reset-server1-test:
     name: "服务器 1 测试环境 - 重置数据"
-    if: startsWith(github.event.inputs.server, '1-test') && github.event.inputs.confirm == 'RESET-TEST-DATA'
+    if: startsWith(github.event.inputs.server, '1-test') && (github.event.inputs.confirm == true || github.event.inputs.confirm == 'true')
     runs-on: ubuntu-latest
     environment: test
     env:
@@ -101,7 +98,7 @@ jobs:
             docker compose restart app-test
   reset-server2-test:
     name: "服务器 2 测试环境 - 重置数据"
-    if: startsWith(github.event.inputs.server, '2-test') && github.event.inputs.confirm == 'RESET-TEST-DATA'
+    if: startsWith(github.event.inputs.server, '2-test') && (github.event.inputs.confirm == true || github.event.inputs.confirm == 'true')
     runs-on: ubuntu-latest
     environment: test
     env:
