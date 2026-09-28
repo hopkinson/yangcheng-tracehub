@@ -314,4 +314,35 @@ B0001\t浦东店\tST-02\t20260917\t50\t50\t100\t100\t\t\t`;
   console.log("  ✔ A0004 礼盒型号智能提取测试通过\n");
 }
 
+// 11. 苏州门店（苏州昆山、苏州金鸡湖、苏州木渎等）矩阵发货计划导入防过滤测试
+{
+  console.log("▶ [Test 11] 用户报障场景：苏州门店（苏州昆山、苏州金鸡湖、苏州木渎）不能被误过滤");
+  const suzhouText = `订单号\t门店名称\t门店编号\t发货日期\t2.5母\t3.5公\t3.0母
+X0006\t上海真如\t6568\t9/28/26\t160\t120\t70
+X0007\t苏州昆山\t6509\t9/28/26\t160\t60\t70
+X0008\t苏州金鸡湖\t4818\t9/28/26\t160\t60\t70
+X0009\t苏州木渎\t4834\t9/28/26\t160\t60\t70
+X0010\t上海青浦\t4865\t9/28/26\t160\t\t70`;
+
+  const parsed = Invariants.parseOrderImportText(suzhouText, "STORE");
+
+  const suzhouOrders = parsed.filter(o => o.storeName?.includes("苏州"));
+  assert.ok(suzhouOrders.length > 0, "苏州门店订单明细不能为 0，不能被误过滤！");
+  
+  const kunshan = parsed.filter(o => o.storeName === "苏州昆山");
+  assert.equal(kunshan.length, 3, "苏州昆山应成功解析 3 个规格 (2.5母 160, 3.5公 60, 3.0母 70)");
+  assert.equal(kunshan.reduce((s, o) => s + o.count, 0), 290);
+
+  const jinji = parsed.filter(o => o.storeName === "苏州金鸡湖");
+  assert.equal(jinji.length, 3, "苏州金鸡湖应成功解析 3 个规格");
+
+  const mudu = parsed.filter(o => o.storeName === "苏州木渎");
+  assert.equal(mudu.length, 3, "苏州木渎应成功解析 3 个规格");
+
+  // 顺带验证中文日期 "9月28日" 格式
+  assert.equal(Invariants.parseImportDate("9月28日"), `${new Date().getFullYear()}-09-28`);
+  console.log("  ✔ 苏州门店发货计划导入解析正常\n");
+}
+
 console.log("🎉 订单导入智能拆分与日期防爆单元测试全部 100% 通过！");
+

@@ -606,6 +606,10 @@ export const Invariants = {
       // 3. YYYYMMDD (如 20260908)
       m = s.match(/\b(20\d{2})(\d{2})(\d{2})\b/);
       if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+      // 4. M月D日 (如 9月28日, 默认当年)
+      m = s.match(/(?:^|[^\d])(\d{1,2})月(\d{1,2})日/);
+      if (m) return `${new Date().getFullYear()}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
     }
     const today = new Date();
     return today.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
@@ -618,7 +622,7 @@ export const Invariants = {
     const raw = val?.trim();
     if (
       !raw ||
-      !/(?:20\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}|\b20\d{6}\b|(?:^|[^\d])\d{1,2}[-/]\d{1,2}[-/](?:\d{2}|\d{4})(?:$|[^\d]))/.test(raw)
+      !/(?:20\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}|\b20\d{6}\b|(?:^|[^\d])\d{1,2}[-/]\d{1,2}[-/](?:\d{2}|\d{4})(?:$|[^\d])|(?:^|[^\d])\d{1,2}月\d{1,2}日)/.test(raw)
     ) {
       return null;
     }
@@ -830,7 +834,7 @@ export const Invariants = {
 
       const storeName = cells[storeNameCol] || cells[0];
       const storeCode = cells[storeCodeCol] || cells.find((c, idx) => idx !== storeNameCol && /^\d{3,6}$/.test(c)) || "";
-      if (!storeName || /^(发货|业务|渠道|苏州|合计)/.test(storeName)) continue;
+      if (!storeName || /^(发货|业务|渠道|合计|总计|汇总)/.test(storeName)) continue;
 
       const explicitOrderNo = orderNoCol >= 0 ? cells[orderNoCol] : "";
       if (orderNoCol >= 0 && !explicitOrderNo) throw new Error(`第 ${i + 1} 行缺少订单号`);
