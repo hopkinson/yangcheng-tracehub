@@ -100,6 +100,41 @@ async function runOutboundQcTest() {
     console.log(`  ✔ 出库品控台账查询成功匹配到 ${outboundQcList.length} 条记录 (PACK_INSPECT + VEHICLE_INSPECT)`);
 
     // -------------------------------------------------------------------------
+    // 3.1 验证出库品控记录编辑修改 (createQCRecordAction with id)
+    // -------------------------------------------------------------------------
+    console.log("\n▶ [Test 3.1] 验证出库品控记录编辑修改 (createQCRecordAction with id)");
+    const updateRes = await createQCRecordAction({
+      id: packRecord.id,
+      cat: "PACK_INSPECT",
+      formNo: "YCGF-PZZX-202610-REV1",
+      refType: "OUTBOUND",
+      refId: testRefId,
+      title: "大闸蟹礼盒包装与封签巡检记录表 (已修正)",
+      checkTime: new Date().toISOString(),
+      conclusion: "复核通过：冰袋状态优良，全部外盒贴附防伪溯源码封条",
+      uploader: "李主管",
+    });
+
+    assert.equal(updateRes.success, true, `修改出库品控记录失败: ${updateRes.message}`);
+    const updatedRecord = await prisma.qCRecord.findUnique({
+      where: { id: packRecord.id },
+    });
+    assert.ok(updatedRecord, "数据库未找到已修改记录");
+    assert.equal(updatedRecord.formNo, "YCGF-PZZX-202610-REV1");
+    assert.equal(updatedRecord.uploader, "李主管");
+    assert.equal(updatedRecord.conclusion, "复核通过：冰袋状态优良，全部外盒贴附防伪溯源码封条");
+
+    const auditLog = await prisma.auditLog.findFirst({
+      where: {
+        entityType: "QC_RECORD",
+        entityId: packRecord.id,
+        action: "UPDATE_QC_RECORD",
+      },
+    });
+    assert.ok(auditLog, "修改品控记录必须产生 UPDATE_QC_RECORD 审计日志");
+    console.log(`  ✔ 出库品控记录编辑修改成功，表单修订号、质检员与审计留痕均校验通过`);
+
+    // -------------------------------------------------------------------------
     // 4. 验证分拣批量创建任务 (createSortTasksAction)
     // -------------------------------------------------------------------------
     console.log("\n▶ [Test 4] 验证分拣多规格明细批量创建 (createSortTasksAction)");

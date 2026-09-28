@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { ExportLedgerButton } from "@/components/ledgers/ExportLedgerButton";
+import { ExportLedgerButton, type ExportValue, type ExportSection } from "@/components/ledgers/ExportLedgerButton";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
 import { LedgerTabCarousel } from "@/components/ledgers/LedgerTabCarousel";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
@@ -14,9 +14,6 @@ import { cn, formatDate, formatTime, getBeijingDayRange } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
-
-type ExportValue = string | number;
-type ExportSection = { title?: string; headers: string[]; rows: ExportValue[][] };
 
 type LedgerCardSectionProps = {
   title: string;
@@ -72,6 +69,8 @@ function LedgerCardSection({
     </Card>
   );
 }
+
+const toDisplayRow = (row: ExportValue[]): ReactNode[] => row.map((v) => v as ReactNode);
 
 function LedgerTable({
   headers,
@@ -234,7 +233,7 @@ export default async function LedgersPage({
       : prisma.batch.findMany({
           where: dateFilter ? { inPoolTime: dateFilter } : undefined,
           include: {
-            farmer: true,
+            farmer: { include: { enclosures: true } },
             enclosure: true,
             pool: true,
             items: { include: { pool: true } },
@@ -311,7 +310,7 @@ export default async function LedgersPage({
                   include: {
                     bundleBatch: {
                       include: {
-                        sourceBatch: { include: { farmer: true, enclosure: true, pool: true } },
+                        sourceBatch: { include: { farmer: { include: { enclosures: true } }, enclosure: true, pool: true } },
                         lines: { include: { pool: true } },
                       },
                     },
@@ -413,7 +412,7 @@ export default async function LedgersPage({
       cooperationText(farmer.status),
       farmer.contractUrl || farmer.contractName || "—",
     ];
-    const displayRow: ReactNode[] = [...exportRow];
+    const displayRow = toDisplayRow(exportRow);
     if (farmer.contractUrl) {
       displayRow[displayRow.length - 1] = (
         <a href={farmer.contractUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
@@ -558,7 +557,7 @@ export default async function LedgersPage({
         group.poolCode,
         batch.code,
         batch.farmer.name,
-        batch.enclosure?.code || "—",
+        batch.farmer.enclosures?.map((e) => e.code).join(", ") || batch.enclosure?.code || "—",
         group.inCount,
         group.outCount,
         Math.max(0, group.inCount - group.outCount - group.lossCount),
@@ -704,7 +703,7 @@ export default async function LedgersPage({
         line.count,
         Array.from(new Set(sourcePools)).join(", ") || sourceBatch.pool.code || "—",
         sourceBatch.farmer.name,
-        sourceBatch.enclosure?.code || "—",
+        sourceBatch.farmer.enclosures?.map((e) => e.code).join(", ") || sourceBatch.enclosure?.code || "—",
       ];
       return { exportRow, displayRow: exportRow as ReactNode[] };
     })
@@ -732,7 +731,7 @@ export default async function LedgersPage({
       attachment,
       record.uploader || "—",
     ];
-    const displayRow: ReactNode[] = [...exportRow];
+    const displayRow = toDisplayRow(exportRow);
     if (record.fileUrl) {
       displayRow[8] = (
         <a href={record.fileUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">

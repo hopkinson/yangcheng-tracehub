@@ -15,6 +15,7 @@ import { PackagingLossDialog } from "@/components/outbound/PackagingLossDialog";
 import { OutboundLossDetailDialog } from "@/components/outbound/OutboundLossDetailDialog";
 import { ResubmitOutboundDialog } from "@/components/forms/ResubmitOutboundDialog";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
+import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
 import { cn, formatDateTime, formatDate } from "@/lib/utils";
@@ -29,10 +30,23 @@ import {
   ClipboardCheck,
   CheckCircle2,
   AlertTriangle,
+  Pencil,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
+const QC_PRESETS: Record<string, { label: string; title: string; form: string }> = {
+  PACK_INSPECT: {
+    label: "包装巡检",
+    title: "大闸蟹礼盒包装与封签巡检记录表",
+    form: "YCGF-PZZX-202610",
+  },
+  VEHICLE_INSPECT: {
+    label: "车辆检查",
+    title: "冷链运输车辆出车前车况与温度检查表",
+    form: "YCGF-PZZX-202611",
+  },
+};
 
 export default async function OutboundPage({
   searchParams,
@@ -42,7 +56,7 @@ export default async function OutboundPage({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
   const pageSize = Math.max(1, Number(params.pageSize) || 10);
-  const activeTab = params.tab === "loss" ? "loss" : "delivery";
+  const activeTab = params.tab === "loss" ? "loss" : params.tab === "qc" ? "qc" : "delivery";
 
   const [
     currentUser,
@@ -57,6 +71,7 @@ export default async function OutboundPage({
     sortTasks,
     outboundLines,
     outboundLosses,
+    totalQCRecords,
     qcRecords,
     coldLogs,
   ] = await Promise.all([
@@ -122,12 +137,18 @@ export default async function OutboundPage({
       where: { status: { not: "REJECTED" } },
       select: { gender: true, weightTier: true, count: true, coldLogId: true, status: true, lossType: true },
     }),
+    prisma.qCRecord.count({
+      where: {
+        cat: { in: ["PACK_INSPECT", "VEHICLE_INSPECT", "SHIP_LOG"] },
+      },
+    }),
     prisma.qCRecord.findMany({
       where: {
         cat: { in: ["PACK_INSPECT", "VEHICLE_INSPECT", "SHIP_LOG"] },
       },
+      skip: activeTab === "qc" ? (page - 1) * pageSize : 0,
+      take: activeTab === "qc" ? pageSize : 10,
       orderBy: { checkTime: "desc" },
-      take: 10,
     }),
     prisma.coldLog.findMany({
       where: { type: "INTAKE" },
@@ -140,6 +161,7 @@ export default async function OutboundPage({
 
   const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
+  const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role || "");
   const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
   const lastStoreOutbound = currentUserId
     ? await prisma.outboundOrder.findFirst({
@@ -148,6 +170,11 @@ export default async function OutboundPage({
         select: { transportCompany: true, contactName: true, contactPhone: true },
       })
     : null;
+
+  const outboundRefOptions = orders.map((o) => ({
+    label: `${o.code} (${o.type === "STORE_ORDER" ? "门店订单" : "提货订单"}${o.store?.name ? ` - ${o.store.name}` : ""})`,
+    value: o.code,
+  }));
 
   const sortTaskMap = new Map(sortTasks.map((t: any) => [t.id, t]));
 
@@ -284,41 +311,83 @@ export default async function OutboundPage({
           <CardHeader className="py-3 px-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex flex-col gap-0.5">
               <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-                <Truck className="size-4 text-primary" />
-                出库台账
+                {activeTab === "qc" ? (
+                  <ClipboardCheck className="size-4 text-primary" />
+                ) : (
+                  <Truck className="size-4 text-primary" />
+                )}
+                {activeTab === "qc" ? "出库环节品控记录" : activeTab === "loss" ? "出库损耗台账" : "出库台账"}
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                发货出库、包装损耗与清库损耗分类管理；损耗仅核减库存，不产生发货
+                {activeTab === "qc"
+                  ? "包装巡检、封签检查与发货车辆车况巡检；质检留痕与溯源闭环"
+                  : activeTab === "loss"
+                  ? "发货出库、包装损耗与清库损耗分类管理；损耗仅核减库存，不产生发货"
+                  : "冷库出库与蟹卡发货统一管理；支持单票审批、发货与物流回填"}
               </p>
             </div>
-            <div className="flex items-center gap-1.5 bg-muted/40 p-1 rounded-lg border border-border/70">
-              <Link
-                href="/outbound?tab=delivery"
-                className={cn(
-                  "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
-                  activeTab === "delivery"
-                    ? "bg-background text-foreground shadow-xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span>发货出库单</span>
-                <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalOrders}</span>
-              </Link>
-              <Link
-                href="/outbound?tab=loss"
-                className={cn(
-                  "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
-                  activeTab === "loss"
-                    ? "bg-background text-foreground shadow-xs font-semibold text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span>损耗记录</span>
-                <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalLossOrders}</span>
-                {pendingLossOrdersCount > 0 && (
-                  <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
-                )}
-              </Link>
+            <div className="flex items-center gap-2 flex-wrap">
+              {activeTab === "qc" && isWarehouseOrAdmin && (
+                <div className="flex items-center gap-2">
+                  {Object.entries(QC_PRESETS).map(([cat, c]) => (
+                    <QCRecordDialog
+                      key={cat}
+                      config={{
+                        cat,
+                        categoryLabel: c.label,
+                        defaultTitle: c.title,
+                        formNoPreset: c.form,
+                        refType: "OUTBOUND",
+                        refId: orders[0]?.code || "CK-GENERAL",
+                        refOptions: outboundRefOptions,
+                      }}
+                      triggerLabel={`登记${c.label}`}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 bg-muted/40 p-1 rounded-lg border border-border/70">
+                <Link
+                  href="/outbound?tab=delivery"
+                  className={cn(
+                    "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+                    activeTab === "delivery"
+                      ? "bg-background text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <span>发货出库单</span>
+                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalOrders}</span>
+                </Link>
+                <Link
+                  href="/outbound?tab=loss"
+                  className={cn(
+                    "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+                    activeTab === "loss"
+                      ? "bg-background text-foreground shadow-xs font-semibold text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <span>损耗记录</span>
+                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalLossOrders}</span>
+                  {pendingLossOrdersCount > 0 && (
+                    <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  )}
+                </Link>
+                <Link
+                  href="/outbound?tab=qc"
+                  className={cn(
+                    "px-3 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+                    activeTab === "qc"
+                      ? "bg-background text-foreground shadow-xs font-semibold text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <ClipboardCheck className="size-3.5" />
+                  <span>品控记录</span>
+                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-muted/80">{totalQCRecords}</span>
+                </Link>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -532,7 +601,7 @@ export default async function OutboundPage({
                 </div>
                 <DataTablePagination total={totalOrders} page={page} pageSize={pageSize} />
               </>
-            ) : (
+            ) : activeTab === "loss" ? (
               <>
                 <div className="rounded-md border-b overflow-x-auto">
                   <Table>
@@ -687,129 +756,109 @@ export default async function OutboundPage({
                 </div>
                 <DataTablePagination total={totalLossOrders} page={page} pageSize={pageSize} />
               </>
-            )}
-          </CardContent>
-        </Card>
-      </FadeIn>
-
-      {/* 14.6 出库环节品控记录 */}
-      <FadeIn>
-        <Card className="border-border/80">
-          <CardHeader className="py-2.5 px-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-muted/20">
-            <div className="flex items-center gap-2">
-              <ClipboardCheck className="size-4 text-primary" />
-              <CardTitle className="text-sm font-semibold">出库环节品控记录 (包装巡检 / 发货车辆检查)</CardTitle>
-            </div>
-            <div className="flex items-center flex-wrap gap-2">
-              <Badge variant="outline" className="text-[10px] font-mono">
-                共 {qcRecords.length} 份质检记录
-              </Badge>
-              {[
-                {
-                  cat: "PACK_INSPECT",
-                  label: "包装巡检",
-                  title: "大闸蟹礼盒包装与封签巡检记录表",
-                  form: "YCGF-PZZX-202610",
-                },
-                {
-                  cat: "VEHICLE_INSPECT",
-                  label: "车辆检查",
-                  title: "冷链运输车辆出车前车况与温度检查表",
-                  form: "YCGF-PZZX-202611",
-                },
-              ].map((c) => (
-                <QCRecordDialog
-                  key={c.cat}
-                  config={{
-                    cat: c.cat,
-                    categoryLabel: c.label,
-                    defaultTitle: c.title,
-                    formNoPreset: c.form,
-                    refType: "OUTBOUND",
-                    refId: orders[0]?.code || "CK-GENERAL",
-                  }}
-                  triggerLabel={`登记${c.label}`}
-                />
-              ))}
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="rounded-md overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="w-[130px] text-xs">记录编号</TableHead>
-                    <TableHead className="w-[100px] text-xs">检验类型</TableHead>
-                    <TableHead className="w-[120px] text-xs">关联出库批次</TableHead>
-                    <TableHead className="min-w-[200px] text-xs">检测项目与结论</TableHead>
-                    <TableHead className="w-[90px] text-xs">判定结果</TableHead>
-                    <TableHead className="w-[80px] text-xs">质检员</TableHead>
-                    <TableHead className="w-[140px] text-xs">检测时间</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {qcRecords.map((qc: any) => {
-                    const isPack = qc.cat === "PACK_INSPECT";
-                    const isVehicle = qc.cat === "VEHICLE_INSPECT";
-
-                    return (
-                      <TableRow key={qc.id} className="hover:bg-muted/30 text-xs">
-                        <TableCell className="font-mono font-bold">{qc.code}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px]">
-                            {isPack ? "包装巡检" : isVehicle ? "车辆检查" : "发运日志"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono font-medium text-primary">
-                          {qc.refId}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-foreground">{qc.title}</span>
-                            <span className="text-[11px] text-muted-foreground">{qc.conclusion}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {qc.result === "UNQUALIFIED" || qc.conclusion === "不合格" ? (
-                            <Badge
-                              variant="destructive"
-                              className="text-[10px] py-0 h-4 font-normal"
-                            >
-                              不合格
-                            </Badge>
-                          ) : qc.result === "RECTIFYING" || qc.conclusion === "待整改" || qc.conclusion?.includes("整改") ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] py-0 h-4 font-normal bg-amber-500/10 text-amber-600 border-amber-500/30"
-                            >
-                              待整改
-                            </Badge>
-                          ) : qc.result === "EXCEPTION" ? (
-                            <Badge
-                              variant="destructive"
-                              className="text-[10px] py-0 h-4 font-normal"
-                            >
-                              {qc.conclusion || "异常"}
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] py-0 h-4 font-normal bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                            >
-                              合格
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{qc.uploader}</TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground">
-                          {formatDateTime(qc.checkTime)}
-                        </TableCell>
+            ) : (
+              <>
+                <div className="rounded-md border-b overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-[130px] text-xs">记录编号</TableHead>
+                        <TableHead className="w-[100px] text-xs">检验类型</TableHead>
+                        <TableHead className="w-[120px] text-xs">关联出库批次</TableHead>
+                        <TableHead className="min-w-[200px] text-xs">检测项目与结论</TableHead>
+                        <TableHead className="w-[90px] text-xs">判定结果</TableHead>
+                        <TableHead className="w-[80px] text-xs">质检员</TableHead>
+                        <TableHead className="w-[140px] text-xs">检测时间</TableHead>
+                        <TableHead className="w-[110px] text-right text-xs">操作</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {qcRecords.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="h-32 text-center text-muted-foreground text-xs">
+                            暂无出库环节品控记录
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        qcRecords.map((qc: any) => {
+                          const preset = QC_PRESETS[qc.cat];
+                          const catLabel = preset?.label || "发运日志";
+                          const rowRefOptions = outboundRefOptions.some((opt) => opt.value === qc.refId)
+                            ? outboundRefOptions
+                            : [{ label: qc.refId, value: qc.refId }, ...outboundRefOptions];
+                          const isUnqualified = qc.result === "UNQUALIFIED" || qc.conclusion === "不合格";
+                          const isRectifying = qc.result === "RECTIFYING" || qc.conclusion === "待整改" || qc.conclusion?.includes("整改");
+                          const isException = qc.result === "EXCEPTION";
+
+                          return (
+                            <TableRow key={qc.id} className="hover:bg-muted/30 text-xs">
+                              <TableCell className="font-mono font-bold">{qc.code}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-[10px]">{catLabel}</Badge>
+                              </TableCell>
+                              <TableCell className="font-mono font-medium text-primary">
+                                {qc.refId}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-medium text-foreground">{qc.title}</span>
+                                  <span className="text-[11px] text-muted-foreground">{qc.conclusion}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={isUnqualified || isException ? "destructive" : "outline"}
+                                  className={cn(
+                                    "text-[10px] py-0 h-4 font-normal",
+                                    isRectifying && "bg-amber-500/10 text-amber-600 border-amber-500/30",
+                                    !isUnqualified && !isRectifying && !isException && "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                  )}
+                                >
+                                  {isUnqualified ? "不合格" : isRectifying ? "待整改" : isException ? (qc.conclusion || "异常") : "合格"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{qc.uploader}</TableCell>
+                              <TableCell className="font-mono text-[11px] text-muted-foreground">
+                                {formatDateTime(qc.checkTime)}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {canEditQc && (
+                                    <QCRecordDialog
+                                      config={{
+                                        cat: qc.cat,
+                                        categoryLabel: catLabel,
+                                        defaultTitle: qc.title || preset?.title,
+                                        formNoPreset: qc.formNo || preset?.form,
+                                        refType: "OUTBOUND",
+                                        refId: qc.refId,
+                                        refOptions: rowRefOptions,
+                                      }}
+                                      record={qc}
+                                      trigger={
+                                        <button
+                                          type="button"
+                                          className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline font-medium cursor-pointer"
+                                          title="修改出库品控记录"
+                                        >
+                                          <Pencil className="size-3" /> 编辑
+                                        </button>
+                                      }
+                                    />
+                                  )}
+                                  <QCViewDialog record={qc} triggerText="查看留痕" />
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <DataTablePagination total={totalQCRecords} page={page} pageSize={pageSize} />
+              </>
+            )}
           </CardContent>
         </Card>
       </FadeIn>

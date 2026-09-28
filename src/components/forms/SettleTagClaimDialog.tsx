@@ -12,7 +12,7 @@ import { settleTagClaimFormSchema, type SettleTagClaimFormValues } from "@/lib/v
 import { Invariants } from "@/lib/invariants";
 import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 import { toast } from "sonner";
-import { Scale, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Scale, CheckCircle2, AlertTriangle, HelpCircle } from "lucide-react";
 
 export function SettleTagClaimDialog({
   claim,
@@ -107,12 +107,12 @@ export function SettleTagClaimDialog({
       <DialogTrigger asChild>
         <Button variant={claim.isBalanced ? "ghost" : "outline"} size="sm" className="h-7 text-xs gap-1">
           <Scale className="size-3" />
-          {claim.isBalanced ? "查看核销" : SHOW_TAG_RETURN ? "登记退废" : "登记作废"}
+          {claim.isBalanced ? "查看核销" : SHOW_TAG_RETURN ? "登记退废" : "登记结余"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{SHOW_TAG_RETURN ? "蟹扣退回与作废登记" : "蟹扣作废登记"} (日结核销)</DialogTitle>
+          <DialogTitle>{SHOW_TAG_RETURN ? "蟹扣退回与结余登记" : "蟹扣结余登记"} (日结核销)</DialogTitle>
           <DialogDescription>
             养殖户：{claim.farmer.name} ({claim.farmer.code})
           </DialogDescription>
@@ -174,7 +174,7 @@ export function SettleTagClaimDialog({
                   <>
                     数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal}
                     {totalDownstreamLoss > 0 ? ` [出库 ${outboundCount} + 损耗 ${totalDownstreamLoss}]` : ""}
-                    {SHOW_TAG_RETURN && returnedVal > 0 ? ` + 退回 ${returnedVal}` : ""} + 作废 {scrappedVal})
+                    {SHOW_TAG_RETURN && returnedVal > 0 ? ` + 退回 ${returnedVal}` : ""} + 结余 {scrappedVal})
                   </>
                 )}
               </span>
@@ -230,7 +230,12 @@ export function SettleTagClaimDialog({
                 name="scrappedCount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>当日作废数量 (只)</FormLabel>
+                    <FormLabel className="inline-flex items-center gap-1.5">
+                      <span>当日结余数量 (只)</span>
+                      <span title="废弃不再继续使用">
+                        <HelpCircle className="size-3.5 cursor-help text-muted-foreground hover:text-foreground" />
+                      </span>
+                    </FormLabel>
                     <FormControl>
                       <Input type="number" min="0" {...field} />
                     </FormControl>
@@ -243,9 +248,9 @@ export function SettleTagClaimDialog({
                 name="scrapReason"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>作废原因</FormLabel>
+                    <FormLabel>结余原因 / 处置说明</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：扣带损坏作废" {...field} />
+                      <Input placeholder="如：未用完作废、扣带损坏" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
