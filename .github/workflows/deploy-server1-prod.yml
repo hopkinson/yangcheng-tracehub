@@ -1,130 +1,113 @@
-name: "生产部署 · 服务器 2 (第二节点 - 自动部署)"
+name: "生产部署 · 服务器 1 (正式环境 - 手动触发)"
 
 on:
-  push:
-    branches:
-      - main
-      - master
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: "要部署的镜像版本标签 (默认: latest)"
-        required: false
-        default: "latest"
+      confirm:
+        description: "确认发布生产环境 (默认: yes)"
+        required: true
+        default: "yes"
 
 jobs:
   build-and-deploy:
-    name: "构建并发布到服务器 2"
+    name: "构建并发布到服务器 1 (正式生产环境)"
     runs-on: ubuntu-latest
     environment: production
     permissions:
       contents: read
       packages: write
     env:
-      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
-      SERVER_USER_2: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || secrets.SERVER_2_USER || vars.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
-      SERVER_PASSWORD_2: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
-      SERVER_SSH_KEY_2: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
-      SERVER_PORT_2: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || secrets.SERVER_PORT_1 || 22 }}
-      TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+      SERVER_HOST_1: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
+      SERVER_USER_1: ${{ secrets.SERVER_USER_1 || vars.SERVER_USER_1 || secrets.SERVER_USER || vars.SERVER_USER || 'root' }}
+      SERVER_PASSWORD_1: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY_1: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT_1: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
     steps:
-      - name: "检查服务器 2 配置参数"
-        id: check_config
+      - name: "检查操作确认"
         run: |
-          if [ -z "$SERVER_HOST_2" ]; then
-            echo "⚠️ [提示] 未检测到 SERVER_HOST_2 配置，跳过服务器 2 部署。"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ 目标服务器 2: $SERVER_HOST_2"
-            echo "🔌 连接端口: $SERVER_PORT_2"
-            echo "👤 登录用户: $SERVER_USER_2"
-            if [ -n "$SERVER_PASSWORD_2" ]; then
-              echo "🔑 密码配置: 已检测到密码"
-            else
-              echo "❌ 密码配置: 未配置"
-            fi
-            if [ -n "$SERVER_SSH_KEY_2" ]; then
-              echo "🔐 密钥配置: 已检测到私钥"
-            else
-              echo "ℹ️ 密钥配置: 未配置私钥 (走纯密码模式)"
-            fi
-            echo "skip=false" >> $GITHUB_OUTPUT
+          if [ "${{ github.event.inputs.confirm }}" != "yes" ] && [ "${{ github.event.inputs.confirm }}" != "YES" ]; then
+            echo "❌ 操作已取消：未确认发布生产环境"
+            exit 1
           fi
+          echo "✅ 操作已确认，开始执行生产环境部署流水线"
 
       - name: "检出代码仓库"
-        if: steps.check_config.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       - name: "初始化 pnpm 环境"
-        if: steps.check_config.outputs.skip != 'true'
         uses: pnpm/action-setup@v4
 
       - name: "配置 Node.js 22"
-        if: steps.check_config.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "pnpm"
 
       - name: "安装项目依赖"
-        if: steps.check_config.outputs.skip != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: "生成 Prisma 客户端"
-        if: steps.check_config.outputs.skip != 'true'
         run: pnpm prisma:generate
 
       - name: "TypeScript 类型安全检查"
-        if: steps.check_config.outputs.skip != 'true'
         run: pnpm typecheck
 
+      - name: "初始化测试数据库并运行自动化测试"
+        env:
+          DATABASE_URL: "file:./dev.db"
+          AUTH_SECRET: "test-secret-key-123456"
+        run: |
+          npx prisma db push
+          npx tsx prisma/seed.ts
+          pnpm test
+
       # =========================================================================
-      # 打包纯净源码 (仅 ~1.8MB) 并通过 SCP 传输至服务器 2，彻底杜绝大镜像包传输超时
+      # 打包纯净源码 (仅 ~1.8MB) 并通过 SCP 传输至服务器 1，彻底杜绝大镜像包传输超时
       # =========================================================================
       - name: "打包生产源码包"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request'
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
         run: |
           echo "📦 使用 git archive 打包纯净项目源码..."
           git archive --format=tar.gz -o app-source.tar.gz HEAD
           echo "✅ 源码打包完成，文件大小:"
           ls -lh app-source.tar.gz
 
-      - name: "传输源码包至服务器 2 (密码认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 == ''
+      - name: "传输源码包至服务器 1 (密码认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 == ''"
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ env.SERVER_USER_2 }}
-          password: ${{ env.SERVER_PASSWORD_2 }}
-          port: ${{ env.SERVER_PORT_2 }}
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          password: ${{ env.SERVER_PASSWORD_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
           timeout: "60s"
           command_timeout: "5m"
           source: "app-source.tar.gz"
           target: "/tmp"
           overwrite: true
 
-      - name: "传输源码包至服务器 2 (密钥认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 != ''
+      - name: "传输源码包至服务器 1 (密钥认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ env.SERVER_USER_2 }}
-          key: ${{ env.SERVER_SSH_KEY_2 }}
-          port: ${{ env.SERVER_PORT_2 }}
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          key: ${{ env.SERVER_SSH_KEY_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
           timeout: "60s"
           command_timeout: "5m"
           source: "app-source.tar.gz"
           target: "/tmp"
           overwrite: true
 
-      - name: "SSH 部署并平滑上线 (服务器 2 - 密码认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 == ''
+      - name: "SSH 部署并平滑上线 (服务器 1 生产环境 - 密码认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 == ''"
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ env.SERVER_USER_2 }}
-          password: ${{ env.SERVER_PASSWORD_2 }}
-          port: ${{ env.SERVER_PORT_2 }}
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          password: ${{ env.SERVER_PASSWORD_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
           timeout: "30s"
           command_timeout: "10m"
           script: |
@@ -132,7 +115,7 @@ jobs:
 
             # 1. 自动定位服务器部署目录
             TARGET_DIR=""
-            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+            for dir in "/opt/yangcheng-tracehub" "/root/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
               if [ -d "$dir" ]; then
                 TARGET_DIR="$dir"
                 break
@@ -145,9 +128,9 @@ jobs:
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
 
-            # 2. 准备纯净部署目录（保留 data 与 .env.production 等持久化文件，清理历史代码残留）
+            # 2. 准备纯净部署目录（保留 data/data-test 与 .env* 等持久化文件，清理历史代码残留）
             if [ -d "$TARGET_DIR" ]; then
-              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
+              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data*' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
             fi
             mkdir -p "$TARGET_DIR"
 
@@ -160,21 +143,21 @@ jobs:
             fi
             cd "$TARGET_DIR"
 
-            # 4. 确保持久化目录存在
-            mkdir -p data/db data/uploads
+            # 4. 确保生产持久化目录存在，并在上线前自动执行生产数据库一致性备份
+            mkdir -p data/db data/uploads nginx/ssl
             if [ -f data/db/app.db ]; then
               echo "🛡️ 部署前创建生产数据库一致性备份..."
               bash scripts/backup-production-db.sh --label pre-deploy
             fi
 
-            # 5. 更新 docker-compose.yml (本地构建)
+            # 5. 更新 docker-compose.yml (生产 + 测试双服务解耦)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
                 build:
                   context: .
                   dockerfile: Dockerfile
-                image: yangcheng-tracehub:latest
+                image: yangcheng-tracehub:prod
                 container_name: yangcheng-tracehub
                 restart: always
                 ports:
@@ -184,6 +167,23 @@ jobs:
                 volumes:
                   - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
+
+              app-test:
+                build:
+                  context: .
+                  dockerfile: Dockerfile
+                image: yangcheng-tracehub:test
+                container_name: yangcheng-tracehub-test
+                restart: always
+                ports:
+                  - "3001:3000"
+                env_file:
+                  - .env.test
+                environment:
+                  ALLOW_DATA_RESET: "test-only"
+                volumes:
+                  - ./data-test/db:/app/data
+                  - ./data-test/uploads:/app/public/uploads
 
               nginx:
                 image: nginx:alpine
@@ -197,16 +197,17 @@ jobs:
                   - ./nginx/ssl:/etc/nginx/ssl:ro
                 depends_on:
                   - app
+                  - app-test
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置
+            # 6. 如果不存在生产环境配置，写入默认配置
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
             PORT=3000
             DATABASE_URL="file:/app/data/app.db"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-            NEXT_PUBLIC_TENANT=maoshi
+            NEXT_PUBLIC_TENANT=default
             ENV_EOF
             fi
 
@@ -218,52 +219,53 @@ jobs:
               fi
             fi
 
-            # 8. 本地镜像构建并平滑上线
-            echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
+            # 8. 仅构建生产镜像并单独更新上线生产容器 (绝对不重启测试容器 app-test)
+            echo "🔨 正在本地构建生产环境 Docker 镜像 (yangcheng-tracehub:prod)..."
             $DOCKER_COMPOSE build app
 
-            echo "🔄 启动并平滑上线容器..."
-            $DOCKER_COMPOSE up -d app
+            echo "🔄 启动并平滑上线生产容器 (测试容器保持稳定运行不受影响)..."
+            $DOCKER_COMPOSE up -d --no-deps app
             if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
-              $DOCKER_COMPOSE up -d nginx || true
+              $DOCKER_COMPOSE up -d --no-deps nginx || true
             fi
 
-            # 9. 清理悬空未使用的旧镜像，保持磁盘干净
+            # 9. 清理悬空未使用的旧镜像
             docker image prune -f || true
 
-            # 10. 状态检查与真实健康探活
+            # 10. 状态检查与健康探活 (仅探活生产服务 3000)
             echo "🔍 检查容器运行状态..."
             $DOCKER_COMPOSE ps
-            echo "📄 查看应用容器最新日志 (前 30 行)..."
+            echo "📄 查看生产容器最新日志 (前 30 行)..."
             $DOCKER_COMPOSE logs --tail=30 app || true
 
-            echo "🩺 执行本地健康探活 (http://127.0.0.1:3000)..."
+            echo "🩺 执行生产服务健康探活 (http://127.0.0.1:3000)..."
             PROBE_SUCCESS=false
             for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:3000/api/health > /dev/null 2>&1 || curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
-                echo "✅ 第 $i 次尝试：应用探活成功，HTTP 正常响应！"
+              if curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
+                echo "✅ 第 $i 次尝试：生产应用探活成功，HTTP 正常响应！"
                 PROBE_SUCCESS=true
                 break
               fi
-              echo "⏳ 等待应用就绪... ($i/15)"
+              echo "⏳ 等待生产应用就绪... ($i/15)"
               sleep 2
             done
 
             if [ "$PROBE_SUCCESS" != "true" ]; then
-              echo "❌ 错误：应用未能正常启动并对外提供服务！容器崩溃日志："
+              echo "❌ 错误：生产服务未能正常启动并对外提供服务！"
+              echo "--- 生产崩溃日志 ---"
               $DOCKER_COMPOSE logs --tail=100 app
               exit 1
             fi
-            echo "✅ 服务器 2 部署成功且服务探活正常！"
+            echo "✅ 服务器 1 生产环境部署成功且服务探活正常！"
 
-      - name: "SSH 部署并平滑上线 (服务器 2 - 密钥认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 != ''
+      - name: "SSH 部署并平滑上线 (服务器 1 生产环境 - 密钥认证)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ env.SERVER_USER_2 }}
-          key: ${{ env.SERVER_SSH_KEY_2 }}
-          port: ${{ env.SERVER_PORT_2 }}
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          key: ${{ env.SERVER_SSH_KEY_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
           timeout: "30s"
           command_timeout: "10m"
           script: |
@@ -271,7 +273,7 @@ jobs:
 
             # 1. 自动定位服务器部署目录
             TARGET_DIR=""
-            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+            for dir in "/opt/yangcheng-tracehub" "/root/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
               if [ -d "$dir" ]; then
                 TARGET_DIR="$dir"
                 break
@@ -284,9 +286,9 @@ jobs:
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
 
-            # 2. 准备纯净部署目录（保留 data 与 .env.production 等持久化文件，清理历史代码残留）
+            # 2. 准备纯净部署目录（保留 data/data-test 与 .env* 等持久化文件，清理历史代码残留）
             if [ -d "$TARGET_DIR" ]; then
-              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
+              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data*' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
             fi
             mkdir -p "$TARGET_DIR"
 
@@ -299,21 +301,21 @@ jobs:
             fi
             cd "$TARGET_DIR"
 
-            # 4. 确保持久化目录存在
-            mkdir -p data/db data/uploads
+            # 4. 确保生产持久化目录存在，并在上线前自动执行生产数据库一致性备份
+            mkdir -p data/db data/uploads nginx/ssl
             if [ -f data/db/app.db ]; then
               echo "🛡️ 部署前创建生产数据库一致性备份..."
               bash scripts/backup-production-db.sh --label pre-deploy
             fi
 
-            # 5. 更新 docker-compose.yml (本地构建)
+            # 5. 更新 docker-compose.yml (生产 + 测试双服务解耦)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               app:
                 build:
                   context: .
                   dockerfile: Dockerfile
-                image: yangcheng-tracehub:latest
+                image: yangcheng-tracehub:prod
                 container_name: yangcheng-tracehub
                 restart: always
                 ports:
@@ -323,6 +325,23 @@ jobs:
                 volumes:
                   - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
+
+              app-test:
+                build:
+                  context: .
+                  dockerfile: Dockerfile
+                image: yangcheng-tracehub:test
+                container_name: yangcheng-tracehub-test
+                restart: always
+                ports:
+                  - "3001:3000"
+                env_file:
+                  - .env.test
+                environment:
+                  ALLOW_DATA_RESET: "test-only"
+                volumes:
+                  - ./data-test/db:/app/data
+                  - ./data-test/uploads:/app/public/uploads
 
               nginx:
                 image: nginx:alpine
@@ -336,16 +355,17 @@ jobs:
                   - ./nginx/ssl:/etc/nginx/ssl:ro
                 depends_on:
                   - app
+                  - app-test
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置
+            # 6. 如果不存在生产环境配置，写入默认配置
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
             PORT=3000
             DATABASE_URL="file:/app/data/app.db"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-            NEXT_PUBLIC_TENANT=maoshi
+            NEXT_PUBLIC_TENANT=default
             ENV_EOF
             fi
 
@@ -357,40 +377,41 @@ jobs:
               fi
             fi
 
-            # 8. 本地镜像构建并平滑上线
-            echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
+            # 8. 仅构建生产镜像并单独更新上线生产容器 (绝对不重启测试容器 app-test)
+            echo "🔨 正在本地构建生产环境 Docker 镜像 (yangcheng-tracehub:prod)..."
             $DOCKER_COMPOSE build app
 
-            echo "🔄 启动并平滑上线容器..."
-            $DOCKER_COMPOSE up -d app
+            echo "🔄 启动并平滑上线生产容器 (测试容器保持稳定运行不受影响)..."
+            $DOCKER_COMPOSE up -d --no-deps app
             if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
-              $DOCKER_COMPOSE up -d nginx || true
+              $DOCKER_COMPOSE up -d --no-deps nginx || true
             fi
 
-            # 9. 清理悬空未使用的旧镜像，保持磁盘干净
+            # 9. 清理悬空未使用的旧镜像
             docker image prune -f || true
 
-            # 10. 状态检查与真实健康探活
+            # 10. 状态检查与健康探活 (仅探活生产服务 3000)
             echo "🔍 检查容器运行状态..."
             $DOCKER_COMPOSE ps
-            echo "📄 查看应用容器最新日志 (前 30 行)..."
+            echo "📄 查看生产容器最新日志 (前 30 行)..."
             $DOCKER_COMPOSE logs --tail=30 app || true
 
-            echo "🩺 执行本地健康探活 (http://127.0.0.1:3000)..."
+            echo "🩺 执行生产服务健康探活 (http://127.0.0.1:3000)..."
             PROBE_SUCCESS=false
             for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:3000/api/health > /dev/null 2>&1 || curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
-                echo "✅ 第 $i 次尝试：应用探活成功，HTTP 正常响应！"
+              if curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
+                echo "✅ 第 $i 次尝试：生产应用探活成功，HTTP 正常响应！"
                 PROBE_SUCCESS=true
                 break
               fi
-              echo "⏳ 等待应用就绪... ($i/15)"
+              echo "⏳ 等待生产应用就绪... ($i/15)"
               sleep 2
             done
 
             if [ "$PROBE_SUCCESS" != "true" ]; then
-              echo "❌ 错误：应用未能正常启动并对外提供服务！容器崩溃日志："
+              echo "❌ 错误：生产服务未能正常启动并对外提供服务！"
+              echo "--- 生产崩溃日志 ---"
               $DOCKER_COMPOSE logs --tail=100 app
               exit 1
             fi
-            echo "✅ 服务器 2 部署成功且服务探活正常！"
+            echo "✅ 服务器 1 生产环境部署成功且服务探活正常！"

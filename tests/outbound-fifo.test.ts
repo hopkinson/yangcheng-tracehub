@@ -172,8 +172,8 @@ async function main() {
   try {
     await assert.rejects(
       () => registerOutboundLossAction({ gender: "MALE", weightTier: "6两", lossCount: 9 }),
-      /累计出库损耗率超 5%/,
-      "累计出库损耗率超过 5% 时必须填写原因"
+      /累计(出库|清库)损耗率超 5%/,
+      "累计损耗率超过 5% 时必须填写原因"
     );
 
     const lossResult = await registerOutboundLossAction({

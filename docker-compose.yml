@@ -1,6 +1,9 @@
 services:
   app:
-    image: ghcr.io/hopkinson/yangcheng-tracehub:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yangcheng-tracehub:prod
     container_name: yangcheng-tracehub
     restart: always
     ports:
@@ -12,7 +15,10 @@ services:
       - ./data/uploads:/app/public/uploads
 
   app-test:
-    image: ghcr.io/hopkinson/yangcheng-tracehub:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yangcheng-tracehub:test
     container_name: yangcheng-tracehub-test
     restart: always
     ports:
