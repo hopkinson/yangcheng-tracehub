@@ -207,7 +207,9 @@ jobs:
 
             # 7.5 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
             echo "🐘 检查并配置 RDS yangcheng-prod 库 public schema 访问权限..."
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu; ALTER SCHEMA public OWNER TO wufenshu; GRANT ALL ON ALL TABLES IN SCHEMA public TO wufenshu; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" 2>&1 || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu;" || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO wufenshu;" || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" || true
 
             # 8. 本地镜像构建并平滑上线
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
@@ -334,7 +336,9 @@ jobs:
 
             # 7.5 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
             echo "🐘 检查并配置 RDS yangcheng-prod 库 public schema 访问权限..."
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu; ALTER SCHEMA public OWNER TO wufenshu; GRANT ALL ON ALL TABLES IN SCHEMA public TO wufenshu; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" 2>&1 || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu;" || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO wufenshu;" || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" || true
 
             # 8. 本地镜像构建并平滑上线
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
