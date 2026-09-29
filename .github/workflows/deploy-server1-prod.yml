@@ -304,6 +304,25 @@ jobs:
             fi
             echo "✅ 服务器 1 生产环境部署成功且服务探活正常！"
 
+            # 11. 历史 SQLite 数据无损迁移至 PostgreSQL (自动检测并幂等执行)
+            if [ -f "data/db/app.db" ]; then
+              if [ ! -f "data/.sqlite-migrated-to-postgres" ]; then
+                echo "📦 检测到历史生产 SQLite 数据文件 (data/db/app.db)，准备执行无损迁移至 PostgreSQL (yangcheng)..."
+                if command -v python3 >/dev/null 2>&1; then
+                  python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --container yangcheng-db --db-user yangcheng --db-name yangcheng
+                else
+                  echo "⚠️ 宿主机无 python3，启动临时 Python 容器生成迁移脚本..."
+                  docker run --rm -v "$(pwd):/work" -w /work python:3.11-alpine python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --output migration.sql
+                  docker exec -i yangcheng-db psql -U yangcheng -d yangcheng < migration.sql
+                  rm -f migration.sql
+                fi
+                touch data/.sqlite-migrated-to-postgres
+                echo "🎉 生产环境 SQLite 历史数据已成功无损恢复至 PostgreSQL！"
+              else
+                echo "ℹ️ 历史 SQLite 数据此前已完成迁移 (data/.sqlite-migrated-to-postgres 已存在)，跳过迁移以保护线上最新数据。"
+              fi
+            fi
+
       - name: "SSH 部署并平滑上线 (服务器 1 生产环境 - 密钥认证)"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
         uses: appleboy/ssh-action@v1.0.3
@@ -489,3 +508,22 @@ jobs:
               exit 1
             fi
             echo "✅ 服务器 1 生产环境部署成功且服务探活正常！"
+
+            # 11. 历史 SQLite 数据无损迁移至 PostgreSQL (自动检测并幂等执行)
+            if [ -f "data/db/app.db" ]; then
+              if [ ! -f "data/.sqlite-migrated-to-postgres" ]; then
+                echo "📦 检测到历史生产 SQLite 数据文件 (data/db/app.db)，准备执行无损迁移至 PostgreSQL (yangcheng)..."
+                if command -v python3 >/dev/null 2>&1; then
+                  python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --container yangcheng-db --db-user yangcheng --db-name yangcheng
+                else
+                  echo "⚠️ 宿主机无 python3，启动临时 Python 容器生成迁移脚本..."
+                  docker run --rm -v "$(pwd):/work" -w /work python:3.11-alpine python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --output migration.sql
+                  docker exec -i yangcheng-db psql -U yangcheng -d yangcheng < migration.sql
+                  rm -f migration.sql
+                fi
+                touch data/.sqlite-migrated-to-postgres
+                echo "🎉 生产环境 SQLite 历史数据已成功无损恢复至 PostgreSQL！"
+              else
+                echo "ℹ️ 历史 SQLite 数据此前已完成迁移 (data/.sqlite-migrated-to-postgres 已存在)，跳过迁移以保护线上最新数据。"
+              fi
+            fi
