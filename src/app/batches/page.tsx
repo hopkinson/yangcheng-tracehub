@@ -71,12 +71,12 @@ function InspectionTag({
 
   if (isQualified) {
     const text = `${label}合格`;
-    if (url) {
+    if (url || reportName) {
       return (
         <BatchReportViewDialog
           batchCode={batchCode}
           reportName={reportName || text}
-          reportUrl={url}
+          reportUrl={url || ""}
           title={`${label}报告 (${batchCode})`}
           trigger={
             <button

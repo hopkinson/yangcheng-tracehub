@@ -438,7 +438,15 @@ export function QCRecordDialog({
                         <span className="max-w-[80%] truncate">{fileName || "PDF 原件"}</span>
                       </a>
                     ) : (
-                      <img src={getPreviewFileUrl(fileUrl, fileName)} alt="原件预览" className="max-h-36 object-contain rounded" />
+                      <a
+                        href={getPreviewFileUrl(fileUrl, fileName)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="cursor-zoom-in"
+                        title="点击在新标签页查看原图"
+                      >
+                        <img src={getPreviewFileUrl(fileUrl, fileName)} alt="原件预览" className="max-h-36 object-contain rounded hover:opacity-90 transition-opacity" />
+                      </a>
                     )}
                     <Button
                       type="button"

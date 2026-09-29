@@ -13,8 +13,8 @@ import { uploadFileAction } from "@/actions/upload";
 import { batchIntakeFormSchema, type BatchIntakeFormValues } from "@/lib/validations/schemas";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Waves, Upload, FileText, X, Loader2 } from "lucide-react";
-import { cn, getFileDropHandlers } from "@/lib/utils";
+import { Plus, Waves, Upload, FileText, X, Loader2, ExternalLink } from "lucide-react";
+import { cn, getFileDropHandlers, getPreviewFileUrl } from "@/lib/utils";
 
 export const WEIGHT_TIERS = [
   "2.0两",
@@ -400,7 +400,20 @@ export function BatchIntakeDialog({
                 <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-xs">
                   <div className="flex items-center gap-2 truncate">
                     <FileText className="size-4 text-primary shrink-0" />
-                    <span className="truncate font-medium">{reportName}</span>
+                    {form.watch("reportUrl") ? (
+                      <a
+                        href={getPreviewFileUrl(form.watch("reportUrl"), reportName)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate font-medium text-primary hover:underline inline-flex items-center gap-1 group cursor-pointer"
+                        title="点击在新标签页预览检测报告"
+                      >
+                        <span className="truncate">{reportName}</span>
+                        <ExternalLink className="size-3 shrink-0 opacity-70 group-hover:opacity-100" />
+                      </a>
+                    ) : (
+                      <span className="truncate font-medium">{reportName}</span>
+                    )}
                   </div>
                   <Button
                     type="button"

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   FileCheck,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,7 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { TraceQueryResult, TraceLineDetail, TraceChainNode, TraceQCBadge } from "@/lib/trace-service";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, getPreviewFileUrl } from "@/lib/utils";
 
 interface TraceTopologyFlowProps {
   data: TraceQueryResult;
@@ -52,6 +53,7 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
   const [selectedQC, setSelectedQC] = React.useState<TraceQCBadge | null>(null);
 
   const activeLine: TraceLineDetail | undefined = lines[activeLineIndex] || lines[0];
+  const qcPreviewUrl = selectedQC ? getPreviewFileUrl(selectedQC.fileUrl, selectedQC.fileName || undefined) : "";
 
   if (!activeLine) return null;
 
@@ -260,12 +262,27 @@ export function TraceTopologyFlow({ data }: TraceTopologyFlowProps) {
                 </div>
               )}
 
-              {selectedQC.fileName && (
+              {(selectedQC.fileName || selectedQC.fileUrl) && (
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground bg-muted/30 px-2.5 py-1.5 rounded-md border">
                   <span>原始表单凭证附件:</span>
-                  <span className="font-mono text-foreground font-medium flex items-center gap-1">
-                    {selectedQC.fileName}
-                  </span>
+                  {qcPreviewUrl ? (
+                    <a
+                      href={qcPreviewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-primary font-medium inline-flex items-center gap-1.5 hover:underline group cursor-pointer"
+                      title="在新标签页直接打开附件查看"
+                    >
+                      <span className="underline decoration-primary/40 underline-offset-2 group-hover:decoration-primary">
+                        {selectedQC.fileName || "查看凭证原件"}
+                      </span>
+                      <ExternalLink className="size-3 opacity-70 group-hover:opacity-100 shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="font-mono text-foreground font-medium">
+                      {selectedQC.fileName || "查看凭证原件"}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

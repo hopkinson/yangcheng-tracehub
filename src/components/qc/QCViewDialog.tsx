@@ -37,7 +37,9 @@ export function QCViewDialog({
   const [open, setOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  const safePreviewUrl = record.fileUrl ? getPreviewFileUrl(record.fileUrl, record.fileName || undefined) : "";
+  const safePreviewUrl = (record.fileUrl || record.fileName)
+    ? getPreviewFileUrl(record.fileUrl, record.fileName || undefined)
+    : "";
   const isPdf = /\.pdf$/i.test(record.fileName || "") || /\.pdf$/i.test(record.fileUrl || "") || record.fileUrl?.startsWith("data:application/pdf");
 
   const checkDateStr = formatDateTime(record.checkTime);

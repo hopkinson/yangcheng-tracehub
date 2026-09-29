@@ -413,9 +413,9 @@ export default async function LedgersPage({
       farmer.contractUrl || farmer.contractName || "—",
     ];
     const displayRow = toDisplayRow(exportRow);
-    if (farmer.contractUrl) {
+    if (farmer.contractUrl || farmer.contractName) {
       displayRow[displayRow.length - 1] = (
-        <a href={getPreviewFileUrl(farmer.contractUrl, farmer.contractName || undefined)} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+        <a href={getPreviewFileUrl(farmer.contractUrl, farmer.contractName || undefined)} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">
           {farmer.contractName || "查看附件"}
         </a>
       );
@@ -732,9 +732,9 @@ export default async function LedgersPage({
       record.uploader || "—",
     ];
     const displayRow = toDisplayRow(exportRow);
-    if (record.fileUrl) {
+    if (record.fileUrl || record.fileName) {
       displayRow[8] = (
-        <a href={getPreviewFileUrl(record.fileUrl, record.fileName || undefined)} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+        <a href={getPreviewFileUrl(record.fileUrl, record.fileName || undefined)} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">
           {record.fileName || "查看附件"}
         </a>
       );

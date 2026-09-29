@@ -534,10 +534,10 @@ export function FarmerDetailDialog({
             </div>
             <div className="col-span-2 flex items-center justify-between border-t border-border/40 pt-2 text-xs">
               <span className="text-muted-foreground">养殖合同附件</span>
-              {farmer.contractUrl ? (
+              {farmer.contractUrl || farmer.contractName ? (
                 <BatchReportViewDialog
                   reportName={farmer.contractName || `${farmer.name}_养殖签约合同`}
-                  reportUrl={farmer.contractUrl}
+                  reportUrl={farmer.contractUrl || ""}
                   title={`养殖合同原件预览 · ${farmer.name} (${farmer.code})`}
                   trigger={
                     <button

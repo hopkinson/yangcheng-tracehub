@@ -66,7 +66,7 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
   const isPdf = /\.pdf/i.test(batch.slipUrl || batch.slipName || "");
   const defaultDownloadName =
     batch.slipName || `${batch.code}-入库码单${isPdf ? ".pdf" : ".jpg"}`;
-  const safePreviewUrl = batch.slipUrl
+  const safePreviewUrl = (batch.slipUrl || batch.slipName)
     ? getPreviewFileUrl(batch.slipUrl, defaultDownloadName)
     : "";
 
@@ -147,11 +147,11 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
                     <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px]">
                       <CheckCircle2 className="size-3 mr-0.5" /> 合格 (未检出)
                     </Badge>
-                    {(batch.quickCheckUrl || batch.reportUrl) && (
+                    {(batch.quickCheckUrl || batch.reportUrl || batch.reportName) && (
                       <BatchReportViewDialog
                         batchCode={batch.code}
                         reportName={batch.quickCheckName || batch.reportName || `${batch.code}_药残及重金属快检报告`}
-                        reportUrl={batch.quickCheckUrl || batch.reportUrl!}
+                        reportUrl={batch.quickCheckUrl || batch.reportUrl || ""}
                         title={`药残及重金属快检报告 (${batch.code})`}
                         trigger={
                           <Button variant="link" size="sm" className="h-5 px-1 text-[11px] text-primary gap-0.5">
@@ -179,11 +179,11 @@ export function BatchDetailDialog({ batch, trigger }: BatchDetailProps) {
                     <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px]">
                       <CheckCircle2 className="size-3 mr-0.5" /> 合格 (甘甜紧实)
                     </Badge>
-                    {batch.sampleCheckUrl && (
+                    {(batch.sampleCheckUrl || batch.sampleCheckName) && (
                       <BatchReportViewDialog
                         batchCode={batch.code}
                         reportName={batch.sampleCheckName || `${batch.code}_品质试吃记录`}
-                        reportUrl={batch.sampleCheckUrl}
+                        reportUrl={batch.sampleCheckUrl || ""}
                         title={`品质抽检试吃记录 (${batch.code})`}
                         trigger={
                           <Button variant="link" size="sm" className="h-5 px-1 text-[11px] text-primary gap-0.5">

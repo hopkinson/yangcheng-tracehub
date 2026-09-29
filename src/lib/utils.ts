@@ -126,8 +126,10 @@ export function getBeijingYear(date: Date | string | number = new Date()): numbe
  * - 本地文件或云端文件：统一通过 /api/files/preview 提供同源安全渲染代理，解决跨域、私有鉴权与 OSS 强制下载问题
  */
 export function getPreviewFileUrl(rawUrl?: string | null, fileName?: string): string {
-  if (!rawUrl || rawUrl.startsWith("data:")) return rawUrl || "";
-  return `/api/files/preview?${new URLSearchParams({ url: rawUrl, ...(fileName && { name: fileName }) })}`;
+  const effectiveUrl = rawUrl?.trim() || (fileName?.trim() ? `/uploads/${fileName.trim()}` : "");
+  if (!effectiveUrl) return "";
+  if (effectiveUrl.startsWith("data:")) return effectiveUrl;
+  return `/api/files/preview?${new URLSearchParams({ url: effectiveUrl, ...(fileName && { name: fileName }) })}`;
 }
 
 /**

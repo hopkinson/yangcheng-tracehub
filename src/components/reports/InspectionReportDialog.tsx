@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Edit2, FileText, Loader2, Plus, RefreshCw, Trash2, Undo2, Upload, X } from "lucide-react";
+import { Edit2, FileText, Loader2, Plus, RefreshCw, Trash2, Undo2, Upload, X, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +26,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { cn, getFileDropHandlers } from "@/lib/utils";
+import { cn, getFileDropHandlers, getPreviewFileUrl } from "@/lib/utils";
 import {
   createInspectionReportAction,
   deleteInspectionReportAction,
@@ -41,6 +41,7 @@ export interface InspectionReportData {
   id: string;
   name: string;
   fileName: string;
+  fileUrl?: string | null;
   licenseName?: string | null;
   licenseUrl?: string | null;
   inspectedAt: string;
@@ -171,9 +172,17 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                 )}
               >
                 {isEditing ? (
-                  <div className="flex items-center gap-2 text-sm">
-                    <FileText className="size-4 shrink-0 text-primary" />
-                    <span className="truncate font-medium">{report.fileName}</span>
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="size-4 shrink-0 text-primary" />
+                      <span className="truncate font-medium">{report.fileName}</span>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-primary gap-1 px-2 shrink-0" asChild>
+                      <a href={getPreviewFileUrl(report.fileUrl, report.fileName)} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="size-3" />
+                        新标签页查看
+                      </a>
+                    </Button>
                   </div>
                 ) : file ? (
                   <div className="flex items-center justify-between gap-2">
@@ -270,6 +279,12 @@ export function InspectionReportDialog({ report }: { report?: InspectionReportDa
                       <span className="truncate font-medium text-foreground">{report.licenseName}</span>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs text-primary gap-1 px-2" asChild>
+                        <a href={getPreviewFileUrl(report.licenseUrl, report.licenseName)} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="size-3" />
+                          查看
+                        </a>
+                      </Button>
                       <label className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground">
                         <RefreshCw className="size-3" />
                         更换

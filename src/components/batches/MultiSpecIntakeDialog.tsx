@@ -15,11 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Layers, Plus, Trash2, Loader2, Camera, Upload, X } from "lucide-react";
+import { Layers, Plus, Trash2, Loader2, Camera, Upload, X, ExternalLink } from "lucide-react";
 import { createMultiSpecBatchAction } from "@/actions/batches";
 import { uploadFileAction } from "@/actions/upload";
 import { Invariants } from "@/lib/invariants";
-import { cn, getFileDropHandlers } from "@/lib/utils";
+import { cn, getFileDropHandlers, getPreviewFileUrl } from "@/lib/utils";
 
 const WEIGHT_TIERS: readonly string[] = ["2.5两", "3.0两", "3.5两", "4.0两", "4.5两", "5.0两", "5.5两", "6.0两"];
 
@@ -282,10 +282,17 @@ export function MultiSpecIntakeDialog({
             <div className="space-y-1 flex flex-col justify-end">
               {slipUrl ? (
                 <div className="flex items-center justify-between h-8 px-2 border rounded bg-background text-xs">
-                  <div className="flex items-center gap-1 text-[11px] text-primary truncate">
+                  <a
+                    href={getPreviewFileUrl(slipUrl, slipName || undefined)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[11px] text-primary truncate hover:underline group cursor-pointer"
+                    title="点击在新标签页预览码单"
+                  >
                     <Camera className="size-3.5 shrink-0" />
-                    <span>码单照片已上传</span>
-                  </div>
+                    <span className="truncate">{slipName || "码单原件已上传"}</span>
+                    <ExternalLink className="size-3 shrink-0 opacity-70 group-hover:opacity-100" />
+                  </a>
                   <Button
                     type="button"
                     variant="ghost"

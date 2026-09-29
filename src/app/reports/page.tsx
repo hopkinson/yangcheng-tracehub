@@ -122,6 +122,7 @@ export default async function ReportsPage({
                                 id: report.id,
                                 name: report.name,
                                 fileName: report.fileName,
+                                fileUrl: report.fileUrl,
                                 licenseName: report.licenseName,
                                 licenseUrl: report.licenseUrl,
                                 inspectedAt,

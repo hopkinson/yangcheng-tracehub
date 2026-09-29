@@ -15,6 +15,7 @@ export interface TraceQCBadge {
   checkTime: Date;
   uploader: string;
   fileName?: string | null;
+  fileUrl?: string | null;
 }
 
 export interface TraceChainNode {
@@ -726,5 +727,6 @@ function mapQc(q: any): TraceQCBadge {
     checkTime: q.checkTime,
     uploader: q.uploader,
     fileName: q.fileName,
+    fileUrl: q.fileUrl,
   };
 }
