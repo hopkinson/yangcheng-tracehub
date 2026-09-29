@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateEnclosureCodes } from "@/lib/enclosures";
 
 export const phoneSchema = z
   .string()
@@ -12,24 +13,46 @@ export const positiveInt = (fieldName = "数量") =>
     .min(1, `${fieldName}必须大于 0`);
 
 /**
- * 养殖户档案校验
+ * 养殖户档案录入全校验与查重规则
  */
-export const farmerFormSchema = z.object({
-  name: z.string().trim().min(2, "养殖户姓名至少 2 个字符").max(20, "姓名不能超过 20 个字符"),
-  phone: z.string().trim().optional(),
-  farmType: z.string().default("LAKE_CRAB"),
-  creditRating: z.enum(["A", "B", "C"], {
-    errorMap: () => ({ message: "请选择信用等级" }),
-  }),
-  area: z.coerce
-    .number({ invalid_type_error: "请输入有效的养殖面积数值" })
-    .min(0.1, "养殖面积必须大于等于 0.1 亩")
-    .max(10000, "养殖面积数值过大，请核实"),
-  enclosuresStr: z.string().trim().min(1, "请至少填写一个围网编号"),
-  status: z.enum(["ACTIVE", "SUSPENDED"]).default("ACTIVE"),
-  contractName: z.string().trim().optional(),
-  contractUrl: z.string().trim().optional(),
-});
+export const farmerFormSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(2, "养殖户姓名至少 2 个字符")
+      .max(20, "养殖户姓名不能超过 20 个字符")
+      .regex(/^[\u4e00-\u9fa5a-zA-Z0-9·•\s-]+$/, "养殖户姓名不能包含特殊符号"),
+    phone: z
+      .string()
+      .trim()
+      .optional()
+      .refine((val) => !val || /^1[3-9]\d{9}$/.test(val), {
+        message: "请输入合法的 11 位手机号码",
+      }),
+    farmType: z.string().default("LAKE_CRAB"),
+    creditRating: z.enum(["A", "B", "C"], {
+      errorMap: () => ({ message: "请选择信用等级" }),
+    }),
+    area: z.coerce
+      .number({ invalid_type_error: "请输入有效的养殖面积数值" })
+      .min(0.1, "养殖面积必须大于等于 0.1 亩")
+      .max(10000, "养殖面积数值过大，请核实"),
+    enclosuresStr: z.string().trim().min(1, "请至少填写一个围网编号"),
+    status: z.enum(["ACTIVE", "SUSPENDED"]).default("ACTIVE"),
+    contractName: z.string().trim().optional(),
+    contractUrl: z.string().trim().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const check = validateEnclosureCodes(data.enclosuresStr.split(/[,，\s]+/));
+    if (!check.valid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["enclosuresStr"],
+        message: check.error || "围网编号格式不正确",
+      });
+    }
+  });
 export type FarmerFormValues = z.infer<typeof farmerFormSchema>;
 
 /**
@@ -77,9 +100,18 @@ export type ChannelFormValues = z.infer<typeof channelFormSchema>;
  * 门店档案校验
  */
 export const storeFormSchema = z.object({
-  code: z.string().trim().min(1, "请输入门店编号").max(30, "门店编号最多 30 个字符"),
-  name: z.string().trim().min(2, "门店全称至少 2 个字符").max(60, "门店名称最多 60 个字符"),
-  channelId: z.string().min(1, "请选择所属渠道"),
+  code: z
+    .string()
+    .trim()
+    .min(1, "请输入门店编号")
+    .max(30, "门店编号最多 30 个字符")
+    .regex(/^[A-Za-z0-9_-]+$/, "门店编号仅支持英文字母、数字、下划线及连字符"),
+  name: z
+    .string()
+    .trim()
+    .min(2, "门店全称至少 2 个字符")
+    .max(60, "门店全称最多 60 个字符"),
+  channelId: z.string().trim().min(1, "请选择所属渠道"),
   isActive: z.boolean().default(true),
 });
 export type StoreFormValues = z.infer<typeof storeFormSchema>;

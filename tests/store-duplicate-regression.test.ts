@@ -64,7 +64,7 @@ async function testStoreDuplicateRegression() {
   assert.equal(updateDuplicateRes.error, `门店编号「${testCode1}」已存在，请更换`);
   console.log("✔ updateStoreAction 重复编号正确返回业务错误:", updateDuplicateRes.error);
 
-  // 3. 测试空编号
+  // 3. 测试空编号与格式校验
   const emptyCodeRes = await createStoreAction({
     code: "   ",
     name: "空编号门店",
@@ -74,12 +74,56 @@ async function testStoreDuplicateRegression() {
   assert.equal(emptyCodeRes.error, "请输入门店编号");
   console.log("✔ 空编号正确拦截返回:", emptyCodeRes.error);
 
+  // 4. 测试创建同名门店全称：应返回 { error: "..." }
+  const createDuplicateNameRes = await createStoreAction({
+    code: "ST-UNIQUE-NEW-" + Date.now(),
+    name: "回归测试门店1",
+    channelId: channel.id,
+    userId: admin.id,
+  });
+  assert.ok(createDuplicateNameRes.error, "创建重复门店全称时必须返回 error 字段");
+  assert.equal(createDuplicateNameRes.error, "门店全称「回归测试门店1」已存在，请更换");
+  console.log("✔ createStoreAction 重复门店全称正确返回业务错误:", createDuplicateNameRes.error);
+
+  // 5. 测试更新为已存在的另一家门店全称：应返回 { error: "..." }
+  const updateDuplicateNameRes = await updateStoreAction({
+    id: store2.id,
+    code: testCode2,
+    name: "回归测试门店1",
+    channelId: channel.id,
+    isActive: true,
+    userId: admin.id,
+  });
+  assert.ok(updateDuplicateNameRes.error, "更新为重复门店全称时必须返回 error 字段");
+  assert.equal(updateDuplicateNameRes.error, "门店全称「回归测试门店1」已存在，请更换");
+  console.log("✔ updateStoreAction 重复门店全称正确返回业务错误:", updateDuplicateNameRes.error);
+
+  // 6. 测试门店全称全校验（空或少于2字符）
+  const invalidNameRes = await createStoreAction({
+    code: "ST-VALID-CODE-" + Date.now(),
+    name: " ",
+    channelId: channel.id,
+    userId: admin.id,
+  });
+  assert.ok(invalidNameRes.error, "门店全称不合法必须返回 error 字段");
+  console.log("✔ 门店全称为空或不合规正确拦截返回:", invalidNameRes.error);
+
+  // 7. 测试不存在的渠道
+  const invalidChannelRes = await createStoreAction({
+    code: "ST-VALID-CODE-CH-" + Date.now(),
+    name: "合法全称测试店",
+    channelId: "non-existent-channel-id",
+    userId: admin.id,
+  });
+  assert.ok(invalidChannelRes.error, "渠道不存在必须返回 error 字段");
+  console.log("✔ 不存在渠道正确拦截返回:", invalidChannelRes.error);
+
   // 清理数据
   await prisma.store.deleteMany({
     where: { id: { in: [store1.id, store2.id] } },
   });
 
-  console.log("🎉 门店编号查重回归测试全部通过！不会触发 Next.js 生产环境异常脱敏。");
+  console.log("🎉 门店录入全校验与查重（编号+全称不得重复）回归测试全部通过！");
 }
 
 testStoreDuplicateRegression()

@@ -56,12 +56,16 @@ export function StoreDialog({
   async function onSubmit(data: StoreFormValues) {
     setLoading(true);
     try {
+      const code = data.code.toUpperCase();
+      const payload = { code, name: data.name, channelId: data.channelId };
       const res = isEditing && store
-        ? await updateStoreAction({ id: store.id, code: data.code, name: data.name.trim(), channelId: data.channelId, isActive: data.isActive, userId })
-        : await createStoreAction({ code: data.code, name: data.name.trim(), channelId: data.channelId, userId });
+        ? await updateStoreAction({ id: store.id, ...payload, isActive: data.isActive, userId })
+        : await createStoreAction({ ...payload, userId });
 
       if (res?.error) {
         toast.error(res.error);
+        const f = res.error.includes("编号") ? "code" : res.error.includes("全称") ? "name" : res.error.includes("渠道") ? "channelId" : null;
+        if (f) form.setError(f, { message: res.error });
         return;
       }
       toast.success(isEditing ? "门店档案已更新！" : "新增门店档案成功！");
@@ -123,9 +127,11 @@ export function StoreDialog({
               name="code"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>门店编号</FormLabel>
+                  <FormLabel>
+                    门店编号 <span className="text-destructive">*</span>
+                  </FormLabel>
                   <FormControl>
-                    <Input className="font-mono" placeholder="如：SAMS-02" required maxLength={30} {...field} />
+                    <Input className="font-mono uppercase" placeholder="如：SAMS-02" required maxLength={30} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -137,9 +143,11 @@ export function StoreDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>门店全称</FormLabel>
+                  <FormLabel>
+                    门店全称 <span className="text-destructive">*</span>
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="如：合作门店(苏州邻瑞广场店)" {...field} />
+                    <Input placeholder="如：合作门店(苏州邻瑞广场店)" required maxLength={60} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -151,7 +159,9 @@ export function StoreDialog({
               name="channelId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>所属渠道</FormLabel>
+                  <FormLabel>
+                    所属渠道 <span className="text-destructive">*</span>
+                  </FormLabel>
                   <Select onValueChange={field.onChange} value={field.value} disabled={channels.length === 0}>
                     <FormControl>
                       <SelectTrigger>

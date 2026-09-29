@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { checkEnclosureCodesAction, createFarmerAction, updateFarmerAction } from "@/actions/farmers";
+import { checkEnclosureCodesAction, checkFarmerNameAction, createFarmerAction, updateFarmerAction } from "@/actions/farmers";
 import { uploadFileAction } from "@/actions/upload";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
 import { farmerFormSchema, type FarmerFormValues } from "@/lib/validations/schemas";
@@ -119,6 +119,30 @@ export function FarmerDialog({
     }
   }
 
+  async function handleNameBlur(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length < 2) return;
+
+    try {
+      const res = await checkFarmerNameAction({
+        name: trimmed,
+        excludeFarmerId: farmer?.id,
+      });
+
+      if (form.getValues("name") !== value) return;
+
+      if (res.exists && res.conflictingFarmer) {
+        form.setError("name", {
+          message: `养殖户姓名「${trimmed}」已在当年档案中存在（档案编号: ${res.conflictingFarmer.code}），不得重复录入`,
+        });
+      } else {
+        form.clearErrors("name");
+      }
+    } catch {
+      // 容错处理
+    }
+  }
+
   async function handleEnclosureBlur(value: string) {
     const enclosureCodes = normalizeEnclosureCodes(value.split(/[,，\s]+/));
     const normalizedValue = enclosureCodes.join(", ");
@@ -131,7 +155,7 @@ export function FarmerDialog({
 
     const duplicateCodes = findDuplicateEnclosureCodes(enclosureCodes);
     if (duplicateCodes.length > 0) {
-      form.setError("enclosuresStr", { message: `围网编号重复：${duplicateCodes.join("、")}` });
+      form.setError("enclosuresStr", { message: `围网编号自身重复：${duplicateCodes.join("、")}，不得重复输入` });
       return;
     }
 
@@ -144,8 +168,11 @@ export function FarmerDialog({
       if (form.getValues("enclosuresStr") !== normalizedValue) return;
 
       if (result.conflicts.length > 0) {
+        const details = result.conflicts
+          .map((c) => `「${c.code}」（占用养殖户: ${c.farmerName} ${c.farmerCode}）`)
+          .join("、");
         form.setError("enclosuresStr", {
-          message: `围网编号已被其他养殖户使用：${result.conflicts.join("、")}`,
+          message: `围网编号已被其他养殖户占用，不得重复：${details}`,
         });
       } else {
         form.clearErrors("enclosuresStr");
@@ -159,7 +186,7 @@ export function FarmerDialog({
     setLoading(true);
     try {
       const payload = {
-        name: data.name,
+        name: data.name.trim(),
         area: Number(data.area),
         creditRating: data.creditRating,
         enclosureCodes: normalizeEnclosureCodes(data.enclosuresStr.split(/[,，\s]+/)),
@@ -173,7 +200,9 @@ export function FarmerDialog({
         : await createFarmerAction(payload);
 
       if (!res.success) {
-        if (res.error.includes("围网编号")) {
+        if (res.error.includes("养殖户姓名")) {
+          form.setError("name", { message: res.error });
+        } else if (res.error.includes("围网编号")) {
           form.setError("enclosuresStr", { message: res.error });
         } else {
           toast.error(res.error);
@@ -227,7 +256,18 @@ export function FarmerDialog({
                   <FormItem>
                     <FormLabel>养殖户姓名</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：张建国" {...field} />
+                      <Input
+                        placeholder="如：张建国"
+                        {...field}
+                        onChange={(event) => {
+                          field.onChange(event);
+                          form.clearErrors("name");
+                        }}
+                        onBlur={(event) => {
+                          field.onBlur();
+                          void handleNameBlur(event.currentTarget.value);
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
