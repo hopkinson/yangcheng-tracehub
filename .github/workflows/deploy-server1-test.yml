@@ -12,6 +12,20 @@ jobs:
     name: "构建并自动发布到服务器 1 (测试环境)"
     runs-on: ubuntu-latest
     environment: production
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     permissions:
       contents: read
       packages: write
@@ -45,7 +59,7 @@ jobs:
 
       - name: "初始化测试数据库并运行自动化测试"
         env:
-          DATABASE_URL: "file:./dev.db"
+          DATABASE_URL: "postgresql://postgres:password@localhost:5432/test?schema=public"
           AUTH_SECRET: "test-secret-key-123456"
         run: |
           npx prisma db push
@@ -135,15 +149,31 @@ jobs:
             cd "$TARGET_DIR"
 
             # 4. 确保测试与持久化目录存在 (注意：测试环境部署不触碰生产数据库，不执行生产备份)
-            mkdir -p data-test/db data-test/uploads nginx/ssl
+            mkdir -p data/postgres data-test/uploads nginx/ssl
             if [ ! -f nginx/ssl/test_fullchain.pem ] && [ -f nginx/ssl/fullchain.pem ]; then
               cp nginx/ssl/fullchain.pem nginx/ssl/test_fullchain.pem 2>/dev/null || true
               cp nginx/ssl/privkey.pem nginx/ssl/test_privkey.pem 2>/dev/null || true
             fi
 
-            # 5. 更新 docker-compose.yml (生产 + 测试双服务解耦)
+            # 5. 更新 docker-compose.yml (内置本地 PostgreSQL + 生产测试双应用解耦)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
+              db:
+                image: postgres:16-alpine
+                container_name: yangcheng-db
+                restart: always
+                environment:
+                  POSTGRES_USER: yangcheng
+                  POSTGRES_PASSWORD: yangcheng_local_pwd
+                  POSTGRES_DB: yangcheng
+                volumes:
+                  - ./data/postgres:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U yangcheng -d yangcheng"]
+                  interval: 5s
+                  timeout: 5s
+                  retries: 5
+
               app:
                 build:
                   context: .
@@ -156,8 +186,10 @@ jobs:
                 env_file:
                   - .env.production
                 volumes:
-                  - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
+                depends_on:
+                  db:
+                    condition: service_healthy
 
               app-test:
                 build:
@@ -173,8 +205,10 @@ jobs:
                 environment:
                   ALLOW_DATA_RESET: "test-only"
                 volumes:
-                  - ./data-test/db:/app/data
                   - ./data-test/uploads:/app/public/uploads
+                depends_on:
+                  db:
+                    condition: service_healthy
 
               nginx:
                 image: nginx:alpine
@@ -191,16 +225,19 @@ jobs:
                   - app-test
             COMPOSE_EOF
 
-            # 6. 如果不存在测试环境配置，写入默认配置
+            # 6. 配置测试环境数据库连接 (本地轻量级 PostgreSQL 测试库)
             if [ ! -f .env.test ]; then
               cat << 'TEST_ENV_EOF' > .env.test
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="file:/app/data/app.db"
+            DATABASE_URL="postgresql://yangcheng:yangcheng_local_pwd@db:5432/yangcheng_test?schema=public"
             AUTH_SECRET="yangcheng-tracehub-secret-key-test-2026-auth-session"
             NEXT_PUBLIC_TENANT=default
             NEXT_PUBLIC_ENV_TAG=test
             TEST_ENV_EOF
+            elif grep -q "file:" .env.test; then
+              echo "🔄 升级 .env.test 中的 SQLite 连接串为本地 PostgreSQL 连接串..."
+              sed -i 's|DATABASE_URL=.*|DATABASE_URL="postgresql://yangcheng:yangcheng_local_pwd@db:5432/yangcheng_test?schema=public"|g' .env.test
             fi
 
             # 7. 检测 Docker Compose 命令行工具
@@ -211,7 +248,12 @@ jobs:
               fi
             fi
 
-            # 8. 仅构建测试镜像并单独更新上线测试容器 (绝对不重启生产容器 app)
+            # 8. 启动本地数据库并单独更新上线测试容器 (绝对不重启生产容器 app)
+            echo "🐘 启动本地数据库容器 (yangcheng-db)..."
+            $DOCKER_COMPOSE up -d db
+            sleep 2
+            docker exec yangcheng-db psql -U yangcheng -d yangcheng -tc "SELECT 1 FROM pg_database WHERE datname = 'yangcheng_test'" | grep -q 1 || docker exec yangcheng-db psql -U yangcheng -d yangcheng -c "CREATE DATABASE yangcheng_test;" || true
+
             echo "🔨 正在本地构建测试环境 Docker 镜像 (yangcheng-tracehub:test)..."
             $DOCKER_COMPOSE build app-test
 
@@ -294,15 +336,31 @@ jobs:
             cd "$TARGET_DIR"
 
             # 4. 确保测试与持久化目录存在 (注意：测试环境部署不触碰生产数据库，不执行生产备份)
-            mkdir -p data-test/db data-test/uploads nginx/ssl
+            mkdir -p data/postgres data-test/uploads nginx/ssl
             if [ ! -f nginx/ssl/test_fullchain.pem ] && [ -f nginx/ssl/fullchain.pem ]; then
               cp nginx/ssl/fullchain.pem nginx/ssl/test_fullchain.pem 2>/dev/null || true
               cp nginx/ssl/privkey.pem nginx/ssl/test_privkey.pem 2>/dev/null || true
             fi
 
-            # 5. 更新 docker-compose.yml (生产 + 测试双服务解耦)
+            # 5. 更新 docker-compose.yml (内置本地 PostgreSQL + 生产测试双应用解耦)
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
+              db:
+                image: postgres:16-alpine
+                container_name: yangcheng-db
+                restart: always
+                environment:
+                  POSTGRES_USER: yangcheng
+                  POSTGRES_PASSWORD: yangcheng_local_pwd
+                  POSTGRES_DB: yangcheng
+                volumes:
+                  - ./data/postgres:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U yangcheng -d yangcheng"]
+                  interval: 5s
+                  timeout: 5s
+                  retries: 5
+
               app:
                 build:
                   context: .
@@ -315,8 +373,10 @@ jobs:
                 env_file:
                   - .env.production
                 volumes:
-                  - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
+                depends_on:
+                  db:
+                    condition: service_healthy
 
               app-test:
                 build:
@@ -332,8 +392,10 @@ jobs:
                 environment:
                   ALLOW_DATA_RESET: "test-only"
                 volumes:
-                  - ./data-test/db:/app/data
                   - ./data-test/uploads:/app/public/uploads
+                depends_on:
+                  db:
+                    condition: service_healthy
 
               nginx:
                 image: nginx:alpine
@@ -350,16 +412,19 @@ jobs:
                   - app-test
             COMPOSE_EOF
 
-            # 6. 如果不存在测试环境配置，写入默认配置
+            # 6. 配置测试环境数据库连接 (本地轻量级 PostgreSQL 测试库)
             if [ ! -f .env.test ]; then
               cat << 'TEST_ENV_EOF' > .env.test
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="file:/app/data/app.db"
+            DATABASE_URL="postgresql://yangcheng:yangcheng_local_pwd@db:5432/yangcheng_test?schema=public"
             AUTH_SECRET="yangcheng-tracehub-secret-key-test-2026-auth-session"
             NEXT_PUBLIC_TENANT=default
             NEXT_PUBLIC_ENV_TAG=test
             TEST_ENV_EOF
+            elif grep -q "file:" .env.test; then
+              echo "🔄 升级 .env.test 中的 SQLite 连接串为本地 PostgreSQL 连接串..."
+              sed -i 's|DATABASE_URL=.*|DATABASE_URL="postgresql://yangcheng:yangcheng_local_pwd@db:5432/yangcheng_test?schema=public"|g' .env.test
             fi
 
             # 7. 检测 Docker Compose 命令行工具
@@ -370,7 +435,12 @@ jobs:
               fi
             fi
 
-            # 8. 仅构建测试镜像并单独更新上线测试容器 (绝对不重启生产容器 app)
+            # 8. 启动本地数据库并单独更新上线测试容器 (绝对不重启生产容器 app)
+            echo "🐘 启动本地数据库容器 (yangcheng-db)..."
+            $DOCKER_COMPOSE up -d db
+            sleep 2
+            docker exec yangcheng-db psql -U yangcheng -d yangcheng -tc "SELECT 1 FROM pg_database WHERE datname = 'yangcheng_test'" | grep -q 1 || docker exec yangcheng-db psql -U yangcheng -d yangcheng -c "CREATE DATABASE yangcheng_test;" || true
+
             echo "🔨 正在本地构建测试环境 Docker 镜像 (yangcheng-tracehub:test)..."
             $DOCKER_COMPOSE build app-test
 

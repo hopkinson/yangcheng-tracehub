@@ -1,4 +1,20 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: yangcheng-db
+    restart: always
+    environment:
+      POSTGRES_USER: yangcheng
+      POSTGRES_PASSWORD: yangcheng_local_pwd
+      POSTGRES_DB: yangcheng
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yangcheng -d yangcheng"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: .
@@ -11,8 +27,10 @@ services:
     env_file:
       - .env.production
     volumes:
-      - ./data/db:/app/data
       - ./data/uploads:/app/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
 
   app-test:
     build:
@@ -28,8 +46,10 @@ services:
     environment:
       ALLOW_DATA_RESET: "test-only"
     volumes:
-      - ./data-test/db:/app/data
       - ./data-test/uploads:/app/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
 
   nginx:
     image: nginx:alpine
@@ -44,3 +64,4 @@ services:
     depends_on:
       - app
       - app-test
+
