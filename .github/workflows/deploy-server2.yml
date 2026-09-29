@@ -161,11 +161,7 @@ jobs:
             cd "$TARGET_DIR"
 
             # 4. 确保持久化目录存在
-            mkdir -p data/db data/uploads
-            if [ -f data/db/app.db ]; then
-              echo "🛡️ 部署前创建生产数据库一致性备份..."
-              bash scripts/backup-production-db.sh --label pre-deploy
-            fi
+            mkdir -p data/uploads
 
             # 5. 更新 docker-compose.yml (独立容器部署，对接宿主机公共 Nginx 3001 端口)
             cat << 'COMPOSE_EOF' > docker-compose.yml
@@ -184,16 +180,15 @@ jobs:
                 environment:
                   ALLOW_DATA_RESET: "test-only"
                 volumes:
-                  - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置
+            # 6. 如果不存在 .env.production，写入默认配置 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="file:/app/data/app.db?connection_limit=1"
+            DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
             NEXT_PUBLIC_TENANT=maoshi
             ENV_EOF
@@ -286,11 +281,7 @@ jobs:
             cd "$TARGET_DIR"
 
             # 4. 确保持久化目录存在
-            mkdir -p data/db data/uploads
-            if [ -f data/db/app.db ]; then
-              echo "🛡️ 部署前创建生产数据库一致性备份..."
-              bash scripts/backup-production-db.sh --label pre-deploy
-            fi
+            mkdir -p data/uploads
 
             # 5. 更新 docker-compose.yml (独立容器部署，对接宿主机公共 Nginx 3001 端口)
             cat << 'COMPOSE_EOF' > docker-compose.yml
@@ -309,16 +300,15 @@ jobs:
                 environment:
                   ALLOW_DATA_RESET: "test-only"
                 volumes:
-                  - ./data/db:/app/data
                   - ./data/uploads:/app/public/uploads
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置
+            # 6. 如果不存在 .env.production，写入默认配置 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="file:/app/data/app.db?connection_limit=1"
+            DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
             NEXT_PUBLIC_TENANT=maoshi
             ENV_EOF

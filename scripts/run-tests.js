@@ -3,20 +3,16 @@
 const { spawnSync } = require("node:child_process");
 const { existsSync, statSync } = require("node:fs");
 
-// ponytail: SQLite 相对路径以 schema 所在目录 (prisma/) 为基准，这里就是 prisma/test.db
-process.env.DATABASE_URL = "file:./test.db?connection_limit=1";
+// 测试使用本地 PostgreSQL 数据库，与本地开发隔离，绝不连接生产云端 RDS
+process.env.DATABASE_URL =
+  process.env.DATABASE_URL ||
+  "postgresql://crabcard:crabcard@localhost:5433/yangcheng?schema=public";
 
 const run = (args) =>
   spawnSync("npx", args, { stdio: "inherit", shell: true, env: process.env });
 
 const fresh = process.argv.includes("--fresh");
-const shouldPush = fresh || !existsSync("prisma/test.db") || (() => {
-  try {
-    return statSync("prisma/schema.prisma").mtimeMs > statSync("prisma/test.db").mtimeMs;
-  } catch {
-    return false;
-  }
-})();
+const shouldPush = fresh || true;
 
 if (shouldPush) {
   const r = run(["prisma", "db", "push", "--skip-generate", "--accept-data-loss"]);

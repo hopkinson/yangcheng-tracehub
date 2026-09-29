@@ -5,7 +5,7 @@ set -e
 mkdir -p /app/data /app/public/uploads
 
 # 2. 执行数据库表结构同步 (直接调用已安装好的 prisma CLI，绝对不走 npx 避免海外源拉取超时及无交互取消)
-echo "🚀 [Init] 检查并同步 SQLite 数据库表结构..."
+echo "🚀 [Init] 检查并同步 PostgreSQL 数据库表结构..."
 if [ -x "/usr/local/bin/prisma" ]; then
   PRISMA_BIN="/usr/local/bin/prisma"
 elif command -v prisma >/dev/null 2>&1; then
