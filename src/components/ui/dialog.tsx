@@ -65,7 +65,7 @@ function DialogContent({
           animate={{ opacity: 1, scale: 1, y: "-50%", x: "-50%" }}
           transition={{ type: "spring", damping: 25, stiffness: 350 }}
           className={cn(
-            "fixed top-[50%] left-[50%] z-50 grid w-fit min-w-[min(100%,380px)] max-w-[calc(100vw-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none",
+            "fixed top-[50%] left-[50%] z-50 grid w-[calc(100vw-2rem)] sm:w-full max-w-lg gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none",
             className
           )}
         >
@@ -142,7 +142,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-muted-foreground break-words", className)}
       {...props}
     />
   )
