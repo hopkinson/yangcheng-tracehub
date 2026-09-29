@@ -7,6 +7,10 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  group: server-1-deployment
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     name: "构建并自动发布到服务器 1 (测试环境)"

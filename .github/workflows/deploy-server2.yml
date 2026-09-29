@@ -183,7 +183,7 @@ jobs:
                   - ./data/uploads:/app/public/uploads
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
+            # 6. 配置生产环境数据库连接 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
@@ -192,6 +192,9 @@ jobs:
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
             NEXT_PUBLIC_TENANT=maoshi
             ENV_EOF
+            elif grep -q "file:" .env.production; then
+              echo "🔄 升级 .env.production 为阿里云 RDS PostgreSQL 配置..."
+              sed -i 's|DATABASE_URL=.*|DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"|g' .env.production
             fi
 
             # 7. 检测 Docker Compose 命令行工具
@@ -201,6 +204,10 @@ jobs:
                 DOCKER_COMPOSE="docker-compose"
               fi
             fi
+
+            # 7.5 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
+            echo "🐘 检查并配置 RDS yangcheng-prod 库 public schema 访问权限..."
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu; ALTER SCHEMA public OWNER TO wufenshu; GRANT ALL ON ALL TABLES IN SCHEMA public TO wufenshu; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" 2>&1 || true
 
             # 8. 本地镜像构建并平滑上线
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
@@ -303,7 +310,7 @@ jobs:
                   - ./data/uploads:/app/public/uploads
             COMPOSE_EOF
 
-            # 6. 如果不存在 .env.production，写入默认配置 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
+            # 6. 配置生产环境数据库连接 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
@@ -312,6 +319,9 @@ jobs:
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
             NEXT_PUBLIC_TENANT=maoshi
             ENV_EOF
+            elif grep -q "file:" .env.production; then
+              echo "🔄 升级 .env.production 为阿里云 RDS PostgreSQL 配置..."
+              sed -i 's|DATABASE_URL=.*|DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"|g' .env.production
             fi
 
             # 7. 检测 Docker Compose 命令行工具
@@ -321,6 +331,10 @@ jobs:
                 DOCKER_COMPOSE="docker-compose"
               fi
             fi
+
+            # 7.5 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
+            echo "🐘 检查并配置 RDS yangcheng-prod 库 public schema 访问权限..."
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu; ALTER SCHEMA public OWNER TO wufenshu; GRANT ALL ON ALL TABLES IN SCHEMA public TO wufenshu; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" 2>&1 || true
 
             # 8. 本地镜像构建并平滑上线
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."

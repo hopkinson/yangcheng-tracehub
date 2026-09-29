@@ -8,6 +8,10 @@ on:
         required: true
         default: "yes"
 
+concurrency:
+  group: server-1-deployment
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     name: "构建并发布到服务器 1 (正式生产环境)"
@@ -259,6 +263,8 @@ jobs:
             # 8. 启动本地数据库并单独更新上线生产容器 (绝对不重启测试容器 app-test)
             echo "🐘 启动本地数据库容器 (yangcheng-db)..."
             $DOCKER_COMPOSE up -d db
+            sleep 2
+            docker exec yangcheng-db psql -U yangcheng -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'yangcheng'" | grep -q 1 || docker exec yangcheng-db psql -U yangcheng -d postgres -c "CREATE DATABASE yangcheng;" || true
 
             echo "🔨 正在本地构建生产环境 Docker 镜像 (yangcheng-tracehub:prod)..."
             $DOCKER_COMPOSE build app
@@ -443,6 +449,8 @@ jobs:
             # 8. 启动本地数据库并单独更新上线生产容器 (绝对不重启测试容器 app-test)
             echo "🐘 启动本地数据库容器 (yangcheng-db)..."
             $DOCKER_COMPOSE up -d db
+            sleep 2
+            docker exec yangcheng-db psql -U yangcheng -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'yangcheng'" | grep -q 1 || docker exec yangcheng-db psql -U yangcheng -d postgres -c "CREATE DATABASE yangcheng;" || true
 
             echo "🔨 正在本地构建生产环境 Docker 镜像 (yangcheng-tracehub:prod)..."
             $DOCKER_COMPOSE build app
