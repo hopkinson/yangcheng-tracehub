@@ -153,6 +153,15 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
     }
   };
 
+  const isPoolReadyToClose =
+    metrics.isClosingTime && metrics.totalLiveInPoolCount <= 0 && !metrics.poolCloseCompleted && metrics.canCloseDaily;
+  const isColdReadyToClose =
+    metrics.isClosingTime &&
+    metrics.pendingOutboundOrdersCount === 0 &&
+    metrics.totalColdStockCount <= 0 &&
+    !metrics.coldCloseCompleted &&
+    metrics.canCloseDaily;
+
   // -------------------------------------------------------------
   // ③ 温度状态管理（种子默认值）
   // -------------------------------------------------------------
@@ -615,7 +624,10 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 4. 暂养 */}
-            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+            <div className={cn(
+              "min-h-[148px] rounded-xl border bg-card p-4 flex flex-col justify-between shadow-2xs transition-all duration-300",
+              isPoolReadyToClose ? "border-primary/50 bg-primary/[0.03] ring-1 ring-primary/20 shadow-xs" : "border-border/70"
+            )}>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
                   <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">4</span>
@@ -634,29 +646,35 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               {metrics.isClosingTime ? (
                 metrics.totalLiveInPoolCount > 0 ? (
-                  <Link href="/pools" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
-                    <span>晚间待清池</span>
-                    <span className="font-mono flex items-center gap-1">
+                  <Link href="/pools" className="mt-3 py-1.5 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/25 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between font-medium transition-colors">
+                    <span>待清池</span>
+                    <span className="font-mono flex items-center gap-1 font-semibold">
                       <AnimatedNumber value={metrics.totalLiveInPoolCount} duration={700} /> 只
                       <ArrowRight className="size-3" />
                     </span>
                   </Link>
                 ) : metrics.poolCloseCompleted ? (
-                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
+                  <div className="mt-3 py-1.5 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center justify-between font-medium">
                     <span>今日已清池</span>
-                    <CheckCircle2 className="size-3.5" />
+                    <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   </div>
                 ) : metrics.canCloseDaily ? (
                   <button
                     type="button"
                     onClick={() => setClosingType("POOL")}
-                    className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium"
+                    className="mt-3 w-full py-2 px-3 rounded-lg bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/25 text-xs font-semibold flex items-center justify-between transition-all duration-200 group shadow-2xs cursor-pointer"
                   >
-                    <span>确认今日空池并日结</span>
-                    <ArrowRight className="size-3" />
+                    <span className="flex items-center gap-2">
+                      <span className="relative flex size-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 group-hover:bg-primary-foreground" />
+                        <span className="relative inline-flex rounded-full size-2 bg-primary group-hover:bg-primary-foreground" />
+                      </span>
+                      确认今日空池并日结
+                    </span>
+                    <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 ) : (
-                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground">
+                  <div className="mt-3 py-1.5 px-2.5 rounded-lg bg-muted/50 border border-border/50 text-[11px] text-muted-foreground text-center">
                     待仓库管理员确认日结
                   </div>
                 )
@@ -745,7 +763,10 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </div>
 
             {/* 8. 出库 */}
-            <div className="min-h-[148px] rounded-xl border border-border/70 bg-card p-4 flex flex-col justify-between shadow-2xs">
+            <div className={cn(
+              "min-h-[148px] rounded-xl border bg-card p-4 flex flex-col justify-between shadow-2xs transition-all duration-300",
+              isColdReadyToClose ? "border-primary/50 bg-primary/[0.03] ring-1 ring-primary/20 shadow-xs" : "border-border/70"
+            )}>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[13px] font-semibold text-foreground flex items-center gap-2">
                   <span className="size-5 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-mono text-[10px] font-semibold">8</span>
@@ -770,37 +791,43 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
               </div>
               {metrics.isClosingTime ? (
                 metrics.pendingOutboundOrdersCount > 0 ? (
-                  <Link href="/approvals" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-destructive flex items-center justify-between font-medium">
+                  <Link href="/approvals" className="mt-3 py-1.5 px-2.5 rounded-lg bg-destructive/10 hover:bg-destructive/15 border border-destructive/25 text-[11px] text-destructive flex items-center justify-between font-medium transition-colors">
                     <span>先处理待审核出库</span>
-                    <span className="font-mono flex items-center gap-1">
+                    <span className="font-mono flex items-center gap-1 font-semibold">
                       {metrics.pendingOutboundOrdersCount} 笔
                       <ArrowRight className="size-3" />
                     </span>
                   </Link>
                 ) : metrics.totalColdStockCount > 0 ? (
-                  <Link href="/outbound#closing" className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
-                    <span>晚间待清库</span>
-                    <span className="font-mono flex items-center gap-1">
+                  <Link href="/outbound#closing" className="mt-3 py-1.5 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/25 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between font-medium transition-colors">
+                    <span>待清库</span>
+                    <span className="font-mono flex items-center gap-1 font-semibold">
                       <AnimatedNumber value={metrics.totalColdStockCount} duration={700} /> 只
                       <ArrowRight className="size-3" />
                     </span>
                   </Link>
                 ) : metrics.coldCloseCompleted ? (
-                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium">
+                  <div className="mt-3 py-1.5 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center justify-between font-medium">
                     <span>今日已清库</span>
-                    <CheckCircle2 className="size-3.5" />
+                    <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   </div>
                 ) : metrics.canCloseDaily ? (
                   <button
                     type="button"
                     onClick={() => setClosingType("COLD")}
-                    className="mt-4 pt-3 border-t border-border/60 text-[11px] text-primary flex items-center justify-between font-medium"
+                    className="mt-3 w-full py-2 px-3 rounded-lg bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/25 text-xs font-semibold flex items-center justify-between transition-all duration-200 group shadow-2xs cursor-pointer"
                   >
-                    <span>确认今日空库并日结</span>
-                    <ArrowRight className="size-3" />
+                    <span className="flex items-center gap-2">
+                      <span className="relative flex size-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 group-hover:bg-primary-foreground" />
+                        <span className="relative inline-flex rounded-full size-2 bg-primary group-hover:bg-primary-foreground" />
+                      </span>
+                      确认今日空库并日结
+                    </span>
+                    <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 ) : (
-                  <div className="mt-4 pt-3 border-t border-border/60 text-[11px] text-muted-foreground">
+                  <div className="mt-3 py-1.5 px-2.5 rounded-lg bg-muted/50 border border-border/50 text-[11px] text-muted-foreground text-center">
                     待仓库管理员确认日结
                   </div>
                 )

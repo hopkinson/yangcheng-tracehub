@@ -139,11 +139,6 @@ export default async function DashboardPage() {
     outboundLosses,
     defaultSpecs: [],
   }).reduce((sum, stock) => sum + stock.available, 0);
-  const beijingHour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" }).format(new Date())
-  );
-  const isClosingTime = beijingHour >= 18;
-
   // 8. 出库
   const todayOutboundOrders = outboundOrders.filter((o) => isTodayOrDemo(o.createdAt));
   const todayOutboundTotalCount = todayOutboundOrders.reduce((s, o) => s + o.outboundCount, 0);
@@ -152,6 +147,11 @@ export default async function DashboardPage() {
   const closeDate = formatISODate();
   const poolCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_POOL_CLOSE" && formatISODate(log.createdAt) === closeDate);
   const coldCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_COLD_CLOSE" && formatISODate(log.createdAt) === closeDate);
+
+  const beijingHour = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" }).format(new Date())
+  );
+  const isClosingTime = beijingHour >= 18 || todayOutboundOrders.length > 0;
 
   // 3. 业务预警数据采集
   const frozenBatches = batches

@@ -21,9 +21,22 @@ export async function completeDailyCloseAction(type: DailyCloseType) {
   const beijingHour = Number(
     new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" }).format(new Date())
   );
-  if (beijingHour < 18) throw new Error("每日收尾日结于 18:00 后开放");
-  const action = type === "POOL" ? "DAILY_POOL_CLOSE" : "DAILY_COLD_CLOSE";
   const businessDate = formatISODate();
+  if (beijingHour < 18) {
+    const hasTodayOutbound = await prisma.outboundOrder.findFirst({
+      where: {
+        status: { not: "REJECTED" },
+        OR: [
+          { createdAt: { gte: new Date(`${businessDate}T00:00:00+08:00`), lte: new Date(`${businessDate}T23:59:59.999+08:00`) } },
+          { createdAt: { gte: new Date("2026-09-21T00:00:00+08:00"), lte: new Date("2026-09-21T23:59:59.999+08:00") } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!hasTodayOutbound) throw new Error("每日收尾日结需在当天有订单出库后或 18:00 后开放");
+  }
+
+  const action = type === "POOL" ? "DAILY_POOL_CLOSE" : "DAILY_COLD_CLOSE";
   if (await prisma.auditLog.findFirst({ where: { action, entityId: businessDate } })) return;
 
   if (type === "POOL") {
