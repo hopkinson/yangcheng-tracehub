@@ -236,6 +236,51 @@ jobs:
 
             echo ""
             echo "=========================================================="
-            echo "7. 检查容器 yangcheng-tracehub 线上运行日志"
+            echo "8. 检查本地 PostgreSQL 容器 yangcheng-db (保存了 09-29 运行时真正的数据!)"
             echo "=========================================================="
-            docker logs --tail 50 yangcheng-tracehub || true
+            if docker ps | grep -q yangcheng-db; then
+              echo "✅ yangcheng-db 正在运行，正在查询数据..."
+              docker exec yangcheng-db psql -U yangcheng -d yangcheng -c "
+                SELECT 'User' as table_name, count(*) as total_rows FROM \"User\"
+                UNION ALL SELECT 'Farmer', count(*) FROM \"Farmer\"
+                UNION ALL SELECT 'Batch', count(*) FROM \"Batch\"
+                UNION ALL SELECT 'BatchItem', count(*) FROM \"BatchItem\"
+                UNION ALL SELECT 'HoldingPool', count(*) FROM \"HoldingPool\"
+                UNION ALL SELECT 'TagClaim', count(*) FROM \"TagClaim\"
+                UNION ALL SELECT 'BundleBatch', count(*) FROM \"BundleBatch\"
+                UNION ALL SELECT 'SortTask', count(*) FROM \"SortTask\"
+                UNION ALL SELECT 'ColdLog', count(*) FROM \"ColdLog\"
+                UNION ALL SELECT 'Order', count(*) FROM \"Order\"
+                UNION ALL SELECT 'OutboundOrder', count(*) FROM \"OutboundOrder\"
+                UNION ALL SELECT 'OutboundLine', count(*) FROM \"OutboundLine\"
+                UNION ALL SELECT 'OutboundLossOrder', count(*) FROM \"OutboundLossOrder\";
+              "
+
+              echo "--- yangcheng-db 中 Order 订单发货状态 ---"
+              docker exec yangcheng-db psql -U yangcheng -d yangcheng -c "
+                SELECT DATE(\"deliveryDate\") as delivery_date, status, count(*), sum(count) as total_crabs
+                FROM \"Order\"
+                GROUP BY DATE(\"deliveryDate\"), status
+                ORDER BY delivery_date DESC;
+              "
+
+              echo "--- yangcheng-db 中最近的出库单 OutboundOrder ---"
+              docker exec yangcheng-db psql -U yangcheng -d yangcheng -c "
+                SELECT id, code, type, status, \"outboundCount\", \"channelOrderCount\", \"createdAt\"
+                FROM \"OutboundOrder\"
+                ORDER BY \"createdAt\" DESC
+                LIMIT 15;
+              "
+
+              echo "--- yangcheng-db 中最近的出库明细 OutboundLine ---"
+              docker exec yangcheng-db psql -U yangcheng -d yangcheng -c "
+                SELECT id, \"outboundOrderId\", \"orderNo\", gender, \"weightTier\", count, \"createdAt\"
+                FROM \"OutboundLine\"
+                ORDER BY \"createdAt\" DESC
+                LIMIT 15;
+              "
+            else
+              echo "⚠️ yangcheng-db 未在运行，检查是否有 ./data/postgres 目录"
+              ls -lh data/postgres 2>/dev/null || true
+            fi
+
