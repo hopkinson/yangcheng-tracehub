@@ -6,11 +6,10 @@ on:
       - main
       - master
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "要部署的镜像版本标签 (默认: latest)"
-        required: false
-        default: "latest"
+
+concurrency:
+  group: server-2-deployment
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
@@ -21,76 +20,45 @@ jobs:
       contents: read
       packages: write
     env:
-      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST || secrets.SERVER2_HOST || vars.SERVER2_HOST || secrets.SERVER_HOST2 || vars.SERVER_HOST2 || secrets.BACKUP_SERVER_HOST || vars.BACKUP_SERVER_HOST || secrets.SERVER_IP_2 || vars.SERVER_IP_2 || secrets.SERVER2_IP || vars.SERVER2_IP }}
-      SERVER_USER_2: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || secrets.SERVER_2_USER || vars.SERVER_USER_1 || secrets.SERVER_USER || 'root' }}
-      SERVER_PASSWORD_2: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD || secrets.SERVER2_PASSWORD || secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
-      SERVER_SSH_KEY_2: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER2_SSH_KEY || secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
-      SERVER_PORT_2: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || secrets.SERVER_PORT_1 || 22 }}
-      TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+      SERVER_HOST_2: ${{ secrets.SERVER_HOST_2 || vars.SERVER_HOST_2 || secrets.SERVER_2_HOST || vars.SERVER_2_HOST }}
+      SERVER_USER_2: ${{ secrets.SERVER_USER_2 || vars.SERVER_USER_2 || 'root' }}
+      SERVER_PASSWORD_2: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD }}
+      SERVER_PORT_2: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || 22 }}
     steps:
-      - name: "检查服务器 2 配置参数"
-        id: check_config
-        run: |
-          if [ -z "$SERVER_HOST_2" ]; then
-            echo "⚠️ [提示] 未检测到 SERVER_HOST_2 配置，跳过服务器 2 部署。"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ 目标服务器 2: $SERVER_HOST_2"
-            echo "🔌 连接端口: $SERVER_PORT_2"
-            echo "👤 登录用户: $SERVER_USER_2"
-            if [ -n "$SERVER_PASSWORD_2" ]; then
-              echo "🔑 密码配置: 已检测到密码"
-            else
-              echo "❌ 密码配置: 未配置"
-            fi
-            if [ -n "$SERVER_SSH_KEY_2" ]; then
-              echo "🔐 密钥配置: 已检测到私钥"
-            else
-              echo "ℹ️ 密钥配置: 未配置私钥 (走纯密码模式)"
-            fi
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: "检出代码仓库"
-        if: steps.check_config.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       - name: "初始化 pnpm 环境"
-        if: steps.check_config.outputs.skip != 'true'
         uses: pnpm/action-setup@v4
 
       - name: "配置 Node.js 22"
-        if: steps.check_config.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "pnpm"
 
       - name: "安装项目依赖"
-        if: steps.check_config.outputs.skip != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: "生成 Prisma 客户端"
-        if: steps.check_config.outputs.skip != 'true'
         run: pnpm prisma:generate
 
       - name: "TypeScript 类型安全检查"
-        if: steps.check_config.outputs.skip != 'true'
         run: pnpm typecheck
 
       # =========================================================================
       # 打包纯净源码 (仅 ~1.8MB) 并通过 SCP 传输至服务器 2，彻底杜绝大镜像包传输超时
       # =========================================================================
       - name: "打包生产源码包"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request'
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         run: |
           echo "📦 使用 git archive 打包纯净项目源码..."
           git archive --format=tar.gz -o app-source.tar.gz HEAD
           echo "✅ 源码打包完成，文件大小:"
           ls -lh app-source.tar.gz
 
-      - name: "传输源码包至服务器 2 (密码认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 == ''
+      - name: "传输源码包至服务器 2"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.SERVER_HOST_2 }}
@@ -103,22 +71,8 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "传输源码包至服务器 2 (密钥认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 != ''
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ env.SERVER_USER_2 }}
-          key: ${{ env.SERVER_SSH_KEY_2 }}
-          port: ${{ env.SERVER_PORT_2 }}
-          timeout: "60s"
-          command_timeout: "5m"
-          source: "app-source.tar.gz"
-          target: "/tmp"
-          overwrite: true
-
-      - name: "SSH 部署并平滑上线 (服务器 2 - 密码认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 == ''
+      - name: "SSH 部署并平滑上线 (服务器 2)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST_2 }}
@@ -132,7 +86,7 @@ jobs:
 
             # 1. 自动定位服务器部署目录
             TARGET_DIR=""
-            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+            for dir in "/opt/yangcheng-tracehub" "/root/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
               if [ -d "$dir" ]; then
                 TARGET_DIR="$dir"
                 break
@@ -201,35 +155,29 @@ jobs:
               fi
             fi
 
-            # 7. 检测 Docker Compose 命令行工具
-            DOCKER_COMPOSE="docker compose"
-            if ! docker compose version >/dev/null 2>&1; then
-              if command -v docker-compose >/dev/null 2>&1; then
-                DOCKER_COMPOSE="docker-compose"
-              fi
-            fi
-
-            # 7.5 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
+            # 7. 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
             echo "🐘 检查并配置 RDS yangcheng-prod 库 public schema 访问权限..."
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu;" || true
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO wufenshu;" || true
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" || true
+            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "
+              GRANT ALL ON SCHEMA public TO wufenshu;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO wufenshu;
+              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO wufenshu;
+            " || true
 
             # 8. 本地镜像构建并平滑上线
             echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
-            $DOCKER_COMPOSE build app
+            docker compose build app
 
             echo "🔄 启动并平滑上线容器 (移除遗留无用容器)..."
-            $DOCKER_COMPOSE up -d --remove-orphans app
+            docker compose up -d --remove-orphans app
 
             # 9. 清理悬空未使用的旧镜像，保持磁盘干净
             docker image prune -f || true
 
             # 10. 状态检查与真实健康探活 (端口 3001)
             echo "🔍 检查容器运行状态..."
-            $DOCKER_COMPOSE ps
+            docker compose ps
             echo "📄 查看应用容器最新日志 (前 30 行)..."
-            $DOCKER_COMPOSE logs --tail=30 app || true
+            docker compose logs --tail=30 app || true
 
             echo "🩺 执行本地健康探活 (http://127.0.0.1:3001)..."
             PROBE_SUCCESS=false
@@ -245,248 +193,7 @@ jobs:
 
             if [ "$PROBE_SUCCESS" != "true" ]; then
               echo "❌ 错误：应用未能正常启动并对外提供服务！容器崩溃日志："
-              $DOCKER_COMPOSE logs --tail=100 app
+              docker compose logs --tail=100 app
               exit 1
             fi
             echo "✅ 服务器 2 部署成功且服务探活正常！"
-
-            # 11. 正式环境数据无损迁移至阿里云 RDS (自动检测并幂等执行)
-            echo "📦 正在检查阿里云 RDS 数据状态与业务数据完整性..."
-            RDS_HOST="pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com"
-            RDS_USER="wufenshu"
-            RDS_DB="yangcheng-prod"
-            
-            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -tc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | tr -d ' \r\n' || echo "0")
-            echo "📊 当前阿里云 RDS 中的原料批次记录数: ${RDS_BATCH_COUNT:-0}"
-
-            if [ "${RDS_BATCH_COUNT:-0}" = "0" ] || [ -z "$RDS_BATCH_COUNT" ]; then
-              SQLITE_SRC=""
-              for f in "data/db/app.db" "data/app.db"; do
-                if [ -s "$f" ]; then
-                  SQLITE_SRC="$f"
-                  break
-                fi
-              done
-
-              MIGRATED_SUCCESS=false
-              if [ -n "$SQLITE_SRC" ]; then
-                echo "📦 检查服务器本地 SQLite 数据库: $SQLITE_SRC..."
-                if command -v python3 >/dev/null 2>&1; then
-                  python3 scripts/migrate-sqlite-to-postgres.py --sqlite "$SQLITE_SRC" --schema prisma/schema.prisma --clean --output rds_migration.sql
-                else
-                  docker run --rm -v "$(pwd):/work" -w /work python:3.11-alpine python3 scripts/migrate-sqlite-to-postgres.py --sqlite "$SQLITE_SRC" --schema prisma/schema.prisma --clean --output rds_migration.sql
-                fi
-                if [ -s "rds_migration.sql" ] && grep -q "Table: Batch ([1-9]" rds_migration.sql; then
-                  echo "🚀 从服务器本地 SQLite 导入有效业务数据至阿里云 RDS..."
-                  docker run --rm -i -v "$(pwd):/work" -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -f /work/rds_migration.sql
-                  MIGRATED_SUCCESS=true
-                fi
-                rm -f rds_migration.sql
-              fi
-
-              if [ "$MIGRATED_SUCCESS" != "true" ] && [ -s "prisma/baseline-data.sql" ]; then
-                echo "📦 服务器本地 SQLite 无业务批次数据，使用仓库正式全量基准数据 (prisma/baseline-data.sql) 导入阿里云 RDS..."
-                docker run --rm -i -v "$(pwd):/work" -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -f /work/prisma/baseline-data.sql
-                echo "🎉 正式环境全量业务数据已成功恢复至阿里云 RDS！"
-              fi
-            else
-              echo "✅ 阿里云 RDS 已包含有效业务批次数据 (${RDS_BATCH_COUNT} 条原料批次)，保持现有数据不被覆盖。"
-            fi
-
-            # 12. 阿里云 RDS 最终状态及关键业务表记录数验证
-            echo "🔍 验证阿里云 RDS 实时数据统计..."
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              SELECT
-                (SELECT count(*) FROM \"User\") as \"用户数\",
-                (SELECT count(*) FROM \"Farmer\") as \"养殖户数\",
-                (SELECT count(*) FROM \"Batch\") as \"原料批次数\",
-                (SELECT count(*) FROM \"HoldingPool\") as \"暂养池数\",
-                (SELECT count(*) FROM \"OutboundOrder\") as \"出库单数\";
-            " || true
-
-      - name: "SSH 部署并平滑上线 (服务器 2 - 密钥认证)"
-        if: steps.check_config.outputs.skip != 'true' && github.event_name != 'pull_request' && env.SERVER_SSH_KEY_2 != ''
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ env.SERVER_HOST_2 }}
-          username: ${{ env.SERVER_USER_2 }}
-          key: ${{ env.SERVER_SSH_KEY_2 }}
-          port: ${{ env.SERVER_PORT_2 }}
-          timeout: "30s"
-          command_timeout: "10m"
-          script: |
-            set -e
-
-            # 1. 自动定位服务器部署目录
-            TARGET_DIR=""
-            for dir in "/root/yangcheng-tracehub" "/opt/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
-              if [ -d "$dir" ]; then
-                TARGET_DIR="$dir"
-                break
-              fi
-            done
-
-            if [ -z "$TARGET_DIR" ]; then
-              TARGET_DIR="/opt/yangcheng-tracehub"
-              mkdir -p "$TARGET_DIR"
-            fi
-            echo "📂 部署目标目录: $TARGET_DIR"
-
-            # 2. 准备纯净部署目录（保留 data 与 .env.production 等持久化文件，清理历史代码残留）
-            if [ -d "$TARGET_DIR" ]; then
-              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
-            fi
-            mkdir -p "$TARGET_DIR"
-
-            # 3. 从 /tmp 解压传输过来的源码包并清理临时文件
-            if [ -f /tmp/app-source.tar.gz ]; then
-              echo "📥 正在解压最新源码到 $TARGET_DIR..."
-              tar -xzf /tmp/app-source.tar.gz -C "$TARGET_DIR"
-              rm -f /tmp/app-source.tar.gz
-              echo "✅ 源码解压完成！"
-            fi
-            cd "$TARGET_DIR"
-
-            # 4. 确保持久化目录存在
-            mkdir -p data/uploads
-
-            # 5. 更新 docker-compose.yml (独立容器部署，对接宿主机公共 Nginx 3001 端口)
-            cat << 'COMPOSE_EOF' > docker-compose.yml
-            services:
-              app:
-                build:
-                  context: .
-                  dockerfile: Dockerfile
-                image: yangcheng-tracehub:latest
-                container_name: yangcheng-tracehub
-                restart: always
-                ports:
-                  - "3001:3000"
-                env_file:
-                  - .env.production
-                environment:
-                  ALLOW_DATA_RESET: "test-only"
-                volumes:
-                  - ./data/uploads:/app/public/uploads
-            COMPOSE_EOF
-
-            # 6. 配置生产环境数据库连接 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
-            if [ ! -f .env.production ]; then
-              cat << 'ENV_EOF' > .env.production
-            NODE_ENV=production
-            PORT=3000
-            DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
-            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-            NEXT_PUBLIC_TENANT=maoshi
-            ENV_EOF
-            else
-              echo "🔄 确保 .env.production 连接串指向阿里云 RDS PostgreSQL..."
-              if grep -q "^DATABASE_URL=" .env.production; then
-                sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"|g' .env.production
-              else
-                echo 'DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"' >> .env.production
-              fi
-            fi
-
-            # 7. 检测 Docker Compose 命令行工具
-            DOCKER_COMPOSE="docker compose"
-            if ! docker compose version >/dev/null 2>&1; then
-              if command -v docker-compose >/dev/null 2>&1; then
-                DOCKER_COMPOSE="docker-compose"
-              fi
-            fi
-
-            # 7.5 确保 RDS PostgreSQL yangcheng-prod 库中的 public schema 具备建表权限
-            echo "🐘 检查并配置 RDS yangcheng-prod 库 public schema 访问权限..."
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL ON SCHEMA public TO wufenshu;" || true
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO wufenshu;" || true
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com -U wufenshu -d yangcheng-prod -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO wufenshu;" || true
-
-            # 8. 本地镜像构建并平滑上线
-            echo "🔨 正在本地构建 Docker 镜像 (复用本地缓存)..."
-            $DOCKER_COMPOSE build app
-
-            echo "🔄 启动并平滑上线容器 (移除遗留无用容器)..."
-            $DOCKER_COMPOSE up -d --remove-orphans app
-
-            # 9. 清理悬空未使用的旧镜像，保持磁盘干净
-            docker image prune -f || true
-
-            # 10. 状态检查与真实健康探活 (端口 3001)
-            echo "🔍 检查容器运行状态..."
-            $DOCKER_COMPOSE ps
-            echo "📄 查看应用容器最新日志 (前 30 行)..."
-            $DOCKER_COMPOSE logs --tail=30 app || true
-
-            echo "🩺 执行本地健康探活 (http://127.0.0.1:3001)..."
-            PROBE_SUCCESS=false
-            for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:3001/api/health > /dev/null 2>&1 || curl -sf http://127.0.0.1:3001/ > /dev/null 2>&1; then
-                echo "✅ 第 $i 次尝试：应用探活成功，HTTP 正常响应！"
-                PROBE_SUCCESS=true
-                break
-              fi
-              echo "⏳ 等待应用就绪... ($i/15)"
-              sleep 2
-            done
-
-            if [ "$PROBE_SUCCESS" != "true" ]; then
-              echo "❌ 错误：应用未能正常启动并对外提供服务！容器崩溃日志："
-              $DOCKER_COMPOSE logs --tail=100 app
-              exit 1
-            fi
-            echo "✅ 服务器 2 部署成功且服务探活正常！"
-
-            # 11. 正式环境数据无损迁移至阿里云 RDS (自动检测并幂等执行)
-            echo "📦 正在检查阿里云 RDS 数据状态与业务数据完整性..."
-            RDS_HOST="pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com"
-            RDS_USER="wufenshu"
-            RDS_DB="yangcheng-prod"
-            
-            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -tc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | tr -d ' \r\n' || echo "0")
-            echo "📊 当前阿里云 RDS 中的原料批次记录数: ${RDS_BATCH_COUNT:-0}"
-
-            if [ "${RDS_BATCH_COUNT:-0}" = "0" ] || [ -z "$RDS_BATCH_COUNT" ]; then
-              SQLITE_SRC=""
-              for f in "data/db/app.db" "data/app.db"; do
-                if [ -s "$f" ]; then
-                  SQLITE_SRC="$f"
-                  break
-                fi
-              done
-
-              MIGRATED_SUCCESS=false
-              if [ -n "$SQLITE_SRC" ]; then
-                echo "📦 检查服务器本地 SQLite 数据库: $SQLITE_SRC..."
-                if command -v python3 >/dev/null 2>&1; then
-                  python3 scripts/migrate-sqlite-to-postgres.py --sqlite "$SQLITE_SRC" --schema prisma/schema.prisma --clean --output rds_migration.sql
-                else
-                  docker run --rm -v "$(pwd):/work" -w /work python:3.11-alpine python3 scripts/migrate-sqlite-to-postgres.py --sqlite "$SQLITE_SRC" --schema prisma/schema.prisma --clean --output rds_migration.sql
-                fi
-                if [ -s "rds_migration.sql" ] && grep -q "Table: Batch ([1-9]" rds_migration.sql; then
-                  echo "🚀 从服务器本地 SQLite 导入有效业务数据至阿里云 RDS..."
-                  docker run --rm -i -v "$(pwd):/work" -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -f /work/rds_migration.sql
-                  MIGRATED_SUCCESS=true
-                fi
-                rm -f rds_migration.sql
-              fi
-
-              if [ "$MIGRATED_SUCCESS" != "true" ] && [ -s "prisma/baseline-data.sql" ]; then
-                echo "📦 服务器本地 SQLite 无业务批次数据，使用仓库正式全量基准数据 (prisma/baseline-data.sql) 导入阿里云 RDS..."
-                docker run --rm -i -v "$(pwd):/work" -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -f /work/prisma/baseline-data.sql
-                echo "🎉 正式环境全量业务数据已成功恢复至阿里云 RDS！"
-              fi
-            else
-              echo "✅ 阿里云 RDS 已包含有效业务批次数据 (${RDS_BATCH_COUNT} 条原料批次)，保持现有数据不被覆盖。"
-            fi
-
-            # 12. 阿里云 RDS 最终状态及关键业务表记录数验证
-            echo "🔍 验证阿里云 RDS 实时数据统计..."
-            docker run --rm -e PGPASSWORD='Admin@wfs' postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              SELECT
-                (SELECT count(*) FROM \"User\") as \"用户数\",
-                (SELECT count(*) FROM \"Farmer\") as \"养殖户数\",
-                (SELECT count(*) FROM \"Batch\") as \"原料批次数\",
-                (SELECT count(*) FROM \"HoldingPool\") as \"暂养池数\",
-                (SELECT count(*) FROM \"OutboundOrder\") as \"出库单数\";
-            " || true
