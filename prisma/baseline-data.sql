@@ -2,6 +2,10 @@
 BEGIN;
 SET session_replication_role = 'replica';
 
+-- Clean target tables before migration
+TRUNCATE TABLE "User", "Farmer", "Enclosure", "HoldingPool", "Batch", "BatchItem", "LossRecord", "TagClaim", "BundleGroup", "BundleLine", "SortMachine", "SortTask", "Order", "Store", "QCRecord", "SpecialApproval", "AuditLog", "OutboundOrder", "InspectionReport", "ApprovalSetting", "ColdStore", "BundleBatch", "ColdLog", "OutboundLine", "Channel", "OutboundLossItem", "OutboundLossOrder", "OutboundLossRecord" CASCADE;
+
+
 -- Table: User (3 rows)
 INSERT INTO "User" ("id", "username", "phone", "passwordHash", "fullName", "role", "channelId", "createdAt", "updatedAt") VALUES ('cmu5alpjc0003vfu8dx9sxxmq', 'admin_yangcheng', '13800000001', 'Admin#2026!', '阳澄股份超级管理员', 'ADMIN', 'cmu5alpj70000vfu8r2g57p1j', TO_TIMESTAMP(1789635220104 / 1000.0), TO_TIMESTAMP(1789635220104 / 1000.0)) ON CONFLICT ("id") DO UPDATE SET "username" = EXCLUDED."username", "phone" = EXCLUDED."phone", "passwordHash" = EXCLUDED."passwordHash", "fullName" = EXCLUDED."fullName", "role" = EXCLUDED."role", "channelId" = EXCLUDED."channelId", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt";
 INSERT INTO "User" ("id", "username", "phone", "passwordHash", "fullName", "role", "channelId", "createdAt", "updatedAt") VALUES ('cmu5an1d00000vff8f2s1whzy', 'qa_1789635282070', '13900002070', '123456', '品控主管', 'QA_DIRECTOR', NULL, TO_TIMESTAMP(1789635282085 / 1000.0), TO_TIMESTAMP(1789635282085 / 1000.0)) ON CONFLICT ("id") DO UPDATE SET "username" = EXCLUDED."username", "phone" = EXCLUDED."phone", "passwordHash" = EXCLUDED."passwordHash", "fullName" = EXCLUDED."fullName", "role" = EXCLUDED."role", "channelId" = EXCLUDED."channelId", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt";
