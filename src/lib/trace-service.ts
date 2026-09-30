@@ -72,6 +72,7 @@ export interface TraceQueryResult {
     outboundCount: number;
     applicantName: string;
     approverName?: string | null;
+    outboundTime?: Date | null;
     appliedAt: Date;
     approvedAt?: Date | null;
     status: string;
@@ -97,15 +98,6 @@ export function extractTraceFarmers(data: { farmerInfo?: TraceQueryResult["farme
     ).values()
   );
 }
-
-const DEFAULT_FARMER = {
-  name: "张卫民",
-  code: "JD-2026-001",
-  area: 100,
-  quota: 60000,
-  farmType: "LAKE_CRAB",
-  enclosureCode: "W-01",
-};
 
 /**
  * 核心链路解析器：根据单号检索并逆向构建六环节溯源链
@@ -335,17 +327,18 @@ async function buildTraceFromOutbound(
         { label: "发货去向", value: outOrder.store?.name || outOrder.storeName || "指定门店" },
         { label: "发货数量", value: `${line.count || outOrder.outboundCount} 只` },
         { label: "物流承运", value: outboundLogistics },
-        { label: "申请人 / 时间", value: `${outOrder.applicant?.fullName || "李仓管"} · ${formatFullDateTime(outOrder.createdAt)}` },
-        { label: "审核人 / 时间", value: outOrder.approvedAt ? `${outOrder.approver?.fullName || "张核验"} · ${formatFullDateTime(outOrder.approvedAt)}` : (isApproved ? "已核准" : "待审核") },
+        { label: "出库时间", value: formatFullDateTime(outOrder.outboundTime || outOrder.createdAt) },
+        { label: "申请人 / 时间", value: `${outOrder.applicant?.fullName || "出库员"} · ${formatFullDateTime(outOrder.createdAt)}` },
+        { label: "审核人 / 时间", value: outOrder.approvedAt ? `${outOrder.approver?.fullName || "审核员"} · ${formatFullDateTime(outOrder.approvedAt)}` : (isApproved ? "已核准" : "待审核") },
       ],
       qcBadges: allQC.filter((q) => ["PACK_INSPECT", "VEHICLE_INSPECT"].includes(q.cat)).slice(0, 2).map(mapQc),
       status: isApproved ? "COMPLETED" : "PREVIEW",
     };
 
     // 环节 5: 预冷 (保鲜入库单与库位严格按性别/规格隔离)
-    const coldStoreName = coldLog?.store?.name || (gender === "FEMALE" ? "保鲜预冷B区" : "保鲜预冷A区");
-    const coldStoreCode = coldLog?.store?.code || (gender === "FEMALE" ? "BX-02" : "BX-01");
-    const coldLogCode = coldLog?.code || (gender === "FEMALE" ? "CR-0902" : "CR-0901");
+    const coldStoreName = coldLog?.store?.name || "保鲜预冷库";
+    const coldStoreCode = coldLog?.store?.code || "—";
+    const coldLogCode = coldLog?.code || "—";
 
     const nodeCold: TraceChainNode = {
       step: 5,
@@ -356,7 +349,7 @@ async function buildTraceFromOutbound(
         { label: "保鲜库位", value: `${coldStoreName} (${coldStoreCode})` },
         { label: "入库单号", value: coldLogCode },
         { label: "入库数量", value: `${coldLog?.count || line.count || outOrder.outboundCount} 只` },
-        { label: "库管员", value: coldLog?.operator || "李仓管" },
+        { label: "库管员", value: coldLog?.operator || "库管员" },
         { label: "入库时间", value: coldLog?.createdAt ? formatFullDateTime(coldLog.createdAt) : formatFullDateTime(effectiveBatch.inPoolTime) },
       ],
       qcBadges: allQC.filter((q) => q.cat === "COLD_TEMP").slice(0, 2).map(mapQc),
@@ -364,9 +357,9 @@ async function buildTraceFromOutbound(
     };
 
     // 环节 4: 分拣 (分拣任务及设备规格隔离，损耗率合规)
-    const sortCode = sortTask?.code || (gender === "FEMALE" ? "FJR2026090602" : "FJR2026090601");
-    const machineName = sortTask?.machine?.name || (gender === "FEMALE" ? "多通道母蟹分拣机" : "高速动态分拣机 G1");
-    const machineCode = sortTask?.machine?.code || (gender === "FEMALE" ? "FJ-02" : "FJ-01");
+    const sortCode = sortTask?.code || "—";
+    const machineName = sortTask?.machine?.name || "动态分拣机";
+    const machineCode = sortTask?.machine?.code || "—";
     const sortInput = sortTask?.inputCount ?? (line.count || outOrder.outboundCount);
     const sortQualified = sortTask?.qualifiedCount ?? (line.count || outOrder.outboundCount);
     const sortLossRate = sortTask?.lossRate ?? 0;
@@ -505,8 +498,9 @@ async function buildTraceFromOutbound(
       storeName: outOrder.store?.name || outOrder.storeName || getTenant().storeLabel,
       channelName: outOrder.channel?.name || getTenant().channelName,
       outboundCount: outOrder.outboundCount,
-      applicantName: outOrder.applicant?.fullName || "李仓管",
-      approverName: outOrder.approver?.fullName || "张核验",
+      applicantName: outOrder.applicant?.fullName || "出库员",
+      approverName: outOrder.approver?.fullName || "审核员",
+      outboundTime: outOrder.outboundTime,
       appliedAt: outOrder.createdAt,
       approvedAt: outOrder.approvedAt,
       status: outOrder.status,
@@ -518,7 +512,7 @@ async function buildTraceFromOutbound(
       area: primaryFarmer.area,
       quota: primaryFarmer.quota,
       farmType: primaryFarmer.farmType,
-      enclosureCode: primaryBatch?.enclosure?.code || primaryFarmer.enclosures?.[0]?.code || "W-01",
+      enclosureCode: primaryBatch?.enclosure?.code || primaryFarmer.enclosures?.[0]?.code || "-",
     },
     lines: lineDetails,
   };
@@ -530,7 +524,21 @@ async function buildTraceFromOutbound(
 async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryResult> {
   const primaryOrder = orders[0];
   const lines: TraceLineDetail[] = [];
-  let primaryFarmer: any = DEFAULT_FARMER;
+  const dbFarmer = await prisma.farmer.findFirst({
+    where: { status: "ACTIVE" },
+    include: { enclosures: true },
+  });
+  const fallbackFarmer = {
+    name: dbFarmer?.name || "签约养殖户",
+    code: dbFarmer?.code || "-",
+    area: dbFarmer?.area || 0,
+    quota: dbFarmer?.quota || 0,
+    farmType: dbFarmer?.farmType || "LAKE_CRAB",
+    enclosures: dbFarmer?.enclosures || [],
+    enclosureCode: dbFarmer?.enclosures?.[0]?.code || "-",
+  };
+
+  let primaryFarmer: any = fallbackFarmer;
   let primaryBatch: any = null;
 
   for (let idx = 0; idx < orders.length; idx++) {
@@ -562,7 +570,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       orderBy: { createdAt: "desc" },
     });
 
-    const farmer = batch?.farmer || DEFAULT_FARMER;
+    const farmer = batch?.farmer || fallbackFarmer;
     if (idx === 0) {
       primaryFarmer = farmer;
       primaryBatch = batch;
@@ -575,13 +583,13 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
     const nodeRaw: TraceChainNode = {
       step: 1,
       stageName: "原料",
-      title: `${batch?.code || "YL2026092101"} (在池批次推演)`,
+      title: `${batch?.code || "在池原料批次"} (在池批次推演)`,
       subtitle: `签约户: ${farmer.name} · 核定额度 ${farmer.quota.toLocaleString()} 只`,
       details: [
-        { label: "原料批次号", value: batch?.code || "YL2026092101" },
+        { label: "原料批次号", value: batch?.code || "待分配批次" },
         { label: "签约养殖户", value: `${farmer.name} (${farmer.code})` },
-        { label: "来源围网", value: `${batch?.enclosure?.code || (farmer as any).enclosureCode || (farmer as any).enclosures?.[0]?.code || "W-01"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"})` },
-        { label: "入池只数", value: `${matchedItem?.inPoolCount || batch?.inPoolCount || 5000} 只` },
+        { label: "来源围网", value: `${batch?.enclosure?.code || (farmer as any).enclosureCode || (farmer as any).enclosures?.[0]?.code || "-"} (${farmer.farmType === "LAKE_CRAB" ? "阳澄湖特许围网" : "标准化生态塘"})` },
+        { label: "入池只数", value: `${matchedItem?.inPoolCount || batch?.inPoolCount || ord.count || "-"} 只` },
         { label: "药残及重金属快检", value: "已检测合格 (留痕可验)" },
       ],
       qcBadges: [],

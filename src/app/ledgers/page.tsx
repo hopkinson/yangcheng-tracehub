@@ -654,8 +654,8 @@ export default async function LedgersPage({
 
   const outboundHeaderRows = outboundOrders.map((order) => {
     const exportRow: ExportValue[] = [
-      formatDate(order.createdAt),
-      formatTime(order.createdAt),
+      formatDate(order.outboundTime || order.createdAt),
+      formatTime(order.outboundTime || order.createdAt),
       order.code,
       outboundTypeText(order.type),
       order.outboundCount,
@@ -691,8 +691,8 @@ export default async function LedgersPage({
         .filter((item) => item.gender === line.gender && normalizeWeightTier(item.weightTier) === normalizeWeightTier(line.weightTier))
         .map((item) => item.pool.code);
       const exportRow: ExportValue[] = [
-        formatDate(order.createdAt),
-        formatTime(order.createdAt),
+        formatDate(order.outboundTime || order.createdAt),
+        formatTime(order.outboundTime || order.createdAt),
         order.code,
         sourceBatch.code,
         bundle.code,

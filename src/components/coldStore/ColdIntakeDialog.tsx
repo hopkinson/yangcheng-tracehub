@@ -61,7 +61,7 @@ export function ColdIntakeDialog({
   const [selectedSourceBatchId, setSelectedSourceBatchId] = useState(initialSourceBatch?.id || "");
   const [selectedTaskIds, setSelectedTaskIds] = useState<Record<string, boolean>>({});
   const [genderFilter, setGenderFilter] = useState<"ALL" | "MALE" | "FEMALE">("ALL");
-  const [operator, setOperator] = useState("李仓管");
+  const [operator, setOperator] = useState("库管员");
 
   // 如果当前选中的批次已无可入库余量，且存在待入库优先批次，自动切换至优先批次
   const currentBatch = sourceBatches.find((b) => b.id === selectedSourceBatchId);

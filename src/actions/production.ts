@@ -1357,7 +1357,7 @@ export async function createColdIntakeAction(data: {
           type: "INTAKE",
           count: data.count,
           sortTaskId: sortTask.id,
-          operator: data.operator || "李仓管",
+          operator: data.operator?.trim() || "库管员",
         },
       });
 
@@ -1465,7 +1465,7 @@ export async function createBatchColdIntakeAction(data: {
             type: "INTAKE",
             count: intakeCount,
             sortTaskId: task.id,
-            operator: data.operator || "李仓管",
+            operator: data.operator?.trim() || "库管员",
           },
         });
 

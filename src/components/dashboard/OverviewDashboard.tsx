@@ -142,7 +142,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
     if (!closingType) return;
     setClosing(true);
     try {
-      await completeDailyCloseAction(closingType);
+      const res = await completeDailyCloseAction(closingType);
+      if (!res?.success) {
+        toast.error(res?.error || "日结确认失败");
+        return;
+      }
       toast.success(closingType === "POOL" ? "今日清池日结已完成" : "今日清库日结已完成");
       setClosingType(null);
       router.refresh();

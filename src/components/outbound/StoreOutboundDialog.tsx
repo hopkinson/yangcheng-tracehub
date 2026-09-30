@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Loader2, Store as StoreIcon, AlertTriangle } from "lucide-react";
 import { createStoreOutboundAction } from "@/actions/outbound";
 import { Invariants } from "@/lib/invariants";
+import { getBeijingTimeString } from "@/lib/utils";
 import { type ColdBatchOption, type SpecDemand } from "./BatchLineageSelect";
 
 export interface PendingOrderOption {
@@ -73,6 +74,9 @@ export function StoreOutboundDialog({
   const [transportCompany, setTransportCompany] = useState(defaults?.transportCompany || "苏州市冷链物流专车");
   const [contactName, setContactName] = useState(defaults?.contactName || "");
   const [contactPhone, setContactPhone] = useState(defaults?.contactPhone || "");
+  const [outboundTime, setOutboundTime] = useState<string>(
+    () => (getBeijingTimeString(new Date()) || "").replace(" ", "T")
+  );
 
   // 当前选中门店的待发订单
   const currentStoreOrders = useMemo(() => {
@@ -148,6 +152,7 @@ export function StoreOutboundDialog({
           contactName: contactName.trim(),
           contactPhone: contactPhone.trim(),
           applicantId: userId,
+          outboundTime,
         });
 
         if (res?.error) return void toast.error(res.error);
@@ -165,8 +170,11 @@ export function StoreOutboundDialog({
       open={open}
       onOpenChange={(v) => {
         setOpen(v);
-        if (v && selectedOrderIds.length === 0 && currentStoreOrders.length > 0) {
-          setSelectedOrderIds(currentStoreOrders.map((o) => o.id));
+        if (v) {
+          setOutboundTime((getBeijingTimeString(new Date()) || "").replace(" ", "T"));
+          if (selectedOrderIds.length === 0 && currentStoreOrders.length > 0) {
+            setSelectedOrderIds(currentStoreOrders.map((o) => o.id));
+          }
         }
       }}
     >
@@ -233,6 +241,21 @@ export function StoreOutboundDialog({
                 onChange={(e) => setContactPhone(e.target.value)}
                 placeholder="手机号或座机（如 13800000000）"
                 minLength={5}
+                className="h-8 text-xs font-mono"
+                required
+              />
+            </div>
+
+            <div className="space-y-1 sm:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">出库时间 (年月日 时分秒，支持未来时间)</Label>
+                <span className="text-[10px] text-muted-foreground font-mono">实际/预约发车时间</span>
+              </div>
+              <Input
+                type="datetime-local"
+                step="1"
+                value={outboundTime}
+                onChange={(e) => setOutboundTime(e.target.value)}
                 className="h-8 text-xs font-mono"
                 required
               />

@@ -458,6 +458,7 @@ model OutboundOrder {
   approvedAt        DateTime?
 
   createdAt         DateTime        @default(now())
+  outboundTime      DateTime        @default(now()) // 实际/预计出库时间 (年月日 时分秒，支持未来时间)
   updatedAt         DateTime        @updatedAt
 
   lines             OutboundLine[]

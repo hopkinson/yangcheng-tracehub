@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FileText, Truck, Store, Calendar, User, CheckCircle2, XCircle, Clock } from "lucide-react";
-import { formatDateTime, cn } from "@/lib/utils";
+import { formatDateTime, formatFullDateTime, cn } from "@/lib/utils";
 import { getTenant } from "@/config/tenant";
 
 export function OutboundDetailDialog({
@@ -38,6 +38,7 @@ export function OutboundDetailDialog({
     approvalComment?: string | null;
     approvedAt?: Date | string | null;
     createdAt: Date | string;
+    outboundTime?: Date | string | null;
     lines: Array<{
       id: string;
       orderNo: string;
@@ -101,7 +102,7 @@ export function OutboundDetailDialog({
 
         <div className="space-y-4 flex-1 overflow-y-auto px-1 py-1 text-xs">
           {/* 基本信息面板 */}
-          <div className={cn("grid gap-2.5 p-3 rounded-lg border bg-muted/20", order.contactName ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-4")}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3 rounded-lg border bg-muted/20">
             <div>
               <span className="text-[11px] text-muted-foreground block">去向 / 门店</span>
               <span className="font-medium text-foreground">{order.storeName || (isStore ? getTenant().storeLabel : "蟹卡直发")}</span>
@@ -109,6 +110,12 @@ export function OutboundDetailDialog({
             <div>
               <span className="text-[11px] text-muted-foreground block">出库总只数</span>
               <span className="font-mono font-bold text-primary">{order.outboundCount} 只</span>
+            </div>
+            <div>
+              <span className="text-[11px] text-muted-foreground block">实际/计划出库时间</span>
+              <span className="font-mono font-medium text-foreground">
+                {formatFullDateTime(order.outboundTime || order.createdAt)}
+              </span>
             </div>
             <div>
               <span className="text-[11px] text-muted-foreground block">申请时间</span>

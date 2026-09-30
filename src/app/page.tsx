@@ -3,17 +3,13 @@ import { OverviewDashboard } from "@/components/dashboard/OverviewDashboard";
 import { formatISODate } from "@/lib/utils";
 import { aggregateTraceableColdStocks } from "@/lib/cold-stock";
 import { getCurrentUser } from "@/lib/auth";
+import { summarizeBatchItems } from "@/lib/holding-pool";
 
 export const dynamic = "force-dynamic";
 
-const TODAY_STR = formatISODate();
-const isTodayOrDemo = (d: Date | string | null | undefined): boolean => {
-  if (!d) return false;
-  const s = formatISODate(d);
-  return s === "2026-09-21" || s === TODAY_STR;
-};
-
 export default async function DashboardPage() {
+  const todayStr = formatISODate();
+  const isToday = (d: Date | string | null | undefined): boolean => Boolean(d && formatISODate(d) === todayStr);
   const [
     farmers,
     batches,
@@ -59,7 +55,12 @@ export default async function DashboardPage() {
   const totalInPool = batches.reduce((sum, b) => sum + b.inPoolCount, 0);
   const totalOutPool = batches.reduce((sum, b) => sum + b.outPoolCount, 0);
   const totalLoss = batches.reduce((sum, b) => sum + b.lossCount, 0);
-  const totalLiveInPool = Math.max(0, totalInPool - totalOutPool - totalLoss);
+  const totalLiveInPool = batches
+    .filter((b) => ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"].includes(b.status))
+    .reduce(
+      (sum, b) => sum + (b.items.length ? summarizeBatchItems(b.items).remaining : Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount)),
+      0
+    );
 
   const totalTagClaimed = tagClaims
     .filter((c) => c.status === "APPROVED")
@@ -71,17 +72,17 @@ export default async function DashboardPage() {
 
   // 2. 8 张环节卡细分指标（当日 / 累计 / 待办）
   // 1. 订单
-  const todayOrders = orders.filter((o) => isTodayOrDemo(o.deliveryDate) || isTodayOrDemo(o.importTime));
+  const todayOrders = orders.filter((o) => isToday(o.deliveryDate) || isToday(o.importTime));
   const todayOriginalOrdersCount = new Set(todayOrders.map((o) => o.orderNo || o.id)).size;
   const pendingOrders = orders.filter((o) => o.status === "PENDING");
   const pendingDeliveryTotalCount = pendingOrders.reduce((s, o) => s + o.count, 0);
 
   // 2. 原料
-  const todayBatches = batches.filter((b) => isTodayOrDemo(b.inPoolTime));
+  const todayBatches = batches.filter((b) => isToday(b.inPoolTime));
   const todayInPoolTotalCount = todayBatches.reduce((s, b) => s + b.inPoolCount, 0);
 
   // 3. 蟹扣申领
-  const todayTagClaims = tagClaims.filter((c) => isTodayOrDemo(c.claimDate));
+  const todayTagClaims = tagClaims.filter((c) => isToday(c.claimDate));
   const todayTagClaimsTotalCount = todayTagClaims.reduce((s, c) => s + c.claimCount, 0);
   const pendingTagClaimsCount = tagClaims.filter((c) => c.status === "PENDING").length;
 
@@ -115,7 +116,7 @@ export default async function DashboardPage() {
   const todayPoolLossCount = todayBatches.reduce((s, b) => s + (b.lossCount || 0), 0);
 
   // 5. 捆扎
-  const todayBundleBatches = bundleBatches.filter((b) => isTodayOrDemo(b.date));
+  const todayBundleBatches = bundleBatches.filter((b) => isToday(b.date));
   const todayBundleTotalCount = todayBundleBatches.reduce(
     (s, b) => s + (b.qualifiedCount || b.lines.reduce((ls, l) => ls + l.count, 0)),
     0
@@ -124,12 +125,12 @@ export default async function DashboardPage() {
   const todayBundleDoneCount = todayBundleBatches.filter((b) => b.status === "COMPLETED").length;
 
   // 6. 分拣
-  const todaySortTasks = sortTasks.filter((t) => isTodayOrDemo(t.date));
+  const todaySortTasks = sortTasks.filter((t) => isToday(t.date));
   const todaySortQualifiedCount = todaySortTasks.reduce((s, t) => s + t.qualifiedCount, 0);
   const todaySortLossCount = todaySortTasks.reduce((s, t) => s + t.lossCount, 0);
 
   // 7. 预冷
-  const todayColdLogs = coldLogs.filter((l) => isTodayOrDemo(l.createdAt) && l.type === "INTAKE");
+  const todayColdLogs = coldLogs.filter((l) => isToday(l.createdAt) && l.type === "INTAKE");
   const todayColdIntakeCount = todayColdLogs.reduce((s, l) => s + l.count, 0);
   const todayColdBatchesCount = todayColdLogs.length;
   const totalColdStockCount = aggregateTraceableColdStocks({
@@ -140,7 +141,7 @@ export default async function DashboardPage() {
     defaultSpecs: [],
   }).reduce((sum, stock) => sum + stock.available, 0);
   // 8. 出库
-  const todayOutboundOrders = outboundOrders.filter((o) => isTodayOrDemo(o.createdAt));
+  const todayOutboundOrders = outboundOrders.filter((o) => isToday(o.createdAt));
   const todayOutboundTotalCount = todayOutboundOrders.reduce((s, o) => s + o.outboundCount, 0);
   const todayOutboundOriginalOrdersCount = new Set(todayOutboundOrders.flatMap((o) => o.lines.map((l) => l.orderNo || o.id))).size;
   const pendingOutboundOrdersCount = outboundOrders.filter((o) => o.status === "PENDING").length;

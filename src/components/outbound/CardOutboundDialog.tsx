@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { ShoppingBag, Loader2, AlertTriangle } from "lucide-react";
 import { createCardUnifiedOutboundAction } from "@/actions/outbound";
 import { Invariants } from "@/lib/invariants";
+import { getBeijingTimeString } from "@/lib/utils";
 import { type ColdBatchOption, type SpecDemand } from "./BatchLineageSelect";
 
 export interface SpecStockInfo {
@@ -45,6 +46,9 @@ export function CardOutboundDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [transportCompany, setTransportCompany] = useState("顺丰冷运速递");
+  const [outboundTime, setOutboundTime] = useState<string>(
+    () => (getBeijingTimeString(new Date()) || "").replace(" ", "T")
+  );
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
@@ -105,6 +109,7 @@ export function CardOutboundDialog({
           orderIds: selectedOrderIds,
           transportCompany,
           applicantId: userId,
+          outboundTime,
         });
 
         if (res?.error) return void toast.error(res.error);
@@ -122,8 +127,11 @@ export function CardOutboundDialog({
       open={open}
       onOpenChange={(v) => {
         setOpen(v);
-        if (v && selectedOrderIds.length === 0 && pendingCardOrders.length > 0) {
-          setSelectedOrderIds(pendingCardOrders.map((o) => o.id));
+        if (v) {
+          setOutboundTime((getBeijingTimeString(new Date()) || "").replace(" ", "T"));
+          if (selectedOrderIds.length === 0 && pendingCardOrders.length > 0) {
+            setSelectedOrderIds(pendingCardOrders.map((o) => o.id));
+          }
         }
       }}
     >
@@ -145,24 +153,41 @@ export function CardOutboundDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 overflow-y-auto px-1 py-1">
-          <div className="p-3 rounded-lg border bg-muted/20 flex items-center justify-between gap-3">
-            <div className="space-y-1 flex-1">
-              <Label className="text-xs">承运快递服务商</Label>
-              <Input
-                value={transportCompany}
-                onChange={(e) => setTransportCompany(e.target.value)}
-                className="h-8 text-xs"
-              />
+          <div className="p-3 rounded-lg border bg-muted/20 space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1 flex-1">
+                <Label className="text-xs">承运快递服务商</Label>
+                <Input
+                  value={transportCompany}
+                  onChange={(e) => setTransportCompany(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-4 text-xs font-mono pr-2">
+                <div>
+                  <span className="text-[11px] text-muted-foreground block">已选订单</span>
+                  <span className="text-sm font-bold text-foreground">{selectedOrderIds.length} / {pendingCardOrders.length} 单</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-muted-foreground block">合计只数</span>
+                  <span className="text-sm font-bold text-primary">{totalCrabs} 只</span>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-4 text-xs font-mono pr-2">
-              <div>
-                <span className="text-[11px] text-muted-foreground block">已选订单</span>
-                <span className="text-sm font-bold text-foreground">{selectedOrderIds.length} / {pendingCardOrders.length} 单</span>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">出库时间 (年月日 时分秒，支持未来时间)</Label>
+                <span className="text-[10px] text-muted-foreground font-mono">实际/预约发车时间</span>
               </div>
-              <div>
-                <span className="text-[11px] text-muted-foreground block">合计只数</span>
-                <span className="text-sm font-bold text-primary">{totalCrabs} 只</span>
-              </div>
+              <Input
+                type="datetime-local"
+                step="1"
+                value={outboundTime}
+                onChange={(e) => setOutboundTime(e.target.value)}
+                className="h-8 text-xs font-mono"
+                required
+              />
             </div>
           </div>
 

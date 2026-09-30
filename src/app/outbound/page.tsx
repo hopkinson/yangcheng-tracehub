@@ -18,7 +18,7 @@ import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { StaggerContainer, FadeIn } from "@/components/motion/MotionWrapper";
-import { cn, formatDateTime, formatDate } from "@/lib/utils";
+import { cn, formatDateTime, formatFullDateTime, formatDate } from "@/lib/utils";
 import { canApprove } from "@/config/approval";
 import { getApprovalSetting } from "@/lib/approval-settings";
 import Link from "next/link";
@@ -404,7 +404,7 @@ export default async function OutboundPage({
                         <TableHead className="w-[110px]">总数</TableHead>
                         <TableHead className="w-[90px]">状态</TableHead>
                         <TableHead className="min-w-[160px]">物流信息</TableHead>
-                        <TableHead className="w-[140px]">申请/审核时间</TableHead>
+                        <TableHead className="min-w-[170px]">出库/审核时间</TableHead>
                         <TableHead className="text-right w-[140px]">操作</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -542,11 +542,21 @@ export default async function OutboundPage({
                               )}
                             </TableCell>
 
-                            {/* 8. 申请/审核时间 */}
+                            {/* 8. 出库/审核时间 */}
                             <TableCell className="align-middle">
-                              <div className="flex flex-col gap-0.5 font-mono text-[11px] text-muted-foreground">
-                                <span>申: {formatDateTime(order.createdAt)}</span>
-                                {order.approvedAt && <span>审: {formatDateTime(order.approvedAt)}</span>}
+                              <div className="flex flex-col gap-0.5 font-mono text-[11px]">
+                                <div className="flex items-center gap-1 text-foreground font-medium">
+                                  <span>出: {formatFullDateTime(order.outboundTime || order.createdAt)}</span>
+                                  {new Date(order.outboundTime || order.createdAt).getTime() > Date.now() && (
+                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                                      计划
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                                  <span>申: {formatDateTime(order.createdAt)}</span>
+                                  {order.approvedAt && <span>审: {formatDateTime(order.approvedAt)}</span>}
+                                </div>
                               </div>
                             </TableCell>
 
@@ -573,6 +583,7 @@ export default async function OutboundPage({
                                     approvalComment: order.approvalComment,
                                     approvedAt: order.approvedAt,
                                     createdAt: order.createdAt,
+                                    outboundTime: order.outboundTime,
                                     lines: order.lines || [],
                                   }}
                                 />

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { getBeijingDateStr } from "@/lib/utils";
+import { getBeijingDateStr, parseBeijingDateTime } from "@/lib/utils";
 
 type FifoColdLot = {
   coldLogId: string;
@@ -443,6 +443,7 @@ export async function createStoreOutboundAction(data: {
   contactName: string;
   contactPhone: string;
   applicantId: string;
+  outboundTime?: string | Date;
 }): Promise<any> {
   try {
     await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
@@ -493,6 +494,7 @@ export async function createStoreOutboundAction(data: {
           contactPhone,
           status: "PENDING",
           applicantId: data.applicantId,
+          outboundTime: parseBeijingDateTime(data.outboundTime),
           lines: { create: lines },
         },
       });
@@ -544,6 +546,7 @@ export async function createCardUnifiedOutboundAction(data: {
   orderIds: string[];
   transportCompany?: string;
   applicantId: string;
+  outboundTime?: string | Date;
 }): Promise<any> {
   try {
     await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
@@ -584,6 +587,7 @@ export async function createCardUnifiedOutboundAction(data: {
           logisticsNo: "发货后回填",
           status: "PENDING",
           applicantId: data.applicantId,
+          outboundTime: parseBeijingDateTime(data.outboundTime),
           lines: { create: lines },
         },
       });
@@ -745,6 +749,7 @@ export async function createOutboundOrderAction(data: {
   outboundCount: number;
   channelOrderCount?: number;
   applicantId: string;
+  outboundTime?: string | Date;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const channelOrderCount = data.channelOrderCount ?? data.outboundCount;
@@ -786,6 +791,7 @@ export async function createOutboundOrderAction(data: {
         logisticsNo: "冷链专车 (苏E·88888)",
         status: "PENDING",
         applicantId: data.applicantId,
+        outboundTime: parseBeijingDateTime(data.outboundTime),
       },
     });
 
@@ -802,6 +808,7 @@ export async function resubmitOutboundOrderAction(data: {
   storeId: string;
   outboundCount: number;
   applicantId: string;
+  outboundTime?: string | Date;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
@@ -837,6 +844,7 @@ export async function resubmitOutboundOrderAction(data: {
         channelOrderCount: data.outboundCount,
         status: "PENDING",
         rejectReason: null,
+        ...(data.outboundTime ? { outboundTime: parseBeijingDateTime(data.outboundTime) } : {}),
       },
     });
 

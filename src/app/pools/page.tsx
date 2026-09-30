@@ -27,7 +27,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { StaggerContainer, FadeIn, PulseBadge } from "@/components/motion/MotionWrapper";
-import { formatDateTime, getBeijingDayRange } from "@/lib/utils";
+import { formatDateTime, formatISODate, getBeijingDayRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -69,8 +69,8 @@ export default async function PoolsPage({
   const page = Math.max(1, Number(params.page) || 1);
   const pageSize = Math.max(1, Number(params.pageSize) || (activeTab === "qc" ? 10 : 12));
 
-  // 当天时间窗口 (2026-09-21 演示基准)
-  const { gte: todayStart, lte: todayEnd } = getBeijingDayRange("2026-09-21");
+  // 当天时间窗口
+  const { gte: todayStart, lte: todayEnd } = getBeijingDayRange(formatISODate());
 
   const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 

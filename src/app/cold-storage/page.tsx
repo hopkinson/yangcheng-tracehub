@@ -142,7 +142,7 @@ export default async function ColdStoragePage({
     logUsedMap.set(row.coldLogId, (logUsedMap.get(row.coldLogId) || 0) + row.count);
   }
 
-  // 获取今日日期字符串用于统计今日入库 (兼容仿真固定日期 2026-09-21 或真实当天)
+  // 获取今日日期字符串用于统计今日入库
   const todayStr = formatISODate();
 
   const totalStoredCount = logs.reduce((a, b) => a + b.count, 0);
@@ -214,9 +214,9 @@ export default async function ColdStoragePage({
               const totalStored = s.logs.reduce((a, b) => a + b.count, 0);
               const totalConsumed = s.logs.reduce((acc, l) => acc + (logUsedMap.get(l.id) || 0), 0);
               const currentStock = Math.max(0, totalStored - totalConsumed);
-              // 今日入库计算 (当天的入库量，若无则取最近一天数据呈现)
+              // 今日入库计算 (当天的入库量)
               const todayStored = s.logs
-                .filter((l) => formatISODate(l.createdAt) === todayStr || formatISODate(l.createdAt) === "2026-09-21")
+                .filter((l) => formatISODate(l.createdAt) === todayStr)
                 .reduce((a, b) => a + b.count, 0);
               const hasStock = currentStock > 0;
 
