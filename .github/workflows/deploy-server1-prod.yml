@@ -356,7 +356,7 @@ jobs:
 
             # 11. 正式环境历史数据迁移至阿里云 RDS PostgreSQL (自动检测并幂等执行)
             echo "📦 正在检查服务器 1 正式环境历史数据与阿里云 RDS 迁移需求..."
-            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "SET search_path = $TARGET_SCHEMA, public;" -tc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | tr -d ' \r\n' || echo "0")
+            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -Atc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | grep -E '^[0-9]+$' || echo "0")
             echo "📊 当前阿里云 RDS 中的原料批次记录数: ${RDS_BATCH_COUNT:-0}"
 
             if [ "${RDS_BATCH_COUNT:-0}" = "0" ] || [ -z "$RDS_BATCH_COUNT" ]; then
@@ -649,7 +649,7 @@ jobs:
 
             # 11. 正式环境历史数据迁移至阿里云 RDS PostgreSQL (自动检测并幂等执行)
             echo "📦 正在检查服务器 1 正式环境历史数据与阿里云 RDS 迁移需求..."
-            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "SET search_path = $TARGET_SCHEMA, public;" -tc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | tr -d ' \r\n' || echo "0")
+            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -Atc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | grep -E '^[0-9]+$' || echo "0")
             echo "📊 当前阿里云 RDS 中的原料批次记录数: ${RDS_BATCH_COUNT:-0}"
 
             if [ "${RDS_BATCH_COUNT:-0}" = "0" ] || [ -z "$RDS_BATCH_COUNT" ]; then
