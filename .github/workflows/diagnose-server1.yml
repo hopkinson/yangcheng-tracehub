@@ -1,0 +1,241 @@
+name: "诊断 · 服务器 1 线上环境数据与 RDS 对比"
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: server-1-diagnostics
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: "全面检查服务器 1 与 RDS 线上数据"
+    runs-on: ubuntu-latest
+    env:
+      SERVER_HOST_1: ${{ secrets.SERVER_HOST_1 || vars.SERVER_HOST_1 || secrets.SERVER_HOST || vars.SERVER_HOST }}
+      SERVER_USER_1: ${{ secrets.SERVER_USER_1 || vars.SERVER_USER_1 || secrets.SERVER_USER || vars.SERVER_USER || 'root' }}
+      SERVER_PASSWORD_1: ${{ secrets.SERVER_PASSWORD_1 || secrets.SERVER_PASSWORD }}
+      SERVER_SSH_KEY_1: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
+      SERVER_PORT_1: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+    steps:
+      - name: "SSH 连接服务器 1 并执行全面数据诊断"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.SERVER_HOST_1 }}
+          username: ${{ env.SERVER_USER_1 }}
+          password: ${{ env.SERVER_PASSWORD_1 }}
+          key: ${{ env.SERVER_SSH_KEY_1 }}
+          port: ${{ env.SERVER_PORT_1 }}
+          timeout: "30s"
+          command_timeout: "10m"
+          script: |
+            set -e
+
+            TARGET_DIR=""
+            for dir in "/opt/yangcheng-tracehub" "/root/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
+              if [ -d "$dir" ]; then
+                TARGET_DIR="$dir"
+                break
+              fi
+            done
+            cd "$TARGET_DIR"
+            echo "📂 服务器 1 工作目录: $(pwd)"
+
+            echo "=========================================================="
+            echo "1. 检查服务器上的所有 SQLite 文件与备份"
+            echo "=========================================================="
+            find data -type f \( -name "*.db*" -o -name "*.sqlite*" \) -exec ls -lh {} + 2>/dev/null || true
+
+            echo ""
+            echo "=========================================================="
+            echo "2. 运行 Python 诊断脚本，深入比对 SQLite 历史数据与 RDS 线上数据"
+            echo "=========================================================="
+            cat << 'PYEOF' > /tmp/diagnose_db.py
+            import os
+            import sqlite3
+            import subprocess
+            import json
+            from datetime import datetime
+
+            def get_sqlite_stats(db_path):
+                print(f"\n---------------------------------------------")
+                print(f"📦 分析 SQLite 数据库: {db_path} ({os.path.getsize(db_path)} bytes)")
+                print(f"---------------------------------------------")
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                tables = [r[0] for r in cursor.fetchall()]
+                
+                stats = {}
+                for t in sorted(tables):
+                    try:
+                        cnt = cursor.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]
+                        stats[t] = cnt
+                    except Exception as e:
+                        stats[t] = f"Err: {e}"
+
+                print("各表总行数:")
+                for t, c in stats.items():
+                    print(f"  {t:22}: {c}")
+
+                # 重点分析 Order
+                if "Order" in tables:
+                    print("\n[Order 订单分析]:")
+                    cursor.execute('SELECT count(*) FROM "Order"')
+                    print(f"  总订单数: {cursor.fetchone()[0]}")
+                    cursor.execute('SELECT status, count(*) FROM "Order" GROUP BY status')
+                    for r in cursor.fetchall():
+                        print(f"  状态分组: {r[0]} -> {r[1]} 条")
+                    
+                    # 检查 2026-09-29 相关订单
+                    try:
+                        cursor.execute('SELECT id, orderNo, status, count, gender, weightTier, deliveryDate FROM "Order" LIMIT 5')
+                        print("  样本订单记录:")
+                        for r in cursor.fetchall():
+                            print(f"    {r}")
+                    except Exception as e:
+                        print("  Error:", e)
+
+                # 重点分析 OutboundOrder 出库单
+                if "OutboundOrder" in tables:
+                    print("\n[OutboundOrder 出库单分析]:")
+                    cursor.execute('SELECT count(*) FROM "OutboundOrder"')
+                    print(f"  总出库单数: {cursor.fetchone()[0]}")
+                    cursor.execute('SELECT status, count(*) FROM "OutboundOrder" GROUP BY status')
+                    for r in cursor.fetchall():
+                        print(f"  状态分组: {r[0]} -> {r[1]} 条")
+                    cursor.execute('SELECT id, code, status, outboundCount, channelOrderCount, createdAt FROM "OutboundOrder" ORDER BY createdAt DESC LIMIT 10')
+                    print("  最近 10 条出库单:")
+                    for r in cursor.fetchall():
+                        print(f"    {r}")
+
+                # 重点分析 OutboundLine 出库明细
+                if "OutboundLine" in tables:
+                    print("\n[OutboundLine 出库明细分析]:")
+                    cursor.execute('SELECT count(*) FROM "OutboundLine"')
+                    print(f"  总出库明细数: {cursor.fetchone()[0]}")
+                    cursor.execute('SELECT id, outboundOrderId, orderNo, count, expressCompany, waybillNo, createdAt FROM "OutboundLine" ORDER BY createdAt DESC LIMIT 5')
+                    print("  最近 5 条出库明细:")
+                    for r in cursor.fetchall():
+                        print(f"    {r}")
+
+                # 重点分析 Batch 原料批次
+                if "Batch" in tables:
+                    print("\n[Batch 原料批次分析]:")
+                    cursor.execute('SELECT count(*) FROM "Batch"')
+                    print(f"  总批次数: {cursor.fetchone()[0]}")
+                    cursor.execute('SELECT code, inPoolCount, outPoolCount, status, createdAt FROM "Batch" ORDER BY createdAt DESC LIMIT 5')
+                    for r in cursor.fetchall():
+                        print(f"    {r}")
+
+                return stats
+
+            # 1. 查找所有 SQLite
+            sqlite_candidates = ["data/db/app.db", "data/app.db"]
+            # 加上最新备份
+            backup_dir = "data/backups/production"
+            if os.path.exists(backup_dir):
+                for f in sorted(os.listdir(backup_dir), reverse=True):
+                    if f.endswith(".sqlite.gz"):
+                        gz_path = os.path.join(backup_dir, f)
+                        uncompressed = f"/tmp/{f[:-3]}"
+                        os.system(f"gzip -dc '{gz_path}' > '{uncompressed}'")
+                        sqlite_candidates.append(uncompressed)
+                        break
+
+            for p in sqlite_candidates:
+                if os.path.exists(p) and os.path.getsize(p) > 0:
+                    get_sqlite_stats(p)
+
+            PYEOF
+            python3 /tmp/diagnose_db.py 2>&1 || docker run --rm -v "$TARGET_DIR:/work" -v "/tmp:/tmp" -w /work python:3.11-alpine python3 /tmp/diagnose_db.py
+
+            echo ""
+            echo "=========================================================="
+            echo "3. 检查远程阿里云 RDS PostgreSQL 当前线上实时数据"
+            echo "=========================================================="
+            RDS_HOST="pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com"
+            RDS_USER="yangchenghu88"
+            RDS_DB="yangcheng_tracehub"
+            PGPASSWORD="Yangcheng88-"
+
+            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
+              SET search_path = public;
+
+              SELECT 'User' as table_name, count(*) as total_rows FROM \"User\"
+              UNION ALL SELECT 'Farmer', count(*) FROM \"Farmer\"
+              UNION ALL SELECT 'Batch', count(*) FROM \"Batch\"
+              UNION ALL SELECT 'BatchItem', count(*) FROM \"BatchItem\"
+              UNION ALL SELECT 'HoldingPool', count(*) FROM \"HoldingPool\"
+              UNION ALL SELECT 'TagClaim', count(*) FROM \"TagClaim\"
+              UNION ALL SELECT 'BundleBatch', count(*) FROM \"BundleBatch\"
+              UNION ALL SELECT 'SortTask', count(*) FROM \"SortTask\"
+              UNION ALL SELECT 'ColdLog', count(*) FROM \"ColdLog\"
+              UNION ALL SELECT 'Order', count(*) FROM \"Order\"
+              UNION ALL SELECT 'OutboundOrder', count(*) FROM \"OutboundOrder\"
+              UNION ALL SELECT 'OutboundLine', count(*) FROM \"OutboundLine\"
+              UNION ALL SELECT 'OutboundLossOrder', count(*) FROM \"OutboundLossOrder\";
+            "
+
+            echo ""
+            echo "=========================================================="
+            echo "4. 检查 RDS 中 Order 表的状态分布与 2026-09-29 需求明细"
+            echo "=========================================================="
+            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
+              SET search_path = public;
+
+              SELECT status, count(*) as count 
+              FROM \"Order\" 
+              GROUP BY status;
+
+              SELECT 
+                DATE(\"deliveryDate\") as delivery_date,
+                status,
+                count(*) as count,
+                sum(count) as total_crabs
+              FROM \"Order\"
+              GROUP BY DATE(\"deliveryDate\"), status
+              ORDER BY delivery_date DESC;
+            "
+
+            echo ""
+            echo "=========================================================="
+            echo "5. 检查 RDS 中 OutboundOrder 与 OutboundLine 详情"
+            echo "=========================================================="
+            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
+              SET search_path = public;
+
+              SELECT id, code, type, status, \"outboundCount\", \"channelOrderCount\", \"outboundTime\", \"createdAt\"
+              FROM \"OutboundOrder\"
+              ORDER BY \"createdAt\" DESC
+              LIMIT 15;
+
+              SELECT id, \"outboundOrderId\", \"orderNo\", gender, \"weightTier\", count, \"expressCompany\", \"waybillNo\", \"createdAt\"
+              FROM \"OutboundLine\"
+              ORDER BY \"createdAt\" DESC
+              LIMIT 15;
+            "
+
+            echo ""
+            echo "=========================================================="
+            echo "6. 检查 RDS 中最近的原料批次与保鲜库库存"
+            echo "=========================================================="
+            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
+              SET search_path = public;
+
+              SELECT code, \"inPoolCount\", \"outPoolCount\", \"lossCount\", status, \"inPoolTime\", \"createdAt\"
+              FROM \"Batch\"
+              ORDER BY \"createdAt\" DESC
+              LIMIT 10;
+
+              SELECT id, code, count, type, \"createdAt\"
+              FROM \"ColdLog\"
+              ORDER BY \"createdAt\" DESC
+              LIMIT 10;
+            "
+
+            echo ""
+            echo "=========================================================="
+            echo "7. 检查容器 yangcheng-tracehub 线上运行日志"
+            echo "=========================================================="
+            docker logs --tail 50 yangcheng-tracehub || true
