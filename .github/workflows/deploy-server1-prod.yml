@@ -104,22 +104,8 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "传输源码包至服务器 1 (密钥认证)"
-        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST_1 }}
-          username: ${{ env.SERVER_USER_1 }}
-          key: ${{ env.SERVER_SSH_KEY_1 }}
-          port: ${{ env.SERVER_PORT_1 }}
-          timeout: "60s"
-          command_timeout: "5m"
-          source: "app-source.tar.gz"
-          target: "/tmp"
-          overwrite: true
-
-      - name: "SSH 部署并平滑上线 (服务器 1 生产环境 - 密码认证)"
-        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 == ''"
+      - name: "SSH 部署并平滑上线 (服务器 1 生产环境)"
+        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != ''"
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST_1 }}
@@ -146,13 +132,13 @@ jobs:
             fi
             echo "📂 部署目标目录: $TARGET_DIR"
 
-            # 2. 准备纯净部署目录（保留 data/data-test 与 .env* 等持久化文件，清理历史代码残留）
+            # 2. 准备纯净部署目录（保留 data 与持久化配置，清理历史代码）
             if [ -d "$TARGET_DIR" ]; then
               find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data*' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
             fi
             mkdir -p "$TARGET_DIR"
 
-            # 3. 从 /tmp 解压传输过来的源码包并清理临时文件
+            # 3. 解压源码包并清理临时文件
             if [ -f /tmp/app-source.tar.gz ]; then
               echo "📥 正在解压最新源码到 $TARGET_DIR..."
               tar -xzf /tmp/app-source.tar.gz -C "$TARGET_DIR"
@@ -161,14 +147,10 @@ jobs:
             fi
             cd "$TARGET_DIR"
 
-            # 4. 确保生产持久化目录存在，并在上线前自动执行生产数据库一致性备份
+            # 4. 确保持久化目录就绪
             mkdir -p data/postgres data/uploads nginx/ssl
-            if [ -f data/db/app.db ]; then
-              echo "🛡️ 部署前创建历史 SQLite 数据库备份..."
-              bash scripts/backup-production-db.sh --label pre-deploy || true
-            fi
 
-            # 5. 更新 docker-compose.yml (内置本地 PostgreSQL + 生产测试双应用解耦)
+            # 5. 更新 docker-compose.yml
             cat << 'COMPOSE_EOF' > docker-compose.yml
             services:
               db:
@@ -238,23 +220,14 @@ jobs:
                   - app-test
             COMPOSE_EOF
 
-            # 6. 配置生产环境数据库连接 (连接远程阿里云 RDS 托管 PostgreSQL yangcheng_tracehub)
-            if [ ! -f .env.production ]; then
-              cat << 'ENV_EOF' > .env.production
+            # 6. 配置生产环境数据库连接 (连接阿里云 RDS 托管 PostgreSQL yangcheng_tracehub)
+            cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
             PORT=3000
             DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public&connection_limit=10"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
             NEXT_PUBLIC_TENANT=default
             ENV_EOF
-            else
-              echo "🔄 升级 .env.production 为远程阿里云 RDS PostgreSQL 配置..."
-              if grep -q "^DATABASE_URL=" .env.production; then
-                sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public\&connection_limit=10"|g' .env.production
-              else
-                echo 'DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public&connection_limit=10"' >> .env.production
-              fi
-            fi
 
             # 7. 检测 Docker Compose 命令行工具
             DOCKER_COMPOSE="docker compose"
@@ -264,55 +237,7 @@ jobs:
               fi
             fi
 
-            # 7.5 确保 RDS PostgreSQL 具备合规 Schema 与建表权限
-            RDS_HOST="pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com"
-            RDS_USER="yangchenghu88"
-            RDS_DB="yangcheng_tracehub"
-            export PGPASSWORD='Yangcheng88-'
-
-            echo "🐘 [RDS] 正在检查并配置 RDS yangcheng_tracehub 访问权限..."
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              SELECT current_user, current_database(), version();
-            " || true
-
-            # 尝试将 public schema 所有权赋予当前账号，以解除 PG 15+ 默认禁用权限限制
-            echo "🐘 [RDS] 尝试配置 public schema 所有权与权限..."
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              ALTER SCHEMA public OWNER TO $RDS_USER;
-            " 2>&1 || true
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              GRANT ALL ON SCHEMA public TO $RDS_USER;
-              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $RDS_USER;
-              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $RDS_USER;
-            " 2>&1 || true
-
-            TARGET_SCHEMA="public"
-            echo "🐘 [RDS] 探测 public schema 建表权限..."
-            if docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "CREATE TABLE IF NOT EXISTS public.__probe (id int); DROP TABLE IF EXISTS public.__probe;" >/dev/null 2>&1; then
-              echo "✅ [RDS] 验证成功：$RDS_USER 拥有 public schema 完整操作权限！"
-            else
-              echo "⚠️ [RDS] $RDS_USER 无法在 public schema 建表，尝试使用专属 schema 'tracehub'..."
-              docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-                CREATE SCHEMA IF NOT EXISTS tracehub;
-                ALTER SCHEMA tracehub OWNER TO $RDS_USER;
-                GRANT ALL ON SCHEMA tracehub TO $RDS_USER;
-              " || true
-
-              if docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "CREATE TABLE IF NOT EXISTS tracehub.__probe (id int); DROP TABLE IF EXISTS tracehub.__probe;" >/dev/null 2>&1; then
-                echo "✅ [RDS] 专属 schema 'tracehub' 验证通过！自动将 .env.production 连接串调整为 schema=tracehub..."
-                sed -i 's|schema=public|schema=tracehub|g' .env.production
-                TARGET_SCHEMA="tracehub"
-              else
-                echo "⚠️ [RDS] 无法在专属 schema 建表，保持现有配置。"
-              fi
-            fi
-
-            # 配置用户的默认 search_path，使得应用和客户端连接直接命中目标 schema
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              ALTER USER $RDS_USER SET search_path = $TARGET_SCHEMA, public;
-            " || true
-
-            # 8. 启动本地数据库并单独更新上线生产容器 (绝对不重启测试容器 app-test)
+            # 8. 启动本地辅助数据库并构建上线生产容器
             echo "🐘 启动本地数据库容器 (yangcheng-db)..."
             $DOCKER_COMPOSE up -d db || true
 
@@ -353,359 +278,3 @@ jobs:
               exit 1
             fi
             echo "✅ 服务器 1 生产环境部署成功且服务探活正常！"
-
-            # 11. 正式环境历史数据迁移至阿里云 RDS PostgreSQL (自动检测并幂等执行)
-            echo "📦 正在检查服务器 1 正式环境历史数据与阿里云 RDS 迁移需求..."
-            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -Atc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | grep -E '^[0-9]+$' || echo "0")
-            echo "📊 当前阿里云 RDS 中的原料批次记录数: ${RDS_BATCH_COUNT:-0}"
-
-            if [ "${RDS_BATCH_COUNT:-0}" = "0" ] || [ -z "$RDS_BATCH_COUNT" ]; then
-              MIGRATED_SUCCESS=false
-
-              if [ -f "data/db/app.db" ] && [ -s "data/db/app.db" ]; then
-                echo "📦 检测到历史生产 SQLite 数据 (data/db/app.db)，准备转换为 SQL..."
-                if command -v python3 >/dev/null 2>&1; then
-                  python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --output rds_migration.sql
-                else
-                  docker run --rm -v "$(pwd):/work" -w /work python:3.11-alpine python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --output rds_migration.sql
-                fi
-                if [ -s "rds_migration.sql" ] && grep -q "Table: Batch ([1-9]" rds_migration.sql; then
-                  echo "🚀 正在将本地 SQLite 历史数据导入阿里云 RDS..."
-                  (echo "SET search_path = $TARGET_SCHEMA, public;"; cat rds_migration.sql) | docker run --rm -i -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB"
-                  MIGRATED_SUCCESS=true
-                fi
-                rm -f rds_migration.sql
-              fi
-
-              if [ "$MIGRATED_SUCCESS" != "true" ] && docker ps | grep -q yangcheng-db; then
-                LOCAL_BATCH_COUNT=$(docker exec yangcheng-db psql -U yangcheng -d yangcheng -tc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | tr -d ' \r\n' || echo "0")
-                if [ "${LOCAL_BATCH_COUNT:-0}" != "0" ] && [ -n "$LOCAL_BATCH_COUNT" ]; then
-                  echo "📦 检测到本地 PostgreSQL (yangcheng-db) 中有 ${LOCAL_BATCH_COUNT} 条原料批次数据，正在导出并转存至阿里云 RDS..."
-                  docker exec yangcheng-db pg_dump -U yangcheng -d yangcheng --data-only --no-owner --no-privileges > local_pg_data.sql || true
-                  if [ -s "local_pg_data.sql" ]; then
-                    (echo "SET search_path = $TARGET_SCHEMA, public;"; cat local_pg_data.sql) | docker run --rm -i -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" || true
-                    rm -f local_pg_data.sql
-                    MIGRATED_SUCCESS=true
-                  fi
-                fi
-              fi
-
-              if [ "$MIGRATED_SUCCESS" != "true" ] && [ -s "prisma/baseline-data.sql" ]; then
-                echo "📦 使用仓库自带的最新正式全量基准数据 (prisma/baseline-data.sql) 导入阿里云 RDS (Schema: $TARGET_SCHEMA)..."
-                (echo "SET search_path = $TARGET_SCHEMA, public;"; cat prisma/baseline-data.sql) | docker run --rm -i -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB"
-                echo "🎉 正式环境全量业务数据已成功恢复至阿里云 RDS！"
-              fi
-            else
-              echo "✅ 阿里云 RDS 已包含有效业务批次数据 (${RDS_BATCH_COUNT} 条原料批次)，保持现有数据不被覆盖。"
-            fi
-
-            # 12. 阿里云 RDS 最终状态及关键业务表记录数验证
-            echo "🔍 验证阿里云 RDS 实时数据统计..."
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              SET search_path = $TARGET_SCHEMA, public;
-              SELECT
-                (SELECT count(*) FROM \"User\") as \"用户数\",
-                (SELECT count(*) FROM \"Farmer\") as \"养殖户数\",
-                (SELECT count(*) FROM \"Batch\") as \"原料批次数\",
-                (SELECT count(*) FROM \"HoldingPool\") as \"暂养池数\",
-                (SELECT count(*) FROM \"OutboundOrder\") as \"出库单数\";
-            " || true
-
-      - name: "SSH 部署并平滑上线 (服务器 1 生产环境 - 密钥认证)"
-        if: "github.event_name != 'pull_request' && env.SERVER_HOST_1 != '' && env.SERVER_SSH_KEY_1 != ''"
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ env.SERVER_HOST_1 }}
-          username: ${{ env.SERVER_USER_1 }}
-          key: ${{ env.SERVER_SSH_KEY_1 }}
-          port: ${{ env.SERVER_PORT_1 }}
-          timeout: "30s"
-          command_timeout: "10m"
-          script: |
-            set -e
-
-            # 1. 自动定位服务器部署目录
-            TARGET_DIR=""
-            for dir in "/opt/yangcheng-tracehub" "/root/yangcheng-tracehub" "$HOME/yangcheng-tracehub"; do
-              if [ -d "$dir" ]; then
-                TARGET_DIR="$dir"
-                break
-              fi
-            done
-
-            if [ -z "$TARGET_DIR" ]; then
-              TARGET_DIR="/opt/yangcheng-tracehub"
-              mkdir -p "$TARGET_DIR"
-            fi
-            echo "📂 部署目标目录: $TARGET_DIR"
-
-            # 2. 准备纯净部署目录（保留 data/data-test 与 .env* 等持久化文件，清理历史代码残留）
-            if [ -d "$TARGET_DIR" ]; then
-              find "$TARGET_DIR" -mindepth 1 -maxdepth 1 ! -name 'data*' ! -name '.env*' ! -name 'nginx' -exec rm -rf {} +
-            fi
-            mkdir -p "$TARGET_DIR"
-
-            # 3. 从 /tmp 解压传输过来的源码包并清理临时文件
-            if [ -f /tmp/app-source.tar.gz ]; then
-              echo "📥 正在解压最新源码到 $TARGET_DIR..."
-              tar -xzf /tmp/app-source.tar.gz -C "$TARGET_DIR"
-              rm -f /tmp/app-source.tar.gz
-              echo "✅ 源码解压完成！"
-            fi
-            cd "$TARGET_DIR"
-
-            # 4. 确保生产持久化目录存在，并在上线前自动执行生产数据库一致性备份
-            mkdir -p data/postgres data/uploads nginx/ssl
-            if [ -f data/db/app.db ]; then
-              echo "🛡️ 部署前创建历史 SQLite 数据库备份..."
-              bash scripts/backup-production-db.sh --label pre-deploy || true
-            fi
-
-            # 5. 更新 docker-compose.yml (内置本地 PostgreSQL + 生产测试双应用解耦)
-            cat << 'COMPOSE_EOF' > docker-compose.yml
-            services:
-              db:
-                image: postgres:16-alpine
-                container_name: yangcheng-db
-                restart: always
-                environment:
-                  POSTGRES_USER: yangcheng
-                  POSTGRES_PASSWORD: yangcheng_local_pwd
-                  POSTGRES_DB: yangcheng
-                volumes:
-                  - ./data/postgres:/var/lib/postgresql/data
-                healthcheck:
-                  test: ["CMD-SHELL", "pg_isready -U yangcheng -d yangcheng"]
-                  interval: 5s
-                  timeout: 5s
-                  retries: 5
-
-              app:
-                build:
-                  context: .
-                  dockerfile: Dockerfile
-                image: yangcheng-tracehub:prod
-                container_name: yangcheng-tracehub
-                restart: always
-                ports:
-                  - "3000:3000"
-                env_file:
-                  - .env.production
-                volumes:
-                  - ./data/uploads:/app/public/uploads
-                depends_on:
-                  db:
-                    condition: service_healthy
-
-              app-test:
-                build:
-                  context: .
-                  dockerfile: Dockerfile
-                image: yangcheng-tracehub:test
-                container_name: yangcheng-tracehub-test
-                restart: always
-                ports:
-                  - "3001:3000"
-                env_file:
-                  - .env.test
-                environment:
-                  ALLOW_DATA_RESET: "test-only"
-                volumes:
-                  - ./data-test/uploads:/app/public/uploads
-                depends_on:
-                  db:
-                    condition: service_healthy
-
-              nginx:
-                image: nginx:alpine
-                container_name: yangcheng-nginx
-                restart: always
-                ports:
-                  - "80:80"
-                  - "443:443"
-                volumes:
-                  - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-                  - ./nginx/ssl:/etc/nginx/ssl:ro
-                depends_on:
-                  - app
-                  - app-test
-            COMPOSE_EOF
-
-            # 6. 配置生产环境数据库连接 (连接远程阿里云 RDS 托管 PostgreSQL yangcheng_tracehub)
-            if [ ! -f .env.production ]; then
-              cat << 'ENV_EOF' > .env.production
-            NODE_ENV=production
-            PORT=3000
-            DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public&connection_limit=10"
-            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-            NEXT_PUBLIC_TENANT=default
-            ENV_EOF
-            else
-              echo "🔄 升级 .env.production 为远程阿里云 RDS PostgreSQL 配置..."
-              if grep -q "^DATABASE_URL=" .env.production; then
-                sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public\&connection_limit=10"|g' .env.production
-              else
-                echo 'DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public&connection_limit=10"' >> .env.production
-              fi
-            fi
-
-            # 7. 检测 Docker Compose 命令行工具
-            DOCKER_COMPOSE="docker compose"
-            if ! docker compose version >/dev/null 2>&1; then
-              if command -v docker-compose >/dev/null 2>&1; then
-                DOCKER_COMPOSE="docker-compose"
-              fi
-            fi
-
-            # 7.5 确保 RDS PostgreSQL 具备合规 Schema 与建表权限
-            RDS_HOST="pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com"
-            RDS_USER="yangchenghu88"
-            RDS_DB="yangcheng_tracehub"
-            export PGPASSWORD='Yangcheng88-'
-
-            echo "🐘 [RDS] 正在检查并配置 RDS yangcheng_tracehub 访问权限..."
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              SELECT current_user, current_database(), version();
-            " || true
-
-            # 尝试将 public schema 所有权赋予当前账号，以解除 PG 15+ 默认禁用权限限制
-            echo "🐘 [RDS] 尝试配置 public schema 所有权与权限..."
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              ALTER SCHEMA public OWNER TO $RDS_USER;
-            " 2>&1 || true
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              GRANT ALL ON SCHEMA public TO $RDS_USER;
-              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $RDS_USER;
-              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $RDS_USER;
-            " 2>&1 || true
-
-            TARGET_SCHEMA="public"
-            echo "🐘 [RDS] 探测 public schema 建表权限..."
-            if docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "CREATE TABLE IF NOT EXISTS public.__probe (id int); DROP TABLE IF EXISTS public.__probe;" >/dev/null 2>&1; then
-              echo "✅ [RDS] 验证成功：$RDS_USER 拥有 public schema 完整操作权限！"
-            else
-              echo "⚠️ [RDS] $RDS_USER 无法在 public schema 建表，尝试使用专属 schema 'tracehub'..."
-              docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-                CREATE SCHEMA IF NOT EXISTS tracehub;
-                ALTER SCHEMA tracehub OWNER TO $RDS_USER;
-                GRANT ALL ON SCHEMA tracehub TO $RDS_USER;
-              " || true
-
-              if docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "CREATE TABLE IF NOT EXISTS tracehub.__probe (id int); DROP TABLE IF EXISTS tracehub.__probe;" >/dev/null 2>&1; then
-                echo "✅ [RDS] 专属 schema 'tracehub' 验证通过！自动将 .env.production 连接串调整为 schema=tracehub..."
-                sed -i 's|schema=public|schema=tracehub|g' .env.production
-                TARGET_SCHEMA="tracehub"
-              else
-                echo "⚠️ [RDS] 无法在专属 schema 建表，保持现有配置。"
-              fi
-            fi
-
-            # 配置用户的默认 search_path，使得应用和客户端连接直接命中目标 schema
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              ALTER USER $RDS_USER SET search_path = $TARGET_SCHEMA, public;
-            " || true
-
-            # 8. 启动本地数据库并单独更新上线生产容器 (绝对不重启测试容器 app-test)
-            echo "🐘 启动本地数据库容器 (yangcheng-db)..."
-            $DOCKER_COMPOSE up -d db || true
-
-            echo "🔨 正在本地构建生产环境 Docker 镜像 (yangcheng-tracehub:prod)..."
-            $DOCKER_COMPOSE build app
-
-            echo "🔄 启动并平滑上线生产容器 (测试容器保持稳定运行不受影响)..."
-            $DOCKER_COMPOSE up -d --no-deps app
-            if [ -d "nginx" ] && [ -f "nginx/default.conf" ]; then
-              $DOCKER_COMPOSE up -d --no-deps nginx || true
-            fi
-
-            # 9. 清理悬空未使用的旧镜像
-            docker image prune -f || true
-
-            # 10. 状态检查与健康探活 (仅探活生产服务 3000)
-            echo "🔍 检查容器运行状态..."
-            $DOCKER_COMPOSE ps
-            echo "📄 查看生产容器最新日志 (前 30 行)..."
-            $DOCKER_COMPOSE logs --tail=30 app || true
-
-            echo "🩺 执行生产服务健康探活 (http://127.0.0.1:3000)..."
-            PROBE_SUCCESS=false
-            for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:3000/ > /dev/null 2>&1; then
-                echo "✅ 第 $i 次尝试：生产应用探活成功，HTTP 正常响应！"
-                PROBE_SUCCESS=true
-                break
-              fi
-              echo "⏳ 等待生产应用就绪... ($i/15)"
-              sleep 2
-            done
-
-            if [ "$PROBE_SUCCESS" != "true" ]; then
-              echo "❌ 错误：生产服务未能正常启动并对外提供服务！"
-              echo "--- 生产崩溃日志 ---"
-              $DOCKER_COMPOSE logs --tail=100 app
-              exit 1
-            fi
-            echo "✅ 服务器 1 生产环境部署成功且服务探活正常！"
-
-            # 11. 正式环境历史数据迁移至阿里云 RDS PostgreSQL (自动检测并幂等执行)
-            echo "📦 正在检查服务器 1 正式环境历史数据与阿里云 RDS 迁移需求..."
-            RDS_BATCH_COUNT=$(docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -Atc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | grep -E '^[0-9]+$' || echo "0")
-            echo "📊 当前阿里云 RDS 中的原料批次记录数: ${RDS_BATCH_COUNT:-0}"
-
-            if [ "${RDS_BATCH_COUNT:-0}" = "0" ] || [ -z "$RDS_BATCH_COUNT" ]; then
-              MIGRATED_SUCCESS=false
-
-              if [ -f "data/db/app.db" ] && [ -s "data/db/app.db" ]; then
-                echo "📦 检测到历史生产 SQLite 数据 (data/db/app.db)，准备转换为 SQL..."
-                if command -v python3 >/dev/null 2>&1; then
-                  python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --output rds_migration.sql
-                else
-                  docker run --rm -v "$(pwd):/work" -w /work python:3.11-alpine python3 scripts/migrate-sqlite-to-postgres.py --sqlite data/db/app.db --schema prisma/schema.prisma --clean --output rds_migration.sql
-                fi
-                if [ -s "rds_migration.sql" ] && grep -q "Table: Batch ([1-9]" rds_migration.sql; then
-                  echo "🚀 正在将本地 SQLite 历史数据导入阿里云 RDS..."
-                  (echo "SET search_path = $TARGET_SCHEMA, public;"; cat rds_migration.sql) | docker run --rm -i -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB"
-                  MIGRATED_SUCCESS=true
-                fi
-                rm -f rds_migration.sql
-              fi
-
-              if [ "$MIGRATED_SUCCESS" != "true" ] && docker ps | grep -q yangcheng-db; then
-                LOCAL_BATCH_COUNT=$(docker exec yangcheng-db psql -U yangcheng -d yangcheng -tc "SELECT count(*) FROM \"Batch\";" 2>/dev/null | tr -d ' \r\n' || echo "0")
-                if [ "${LOCAL_BATCH_COUNT:-0}" != "0" ] && [ -n "$LOCAL_BATCH_COUNT" ]; then
-                  echo "📦 检测到本地 PostgreSQL (yangcheng-db) 中有 ${LOCAL_BATCH_COUNT} 条原料批次数据，正在导出并转存至阿里云 RDS..."
-                  docker exec yangcheng-db pg_dump -U yangcheng -d yangcheng --data-only --no-owner --no-privileges > local_pg_data.sql || true
-                  if [ -s "local_pg_data.sql" ]; then
-                    (echo "SET search_path = $TARGET_SCHEMA, public;"; cat local_pg_data.sql) | docker run --rm -i -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" || true
-                    rm -f local_pg_data.sql
-                    MIGRATED_SUCCESS=true
-                  fi
-                fi
-              fi
-
-              if [ "$MIGRATED_SUCCESS" != "true" ] && [ -s "prisma/baseline-data.sql" ]; then
-                echo "📦 使用仓库自带的最新正式全量基准数据 (prisma/baseline-data.sql) 导入阿里云 RDS (Schema: $TARGET_SCHEMA)..."
-                (echo "SET search_path = $TARGET_SCHEMA, public;"; cat prisma/baseline-data.sql) | docker run --rm -i -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB"
-                echo "🎉 正式环境全量业务数据已成功恢复至阿里云 RDS！"
-              fi
-            else
-              echo "✅ 阿里云 RDS 已包含有效业务批次数据 (${RDS_BATCH_COUNT} 条原料批次)，保持现有数据不被覆盖。"
-            fi
-
-            # 12. 阿里云 RDS 最终状态及关键业务表记录数验证
-            echo "🔍 验证阿里云 RDS 实时数据统计..."
-            docker run --rm -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine psql -h "$RDS_HOST" -U "$RDS_USER" -d "$RDS_DB" -c "
-              SET search_path = $TARGET_SCHEMA, public;
-              SELECT
-                (SELECT count(*) FROM \"User\") as \"用户数\",
-                (SELECT count(*) FROM \"Farmer\") as \"养殖户数\",
-                (SELECT count(*) FROM \"Batch\") as \"原料批次数\",
-                (SELECT count(*) FROM \"HoldingPool\") as \"暂养池数\",
-                (SELECT count(*) FROM \"OutboundOrder\") as \"出库单数\";
-            " || true
-                (SELECT count(*) FROM \"User\") as \"用户数\",
-                (SELECT count(*) FROM \"Farmer\") as \"养殖户数\",
-                (SELECT count(*) FROM \"Batch\") as \"原料批次数\",
-                (SELECT count(*) FROM \"HoldingPool\") as \"暂养池数\",
-                (SELECT count(*) FROM \"OutboundOrder\") as \"出库单数\";
-            " || true
