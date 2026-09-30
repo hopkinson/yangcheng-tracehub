@@ -186,12 +186,12 @@ jobs:
             # 6. 配置生产环境数据库连接 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
-NODE_ENV=production
-PORT=3000
-DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
-AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-NEXT_PUBLIC_TENANT=maoshi
-ENV_EOF
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
+            NEXT_PUBLIC_TENANT=maoshi
+            ENV_EOF
             else
               echo "🔄 确保 .env.production 连接串指向阿里云 RDS PostgreSQL..."
               if grep -q "^DATABASE_URL=" .env.production; then
@@ -374,12 +374,12 @@ ENV_EOF
             # 6. 配置生产环境数据库连接 (连接阿里云 RDS 托管 PostgreSQL yangcheng-prod 独立库)
             if [ ! -f .env.production ]; then
               cat << 'ENV_EOF' > .env.production
-NODE_ENV=production
-PORT=3000
-DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
-AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
-NEXT_PUBLIC_TENANT=maoshi
-ENV_EOF
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL="postgresql://wufenshu:Admin%40wfs@pgm-uf6dlr208r8w194n.pg.rds.aliyuncs.com:5432/yangcheng-prod?schema=public"
+            AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
+            NEXT_PUBLIC_TENANT=maoshi
+            ENV_EOF
             else
               echo "🔄 确保 .env.production 连接串指向阿里云 RDS PostgreSQL..."
               if grep -q "^DATABASE_URL=" .env.production; then
