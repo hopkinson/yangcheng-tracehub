@@ -74,7 +74,6 @@ export function StoreOutboundDialog({
   const [transportCompany, setTransportCompany] = useState(defaults?.transportCompany || "苏州市冷链物流专车");
   const [contactName, setContactName] = useState(defaults?.contactName || "");
   const [contactPhone, setContactPhone] = useState(defaults?.contactPhone || "");
-  const [applyTime, setApplyTime] = useState<string>(() => getBeijingTimeString(new Date()) || "");
   const [outboundTime, setOutboundTime] = useState<string>(
     () => (getBeijingTimeString(new Date()) || "").replace(" ", "T")
   );
@@ -172,9 +171,7 @@ export function StoreOutboundDialog({
       onOpenChange={(v) => {
         setOpen(v);
         if (v) {
-          const now = getBeijingTimeString(new Date()) || "";
-          setApplyTime(now);
-          setOutboundTime(now.replace(" ", "T"));
+          setOutboundTime((getBeijingTimeString(new Date()) || "").replace(" ", "T"));
           if (selectedOrderIds.length === 0 && currentStoreOrders.length > 0) {
             setSelectedOrderIds(currentStoreOrders.map((o) => o.id));
           }
@@ -255,7 +252,7 @@ export function StoreOutboundDialog({
                 <span className="text-[10px] text-muted-foreground font-mono">系统自动生成</span>
               </div>
               <Input
-                value={applyTime}
+                value={getBeijingTimeString(new Date()) || ""}
                 readOnly
                 className="h-8 text-xs font-mono bg-muted/40 cursor-not-allowed text-muted-foreground"
               />

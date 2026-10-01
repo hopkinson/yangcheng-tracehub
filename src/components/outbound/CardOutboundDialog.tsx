@@ -46,9 +46,6 @@ export function CardOutboundDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [transportCompany, setTransportCompany] = useState("顺丰冷运速递");
-  const [applyTime, setApplyTime] = useState<string>(
-    () => getBeijingTimeString(new Date()) || ""
-  );
   const [outboundTime, setOutboundTime] = useState<string>(
     () => (getBeijingTimeString(new Date()) || "").replace(" ", "T")
   );
@@ -131,9 +128,7 @@ export function CardOutboundDialog({
       onOpenChange={(v) => {
         setOpen(v);
         if (v) {
-          const nowStr = getBeijingTimeString(new Date()) || "";
-          setApplyTime(nowStr);
-          setOutboundTime(nowStr.replace(" ", "T"));
+          setOutboundTime((getBeijingTimeString(new Date()) || "").replace(" ", "T"));
           if (selectedOrderIds.length === 0 && pendingCardOrders.length > 0) {
             setSelectedOrderIds(pendingCardOrders.map((o) => o.id));
           }
@@ -187,7 +182,7 @@ export function CardOutboundDialog({
                   <span className="text-[10px] text-muted-foreground font-mono">系统自动生成</span>
                 </div>
                 <Input
-                  value={applyTime}
+                  value={getBeijingTimeString(new Date()) || ""}
                   readOnly
                   className="h-8 text-xs font-mono bg-muted/40 cursor-not-allowed text-muted-foreground"
                 />

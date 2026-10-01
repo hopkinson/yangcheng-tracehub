@@ -20,28 +20,20 @@ fi
 if [ -n "$PRISMA_BIN" ]; then
   # 生产启动只允许非破坏性结构同步；如 Prisma 检测到数据丢失风险会直接拒绝启动。
   "$PRISMA_BIN" db push --skip-generate
-  # 自动自愈：若存在指向已删除用户的历史孤儿损耗单，将 applicantId 置为 NULL，杜绝关联查询崩溃
+  # 自动自愈与数据刷平：孤儿单修复 + 历史出库单出库时间对齐为审批时间
   node -e '
     const { PrismaClient } = require("@prisma/client");
     const p = new PrismaClient();
-    p.$executeRawUnsafe(`
-      UPDATE "OutboundLossOrder"
-      SET "applicantId" = NULL
-      WHERE "applicantId" IS NOT NULL
-        AND "applicantId" NOT IN (SELECT "id" FROM "User");
-    `).catch(() => {}).finally(() => p.$disconnect());
-  ' >/dev/null 2>&1 || true
-  # 历史出库数据对齐：将已审批出库单出库时间对齐为审批时间 (approvedAt)
-  node -e '
-    const { PrismaClient } = require("@prisma/client");
-    const p = new PrismaClient();
-    p.$executeRawUnsafe(`
-      UPDATE "OutboundOrder"
-      SET "outboundTime" = "approvedAt"
-      WHERE "status" = '\''APPROVED'\''
-        AND "approvedAt" IS NOT NULL
-        AND ("outboundTime" IS NULL OR "outboundTime" != "approvedAt");
-    `).catch(() => {}).finally(() => p.$disconnect());
+    Promise.all([
+      p.$executeRawUnsafe(`
+        UPDATE "OutboundLossOrder" SET "applicantId" = NULL
+        WHERE "applicantId" IS NOT NULL AND "applicantId" NOT IN (SELECT "id" FROM "User");
+      `),
+      p.$executeRawUnsafe(`
+        UPDATE "OutboundOrder" SET "outboundTime" = "approvedAt"
+        WHERE "status" = '\''APPROVED'\'' AND "approvedAt" IS NOT NULL AND ("outboundTime" IS NULL OR "outboundTime" != "approvedAt");
+      `),
+    ]).catch(() => {}).finally(() => p.$disconnect());
   ' >/dev/null 2>&1 || true
 else
   echo "⚠️ [Init] 未检测到 prisma 命令行工具，跳过 db push（表结构需已存在）"
