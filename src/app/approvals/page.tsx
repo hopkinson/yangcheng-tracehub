@@ -9,6 +9,7 @@ import { OutboundLossDetailDialog } from "@/components/outbound/OutboundLossDeta
 import { BatchFreezeButton } from "@/components/batches/BatchFreezeButton";
 import { BatchDetailDialog } from "@/components/batches/BatchDetailDialog";
 import { BatchLossHistoryDialog } from "@/components/batches/BatchLossHistoryDialog";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Tag, Truck, AlertTriangle, CheckCircle2, Clock, ShieldCheck, UserCheck } from "lucide-react";
 import { cn, formatDateTime, formatDate, formatTime } from "@/lib/utils";
 import { canApprove } from "@/config/approval";
@@ -42,6 +43,12 @@ export default async function ApprovalsPage({
   searchParams: Promise<{
     tab?: string;
     type?: string;
+    page?: string;
+    pageSize?: string;
+    processedPage?: string;
+    processedPageSize?: string;
+    exceptionPage?: string;
+    exceptionPageSize?: string;
   }>;
 }) {
   const [currentUser, params, approvalSetting] = await Promise.all([
@@ -51,6 +58,12 @@ export default async function ApprovalsPage({
   ]);
 
   const typeFilter = params.type || "ALL"; // ALL | TAG | OUTBOUND
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = Math.max(1, Number(params.pageSize) || 10);
+  const processedPage = Math.max(1, Number(params.processedPage) || 1);
+  const processedPageSize = Math.max(1, Number(params.processedPageSize) || 10);
+  const exceptionPage = Math.max(1, Number(params.exceptionPage) || 1);
+  const exceptionPageSize = Math.max(1, Number(params.exceptionPageSize) || 10);
   const canApproveTagClaims = canApprove(currentUser?.role, approvalSetting.tagClaimRole);
   const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
   const canHandleExceptions = canApproveTagClaims || canApproveOutbound;
@@ -178,10 +191,29 @@ export default async function ApprovalsPage({
   const visibleProcessedTagClaims = canApproveTagClaims ? processedTagClaims : [];
   const visibleProcessedOutboundOrders = canApproveOutbound ? processedOutboundOrders : [];
   const visibleProcessedLossOrders = canApproveOutbound ? processedLossOrders : [];
+
+  const formatProcessed = (item: any, type: "TAG" | "OUTBOUND" | "LOSS", summary: string, count: number, applicant = "—") => ({
+    id: item.id,
+    type,
+    code: item.code || "—",
+    summary,
+    count,
+    applicant,
+    status: item.status,
+    approver: item.approver?.fullName || "系统自动",
+    approvedAt: item.approvedAt || item.updatedAt,
+    comment: item.approvalComment || item.rejectReason || (item.status === "APPROVED" ? "审批通过" : "已驳回"),
+  });
+
+  const allProcessedItems = [
+    ...visibleProcessedTagClaims.map((c) => formatProcessed(c, "TAG", `养殖户: ${c.farmer?.name || "—"}`, c.claimCount, c.applicant?.fullName)),
+    ...visibleProcessedOutboundOrders.map((o) => formatProcessed(o, "OUTBOUND", o.store?.name ? `门店: ${o.store.name}` : `渠道: ${o.channel?.name || "—"}`, o.outboundCount, o.applicant?.fullName)),
+    ...visibleProcessedLossOrders.map((l: any) => formatProcessed(l, "LOSS", `损耗出库: ${l.reason}`, l.totalLossCount, l.applicant?.fullName || "仓管员")),
+  ].sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime());
+
   const totalPendingCount =
     visiblePendingTagClaims.length + visiblePendingOutboundOrders.length + visiblePendingLossOrders.length;
-  const processedCount =
-    visibleProcessedTagClaims.length + visibleProcessedOutboundOrders.length + visibleProcessedLossOrders.length;
+  const processedCount = allProcessedItems.length;
 
   // 待办卡片统一聚合流
   const pendingTagCards = (typeFilter === "ALL" || typeFilter === "TAG")
@@ -253,6 +285,16 @@ export default async function ApprovalsPage({
 
   const pendingItems = [...pendingTagCards, ...pendingOutboundCards, ...pendingLossCards].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+  );
+
+  const pagedPendingItems = pendingItems.slice((page - 1) * pageSize, page * pageSize);
+  const pagedProcessedItems = allProcessedItems.slice(
+    (processedPage - 1) * processedPageSize,
+    processedPage * processedPageSize
+  );
+  const pagedExceptionBatches = exceptionBatches.slice(
+    (exceptionPage - 1) * exceptionPageSize,
+    exceptionPage * exceptionPageSize
   );
 
   return (
@@ -395,7 +437,7 @@ export default async function ApprovalsPage({
             </Card>
           ) : (
             <div className="flex flex-col gap-2.5">
-              {pendingItems.map((item) => {
+              {pagedPendingItems.map((item) => {
                 const isTag = item.type === "TAG_CLAIM";
                 const isLoss = item.type === "OUTBOUND_LOSS";
                 const typeConf = CARD_TYPE_CONFIG[item.type] || CARD_TYPE_CONFIG.OUTBOUND;
@@ -490,13 +532,16 @@ export default async function ApprovalsPage({
               })}
             </div>
           )}
+          {pendingItems.length > 0 && (
+            <DataTablePagination total={pendingItems.length} page={page} pageSize={pageSize} />
+          )}
         </TabsContent>
 
         {/* 2. 已处理历史标签页 */}
         <TabsContent value="processed">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">已处理审批历史 (最新 100 笔)</CardTitle>
+              <CardTitle className="text-base font-semibold">已处理审批历史 (共 {allProcessedItems.length} 笔)</CardTitle>
               <CardDescription className="text-xs">
                 包含已一键通过放行及已填写原因驳回的蟹扣领用、出库发运与损耗出库申请留痕
               </CardDescription>
@@ -516,50 +561,14 @@ export default async function ApprovalsPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleProcessedTagClaims.length === 0 && visibleProcessedOutboundOrders.length === 0 && visibleProcessedLossOrders.length === 0 ? (
+                    {allProcessedItems.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                           暂无已处理历史记录
                         </TableCell>
                       </TableRow>
                     ) : (
-                      [
-                        ...visibleProcessedTagClaims.map((c) => ({
-                          id: c.id,
-                          type: "TAG" as const,
-                          code: c.code || "—",
-                          summary: `${c.farmer.name} · 领用蟹扣 ${c.claimCount.toLocaleString()} 只`,
-                          applicant: c.applicant.fullName,
-                          status: c.status,
-                          approver: c.approver?.fullName || "—",
-                          approvedAt: c.approvedAt || c.updatedAt,
-                          comment: c.approvalComment || (c.status === "APPROVED" ? "审核通过" : "已驳回"),
-                        })),
-                        ...visibleProcessedOutboundOrders.map((o) => ({
-                          id: o.id,
-                          type: "OUTBOUND" as const,
-                          code: o.code,
-                          summary: `${o.store.name} · 出库 ${o.outboundCount.toLocaleString()} 只 (${o.batch.farmer.name})`,
-                          applicant: o.applicant.fullName,
-                          status: o.status,
-                          approver: o.approver?.fullName || "—",
-                          approvedAt: o.approvedAt || o.updatedAt,
-                          comment: o.approvalComment || o.rejectReason || (o.status === "APPROVED" ? "审核通过" : "已驳回"),
-                        })),
-                        ...visibleProcessedLossOrders.map((l: any) => ({
-                          id: l.id,
-                          type: "LOSS" as const,
-                          code: l.code,
-                          summary: `出库损耗核减 -${l.totalLossCount.toLocaleString()} 只 · 损耗率 ${l.lossRate.toFixed(1)}%`,
-                          applicant: l.applicant?.fullName || "仓管员",
-                          status: l.status,
-                          approver: l.approver?.fullName || "—",
-                          approvedAt: l.approvedAt || l.updatedAt,
-                          comment: l.approvalComment || l.rejectReason || (l.status === "APPROVED" ? "审核通过" : "已驳回"),
-                        })),
-                      ]
-                        .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime())
-                        .map((row) => (
+                      pagedProcessedItems.map((row) => (
                           <TableRow key={`${row.type}_${row.id}`} className="hover:bg-muted/30">
                             <TableCell className="align-middle">
                               {row.type === "TAG" ? (
@@ -617,6 +626,15 @@ export default async function ApprovalsPage({
                   </TableBody>
                 </Table>
               </div>
+              <div className="pt-3">
+                <DataTablePagination
+                  total={allProcessedItems.length}
+                  page={processedPage}
+                  pageSize={processedPageSize}
+                  pageParam="processedPage"
+                  pageSizeParam="processedPageSize"
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -651,7 +669,7 @@ export default async function ApprovalsPage({
                         </TableCell>
                       </TableRow>
                     ) : (
-                      exceptionBatches.map((batch) => {
+                      pagedExceptionBatches.map((batch) => {
                         const lossRateNum =
                           batch.inPoolCount > 0
                             ? Number(((batch.lossCount / batch.inPoolCount) * 100).toFixed(2))
@@ -785,6 +803,15 @@ export default async function ApprovalsPage({
                     )}
                   </TableBody>
                 </Table>
+              </div>
+              <div className="pt-3">
+                <DataTablePagination
+                  total={exceptionBatches.length}
+                  page={exceptionPage}
+                  pageSize={exceptionPageSize}
+                  pageParam="exceptionPage"
+                  pageSizeParam="exceptionPageSize"
+                />
               </div>
             </CardContent>
           </Card>

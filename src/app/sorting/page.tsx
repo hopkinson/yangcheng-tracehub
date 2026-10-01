@@ -9,6 +9,7 @@ import { SortMachineDialog } from "@/components/sorting/SortMachineDialog";
 import { MachineCardActions } from "@/components/sorting/MachineCardActions";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { QCViewDialog } from "@/components/qc/QCViewDialog";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { getCurrentUser } from "@/lib/auth";
 import {
   Scale,
@@ -42,7 +43,14 @@ const QC_PRESETS = {
   },
 };
 
-export default async function SortingPage() {
+export default async function SortingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ qcPage?: string; qcPageSize?: string }>;
+}) {
+  const params = await searchParams;
+  const qcPage = Math.max(1, Number(params?.qcPage) || 1);
+  const qcPageSize = Math.max(1, Number(params?.qcPageSize) || 10);
   const currentUser = await getCurrentUser();
   const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role);
   // 1. 查询分拣设备列表
@@ -164,6 +172,8 @@ export default async function SortingPage() {
     },
     orderBy: [{ checkTime: "desc" }, { uploadTime: "desc" }],
   });
+
+  const pagedSortingQCs = sortingQCs.slice((qcPage - 1) * qcPageSize, qcPage * qcPageSize);
 
   // 辅助获取机器的最新校准与巡检记录
   const getMachineQCs = (code: string) => {
@@ -441,7 +451,7 @@ export default async function SortingPage() {
                   </td>
                 </tr>
               ) : (
-                sortingQCs.map((qc: any) => {
+                pagedSortingQCs.map((qc: any) => {
                   const isExp = qc.result === "EXCEPTION";
                   return (
                     <tr key={qc.id} className="hover:bg-muted/40 transition-colors">
@@ -522,6 +532,15 @@ export default async function SortingPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 pb-4 border-t">
+          <DataTablePagination
+            total={sortingQCs.length}
+            page={qcPage}
+            pageSize={qcPageSize}
+            pageParam="qcPage"
+            pageSizeParam="qcPageSize"
+          />
         </div>
       </Card>
     </TabsContent>

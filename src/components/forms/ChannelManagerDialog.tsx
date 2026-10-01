@@ -213,7 +213,7 @@ export function ChannelManagerDialog({
         </div>
 
         {/* 已有渠道列表 */}
-        <div className="rounded-md border overflow-hidden">
+        <div className="rounded-md border overflow-y-auto max-h-72">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">

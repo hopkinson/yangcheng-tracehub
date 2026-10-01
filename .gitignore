@@ -27,6 +27,8 @@ pnpm-debug.log*
 
 # Scratch & Temporary files
 tmp_*
+/test-results/
+/playwright-report/
 
 
 # OS

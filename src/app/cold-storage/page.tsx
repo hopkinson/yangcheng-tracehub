@@ -16,11 +16,13 @@ export const dynamic = "force-dynamic";
 export default async function ColdStoragePage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string; qcPage?: string; qcPageSize?: string }>;
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number(params?.page) || 1);
   const pageSize = Math.max(1, Number(params?.pageSize) || 10);
+  const qcPage = Math.max(1, Number(params?.qcPage) || 1);
+  const qcPageSize = Math.max(1, Number(params?.qcPageSize) || 10);
   const currentUser = await getCurrentUser();
   const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role);
   // 1. 查询保鲜库及其入库流水
@@ -149,6 +151,7 @@ export default async function ColdStoragePage({
   const totalConsumed = Array.from(logUsedMap.values()).reduce((a, b) => a + b, 0);
   const totalInStockCount = Math.max(0, totalStoredCount - totalConsumed);
   const paginatedLogs = logs.slice((page - 1) * pageSize, page * pageSize);
+  const paginatedQCRecords = qcRecords.slice((qcPage - 1) * qcPageSize, qcPage * qcPageSize);
 
   return (
     <div className="space-y-4">
@@ -422,7 +425,7 @@ export default async function ColdStoragePage({
                   </td>
                 </tr>
               ) : (
-                qcRecords.map((qc) => {
+                paginatedQCRecords.map((qc) => {
                   return (
                     <tr key={qc.id} className="hover:bg-muted/40 transition-colors">
                       <td className="px-3 py-2.5 font-mono font-bold text-foreground whitespace-nowrap">
@@ -487,6 +490,15 @@ export default async function ColdStoragePage({
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 pb-4 border-t">
+          <DataTablePagination
+            total={qcRecords.length}
+            page={qcPage}
+            pageSize={qcPageSize}
+            pageParam="qcPage"
+            pageSizeParam="qcPageSize"
+          />
         </div>
       </Card>
     </TabsContent>

@@ -25,6 +25,7 @@ import {
 import { UserDialog, ROLE_LABELS, type ChannelOption } from "@/components/forms/UserDialog";
 import { resetPasswordAction, deleteUserAction } from "@/actions/users";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { toast } from "sonner";
 import { formatDate, cn } from "@/lib/utils";
 import {
@@ -83,6 +84,8 @@ export function UserManagementView({
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const filteredUsers = users.filter((u) => {
     const matchQuery =
@@ -92,6 +95,8 @@ export function UserManagementView({
     const matchRole = selectedRole === "ALL" || u.role === selectedRole;
     return matchQuery && matchRole;
   });
+
+  const pagedUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -188,12 +193,21 @@ export function UserManagementView({
                 <Input
                   placeholder="搜索手机号、真实姓名、用户名..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setPage(1);
+                  }}
                   className="pl-8 text-sm"
                 />
               </div>
               <div className="w-full sm:w-[200px]">
-                <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <Select
+                  value={selectedRole}
+                  onValueChange={(val) => {
+                    setSelectedRole(val);
+                    setPage(1);
+                  }}
+                >
                   <SelectTrigger className="text-xs">
                     <SelectValue placeholder="筛选角色" />
                   </SelectTrigger>
@@ -229,7 +243,7 @@ export function UserManagementView({
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredUsers.map((user) => {
+                    pagedUsers.map((user) => {
                       const isSelf = user.id === currentUserId;
                       const totalRecords = Object.values(user._count || {}).reduce((s, c) => s + c, 0);
 
@@ -336,6 +350,14 @@ export function UserManagementView({
                 </TableBody>
               </Table>
             </div>
+
+            <DataTablePagination
+              total={filteredUsers.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </CardContent>
         </Card>
 

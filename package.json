@@ -21,8 +21,9 @@
     "test:time": "node scripts/run-tests.js tests/beijing-time.test.ts",
     "test:directives": "node scripts/run-tests.js tests/client-directives.test.ts",
     "test:e2e": "node scripts/run-tests.js tests/e2e-workflow.test.ts",
-    "test:smoke": "node scripts/run-tests.js tests/smoke-routes.test.ts",
-    "test:fresh": "node scripts/run-tests.js --fresh tests/invariants.test.ts tests/e2e-workflow.test.ts tests/outbound-fifo.test.ts"
+    "test:fresh": "node scripts/run-tests.js --fresh tests/invariants.test.ts tests/e2e-workflow.test.ts tests/outbound-fifo.test.ts",
+    "test:ui": "playwright test",
+    "test:ui:report": "playwright show-report"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -68,11 +69,11 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4.0.7",
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "playwright": "1.63.0",
     "postcss": "^8.5.2",
     "prisma": "^6.4.1",
     "tailwindcss": "^4.0.7",

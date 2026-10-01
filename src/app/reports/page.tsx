@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import { BatchReportViewDialog } from "@/components/batches/BatchReportViewDialog";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import {
   InspectionReportDeleteButton,
   InspectionReportDialog,
@@ -17,10 +18,12 @@ export const dynamic = "force-dynamic";
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; pageSize?: string }>;
 }) {
   const params = await searchParams;
   const query = params.q?.trim() || "";
+  const page = Math.max(1, Number(params?.page) || 1);
+  const pageSize = Math.max(1, Number(params?.pageSize) || 10);
 
   const [currentUser, reports] = await Promise.all([
     getCurrentUser(),
@@ -31,6 +34,7 @@ export default async function ReportsPage({
     }),
   ]);
 
+  const pagedReports = reports.slice((page - 1) * pageSize, page * pageSize);
   const canManage = ["ADMIN", "QA_DIRECTOR", "WAREHOUSE_ADMIN"].includes(currentUser?.role || "");
 
   return (
@@ -79,7 +83,7 @@ export default async function ReportsPage({
                   </TableCell>
                 </TableRow>
               ) : (
-                reports.map((report) => {
+                pagedReports.map((report) => {
                   const inspectedAt = report.inspectedAt ? formatISODate(report.inspectedAt) : "";
 
                   return (
@@ -140,6 +144,9 @@ export default async function ReportsPage({
               )}
             </TableBody>
           </Table>
+          <div className="p-4 border-t">
+            <DataTablePagination total={reports.length} page={page} pageSize={pageSize} />
+          </div>
         </CardContent>
       </Card>
     </div>

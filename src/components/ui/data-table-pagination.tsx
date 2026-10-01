@@ -20,6 +20,8 @@ interface DataTablePaginationProps {
   pageParam?: string;
   pageSizeParam?: string;
   className?: string;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
 }
 
 export function DataTablePagination({
@@ -30,6 +32,8 @@ export function DataTablePagination({
   pageParam = "page",
   pageSizeParam = "pageSize",
   className,
+  onPageChange,
+  onPageSizeChange,
 }: DataTablePaginationProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -39,6 +43,13 @@ export function DataTablePagination({
   const currentPage = Math.min(Math.max(1, page), totalPages);
 
   const updateQueryParams = (newPage: number, newPageSize?: number) => {
+    if (newPageSize && onPageSizeChange) {
+      onPageSizeChange(newPageSize);
+    }
+    if (onPageChange) {
+      onPageChange(newPage);
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set(pageParam, String(newPage));
     if (newPageSize) {

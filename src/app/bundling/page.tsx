@@ -11,6 +11,7 @@ import { CancelBundleButton } from "@/components/bundling/CancelBundleButton";
 import { QCRecordDialog } from "@/components/qc/QCRecordDialog";
 import { QCViewDialog } from "@/components/qc/QCViewDialog";
 import { LedgerDateFilter } from "@/components/ledgers/LedgerDateFilter";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import {
   Layers,
   Users,
@@ -31,11 +32,22 @@ export const dynamic = "force-dynamic";
 export default async function BundlingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; group?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    group?: string;
+    page?: string;
+    pageSize?: string;
+    qcPage?: string;
+    qcPageSize?: string;
+  }>;
 }) {
   const params = await searchParams;
   const selectedDateStr = params?.date?.trim();
   const selectedGroupId = params?.group?.trim();
+  const page = Math.max(1, Number(params?.page) || 1);
+  const pageSize = Math.max(1, Number(params?.pageSize) || 10);
+  const qcPage = Math.max(1, Number(params?.qcPage) || 1);
+  const qcPageSize = Math.max(1, Number(params?.qcPageSize) || 10);
   const currentUser = await getCurrentUser();
   const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role || "");
 
@@ -151,6 +163,9 @@ export default async function BundlingPage({
     },
     orderBy: [{ checkTime: "desc" }, { uploadTime: "desc" }],
   });
+
+  const pagedBatches = batches.slice((page - 1) * pageSize, page * pageSize);
+  const pagedBundleQCs = bundleQCs.slice((qcPage - 1) * qcPageSize, qcPage * qcPageSize);
 
   const isBundlingActive = batches.some((b: any) => b.status === "BUNDLING");
   const getBatchCrabs = (b: any) =>
@@ -403,7 +418,7 @@ export default async function BundlingPage({
                   </td>
                 </tr>
               ) : (
-                batches.map((batch: any) => {
+                pagedBatches.map((batch: any) => {
                   const totalCount = batch.lines.reduce((a: number, b: any) => a + b.count, 0);
 
                   return (
@@ -523,6 +538,9 @@ export default async function BundlingPage({
             </tbody>
           </table>
         </div>
+        <div className="px-4 pb-4 border-t">
+          <DataTablePagination total={batches.length} page={page} pageSize={pageSize} />
+        </div>
       </Card>
     </TabsContent>
 
@@ -575,7 +593,7 @@ export default async function BundlingPage({
                   </td>
                 </tr>
               ) : (
-                bundleQCs.map((qc: any) => {
+                pagedBundleQCs.map((qc: any) => {
                   const isException = qc.result === "EXCEPTION";
                   const checkStr = formatDateTime(qc.checkTime);
                   const uploadStr = formatDateTime(qc.uploadTime);
@@ -676,6 +694,15 @@ export default async function BundlingPage({
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 pb-4 border-t">
+          <DataTablePagination
+            total={bundleQCs.length}
+            page={qcPage}
+            pageSize={qcPageSize}
+            pageParam="qcPage"
+            pageSizeParam="qcPageSize"
+          />
         </div>
       </Card>
     </TabsContent>

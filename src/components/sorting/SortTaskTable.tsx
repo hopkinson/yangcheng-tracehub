@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight, ChevronDown, Clock, Layers } from "lucide-react";
 import { BatchCompleteSortDialog } from "./BatchCompleteSortDialog";
 import { SortTaskActions } from "./SortTaskActions";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { formatShortDateTime } from "@/lib/utils";
 
 export interface SortTaskItem {
@@ -60,6 +61,10 @@ interface BatchGroup {
 }
 
 export function SortTaskTable({ tasks }: { tasks: SortTaskItem[] }) {
+  // 分页状态
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // 维护展开的批次 Key 集合
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
@@ -121,6 +126,8 @@ export function SortTaskTable({ tasks }: { tasks: SortTaskItem[] }) {
 
     return list;
   }, [tasks]);
+
+  const pagedBatchGroups = batchGroups.slice((page - 1) * pageSize, page * pageSize);
 
   const toggleExpand = (key: string) => {
     setExpandedKeys((prev) => {
@@ -188,7 +195,7 @@ export function SortTaskTable({ tasks }: { tasks: SortTaskItem[] }) {
               <th className="px-3 py-2 font-medium text-right whitespace-nowrap w-[130px]">操作</th>
             </tr>
           </thead>
-          {batchGroups.map((group) => {
+          {pagedBatchGroups.map((group) => {
             const isExpanded = expandedKeys.has(group.batchKey);
             const isHighLoss = group.completedTasks.length > 0 && group.overallLossRate > 5.0;
             const hasMultipleTasks = group.tasks.length > 1;
@@ -514,6 +521,14 @@ export function SortTaskTable({ tasks }: { tasks: SortTaskItem[] }) {
             })}
         </table>
       </div>
+
+      <DataTablePagination
+        total={batchGroups.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
     </div>
   );
 }
