@@ -118,7 +118,7 @@ jobs:
           password: ${{ env.SERVER_PASSWORD_1 }}
           port: ${{ env.SERVER_PORT_1 }}
           timeout: "30s"
-          command_timeout: "10m"
+          command_timeout: "25m"
           script: |
             set -e
 
@@ -255,7 +255,7 @@ jobs:
             # 7.5 深度清理磁盘与 Docker 历史构建缓存，彻底避免 ENOSPC 磁盘空间不足
             echo "🧹 检查并清理服务器磁盘空间与 Docker 历史构建缓存..."
             rm -rf /tmp/app-source* /tmp/*.tar.gz /var/tmp/* 2>/dev/null || true
-            docker builder prune -a -f || true
+            docker builder prune -f || true
             docker image prune -f || true
             echo "📊 当前服务器可用磁盘空间:"
             df -h /
@@ -333,7 +333,7 @@ jobs:
           key: ${{ env.SERVER_SSH_KEY_1 }}
           port: ${{ env.SERVER_PORT_1 }}
           timeout: "30s"
-          command_timeout: "10m"
+          command_timeout: "25m"
           script: |
             set -e
 
@@ -470,7 +470,7 @@ jobs:
             # 7.5 深度清理磁盘与 Docker 历史构建缓存，彻底避免 ENOSPC 磁盘空间不足
             echo "🧹 检查并清理服务器磁盘空间与 Docker 历史构建缓存..."
             rm -rf /tmp/app-source* /tmp/*.tar.gz /var/tmp/* 2>/dev/null || true
-            docker builder prune -a -f || true
+            docker builder prune -f || true
             docker image prune -f || true
             echo "📊 当前服务器可用磁盘空间:"
             df -h /
