@@ -237,6 +237,14 @@ jobs:
               fi
             fi
 
+            # 7.5 深度清理磁盘与 Docker 历史构建缓存，彻底避免 ENOSPC 磁盘空间不足
+            echo "🧹 检查并清理服务器磁盘空间与 Docker 历史构建缓存..."
+            rm -rf /tmp/app-source* /tmp/*.tar.gz /var/tmp/* 2>/dev/null || true
+            docker builder prune -a -f || true
+            docker image prune -f || true
+            echo "📊 当前服务器可用磁盘空间:"
+            df -h /
+
             # 8. 启动本地辅助数据库并构建上线生产容器
             echo "🐘 启动本地数据库容器 (yangcheng-db)..."
             $DOCKER_COMPOSE up -d db || true
@@ -250,8 +258,9 @@ jobs:
               $DOCKER_COMPOSE up -d --no-deps nginx || true
             fi
 
-            # 9. 清理悬空未使用的旧镜像
+            # 9. 清理悬空未使用的旧镜像与构建缓存
             docker image prune -f || true
+            docker builder prune -f || true
 
             # 10. 状态检查与健康探活 (仅探活生产服务 3000)
             echo "🔍 检查容器运行状态..."
