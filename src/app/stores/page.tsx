@@ -26,7 +26,9 @@ export default async function StoresPage({
       take: pageSize,
       include: {
         channel: true,
-        outboundOrders: true,
+        outboundOrders: {
+          where: { status: "APPROVED" },
+        },
       },
       orderBy: { code: "asc" },
     }),
