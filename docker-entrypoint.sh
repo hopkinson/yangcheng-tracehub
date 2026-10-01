@@ -31,6 +31,18 @@ if [ -n "$PRISMA_BIN" ]; then
         AND "applicantId" NOT IN (SELECT "id" FROM "User");
     `).catch(() => {}).finally(() => p.$disconnect());
   ' >/dev/null 2>&1 || true
+  # 历史出库数据对齐：将已审批出库单出库时间对齐为审批时间 (approvedAt)
+  node -e '
+    const { PrismaClient } = require("@prisma/client");
+    const p = new PrismaClient();
+    p.$executeRawUnsafe(`
+      UPDATE "OutboundOrder"
+      SET "outboundTime" = "approvedAt"
+      WHERE "status" = '\''APPROVED'\''
+        AND "approvedAt" IS NOT NULL
+        AND ("outboundTime" IS NULL OR "outboundTime" != "approvedAt");
+    `).catch(() => {}).finally(() => p.$disconnect());
+  ' >/dev/null 2>&1 || true
 else
   echo "⚠️ [Init] 未检测到 prisma 命令行工具，跳过 db push（表结构需已存在）"
 fi

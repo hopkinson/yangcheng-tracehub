@@ -10,7 +10,7 @@ import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { FileCheck } from "lucide-react";
 import { Invariants } from "@/lib/invariants";
 import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
-import { cn, formatDate, formatTime, getBeijingDayRange, getPreviewFileUrl } from "@/lib/utils";
+import { cn, formatDate, formatTime, formatDateTime, getBeijingDayRange, getPreviewFileUrl } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -293,7 +293,15 @@ export default async function LedgersPage({
       where: {
         status: { not: "REJECTED" },
         ...(isChannelViewer ? { channelId: channelId || "__NO_CHANNEL__" } : {}),
-        ...(dateFilter ? { createdAt: dateFilter } : {}),
+        ...(dateFilter
+          ? {
+              OR: [
+                { createdAt: dateFilter },
+                { outboundTime: dateFilter },
+                { approvedAt: dateFilter },
+              ],
+            }
+          : {}),
       },
       include: {
         store: true,
@@ -653,9 +661,12 @@ export default async function LedgersPage({
   });
 
   const outboundHeaderRows = outboundOrders.map((order) => {
+    // ponytail: 历史数据出库时间优先取审批时间(approvedAt)，若未审批则以实际/预计出库时间或申请时间兜底
+    const actualOutTime = order.approvedAt || order.outboundTime || order.createdAt;
     const exportRow: ExportValue[] = [
-      formatDate(order.outboundTime || order.createdAt),
-      formatTime(order.outboundTime || order.createdAt),
+      formatDate(order.createdAt),
+      formatTime(order.createdAt),
+      actualOutTime ? formatDateTime(actualOutTime) : "—",
       order.code,
       outboundTypeText(order.type),
       order.outboundCount,
@@ -683,16 +694,18 @@ export default async function LedgersPage({
     ] as ExportValue[];
   });
 
-  const outboundDetailRows = outboundOrders.flatMap((order) =>
-    order.lines.map((line) => {
+  const outboundDetailRows = outboundOrders.flatMap((order) => {
+    const actualOutTime = order.approvedAt || order.outboundTime || order.createdAt;
+    return order.lines.map((line) => {
       const bundle = line.coldLog.sortTask.bundleBatch;
       const sourceBatch = bundle.sourceBatch;
       const sourcePools = bundle.lines
         .filter((item) => item.gender === line.gender && normalizeWeightTier(item.weightTier) === normalizeWeightTier(line.weightTier))
         .map((item) => item.pool.code);
       const exportRow: ExportValue[] = [
-        formatDate(order.outboundTime || order.createdAt),
-        formatTime(order.outboundTime || order.createdAt),
+        formatDate(order.createdAt),
+        formatTime(order.createdAt),
+        actualOutTime ? formatDateTime(actualOutTime) : "—",
         order.code,
         sourceBatch.code,
         bundle.code,
@@ -706,8 +719,8 @@ export default async function LedgersPage({
         sourceBatch.farmer.enclosures?.map((e) => e.code).join(", ") || sourceBatch.enclosure?.code || "—",
       ];
       return { exportRow, displayRow: exportRow as ReactNode[] };
-    })
-  );
+    });
+  });
 
   const qcRows = qcRecords.map((record) => {
     const result =
@@ -804,8 +817,8 @@ export default async function LedgersPage({
     l5: ["捆扎日期", "捆扎时间", "捆扎批次", "班组", "班组编号", "原料批次", "蟹扣批次", "蟹绳批次", "养殖户", "池名", "池号", "规格", "状态", "公母", "初始捆扎只数", "捆扎完成只数", "损耗", "损耗率"],
     l6: ["分拣日期", "分拣时间", "分拣批次", "设备名", "设备编号", "原料批次", "绑扎批次", "规格", "公母", "状态", "投入(只)", "合格(只)", "损耗(只)", "损耗率"],
     l7: ["日期", "入库时间", "入库单号", "库名", "库位", "原料批次", "捆扎批次", "分拣任务", "规格", "入库(只)", "已发货(只)", "包装损耗(只)", "清库损耗(只)", "当前余量", "经手人"],
-    l8: ["出库日期", "出库时间", "出库批次", "出库类型", "合计数量(只)", "承运物流公司", "联系人", "联系方式", "出库申请人", "复核人"],
-    l9: ["出库日期", "出库时间", "CK 单号", "原料批次", "捆扎批次", "分拣任务", "预冷单", "规格", "公母", "数量(只)", "来源池", "养殖户", "围网"],
+    l8: ["出库单申请日期", "申请时间", "出库时间", "出库批次", "出库类型", "合计数量(只)", "承运物流公司", "联系人", "联系方式", "出库申请人", "复核人"],
+    l9: ["申请日期", "申请时间", "出库时间", "CK 单号", "原料批次", "捆扎批次", "分拣任务", "预冷单", "规格", "公母", "数量(只)", "来源池", "养殖户", "围网"],
     l10: ["记录日期", "记录时间", "记录编号", "记录类型", "表格编号", "质检人员", "结论", "异常原因", "附件", "记录人"],
     l11: ["发货日期", "订单号(SO)", "导入日期", "导入时间", "原始单号", "门店", "规格", "公母", "只数", "订单状态", "出库单(CK)", "原料批次", "捆扎批次", "分拣任务", "预冷单", "物流单号"],
     l12: ["发货日期", "订单号(SO)", "导入日期", "导入时间", "原始单号(KK)", "规格型号（原始）", "拆分规格", "公母", "只数", "订单状态", "出库单(CK)", "快递公司", "物流单号", "备注"],

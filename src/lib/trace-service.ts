@@ -316,7 +316,12 @@ async function buildTraceFromOutbound(
       ? `${line.expressCompany} (${line.waybillNo})`
       : outOrder.logisticsNo || "门店冷链专车自配";
 
-    // 环节 6: 出库
+    // 环节 5: 预冷 (保鲜入库单与库位严格按性别/规格隔离)
+    const coldStoreName = coldLog?.store?.name || "保鲜预冷库";
+    const coldStoreCode = coldLog?.store?.code || "—";
+    const coldLogCode = coldLog?.code || "—";
+
+    // 环节 6: 出库 (9宫格对齐：基础单据、出库与时效、审批与仓位追溯)
     const nodeOutbound: TraceChainNode = {
       step: 6,
       stageName: "出库",
@@ -328,17 +333,14 @@ async function buildTraceFromOutbound(
         { label: "发货数量", value: `${line.count || outOrder.outboundCount} 只` },
         { label: "物流承运", value: outboundLogistics },
         { label: "出库时间", value: formatFullDateTime(outOrder.outboundTime || outOrder.createdAt) },
+        { label: "出库状态", value: isApproved ? "已出库 (核验放行)" : "待核准出库" },
         { label: "申请人 / 时间", value: `${outOrder.applicant?.fullName || "出库员"} · ${formatFullDateTime(outOrder.createdAt)}` },
         { label: "审核人 / 时间", value: outOrder.approvedAt ? `${outOrder.approver?.fullName || "审核员"} · ${formatFullDateTime(outOrder.approvedAt)}` : (isApproved ? "已核准" : "待审核") },
+        { label: "调拨保鲜仓", value: `${coldStoreName} (${coldStoreCode})` },
       ],
       qcBadges: allQC.filter((q) => ["PACK_INSPECT", "VEHICLE_INSPECT"].includes(q.cat)).slice(0, 2).map(mapQc),
       status: isApproved ? "COMPLETED" : "PREVIEW",
     };
-
-    // 环节 5: 预冷 (保鲜入库单与库位严格按性别/规格隔离)
-    const coldStoreName = coldLog?.store?.name || "保鲜预冷库";
-    const coldStoreCode = coldLog?.store?.code || "—";
-    const coldLogCode = coldLog?.code || "—";
 
     const nodeCold: TraceChainNode = {
       step: 5,
@@ -656,8 +658,10 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
       subtitle: `订单约定发货日: ${formatDate(ord.deliveryDate)}`,
       details: [
         { label: "订单单号", value: ord.orderNo },
-        { label: "系统单号", value: ord.code },
+        { label: "发货去向", value: ord.storeName || "指定渠道门店" },
         { label: "订购数量", value: `${ord.count} 只` },
+        { label: "系统单号", value: ord.code },
+        { label: "出库时间", value: `${formatDate(ord.deliveryDate)} (约定发货)` },
         { label: "履约状态", value: "待出库发货 (履约链路已预校验)" },
       ],
       qcBadges: [],

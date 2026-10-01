@@ -74,6 +74,7 @@ export function StoreOutboundDialog({
   const [transportCompany, setTransportCompany] = useState(defaults?.transportCompany || "苏州市冷链物流专车");
   const [contactName, setContactName] = useState(defaults?.contactName || "");
   const [contactPhone, setContactPhone] = useState(defaults?.contactPhone || "");
+  const [applyTime, setApplyTime] = useState<string>(() => getBeijingTimeString(new Date()) || "");
   const [outboundTime, setOutboundTime] = useState<string>(
     () => (getBeijingTimeString(new Date()) || "").replace(" ", "T")
   );
@@ -171,7 +172,9 @@ export function StoreOutboundDialog({
       onOpenChange={(v) => {
         setOpen(v);
         if (v) {
-          setOutboundTime((getBeijingTimeString(new Date()) || "").replace(" ", "T"));
+          const now = getBeijingTimeString(new Date()) || "";
+          setApplyTime(now);
+          setOutboundTime(now.replace(" ", "T"));
           if (selectedOrderIds.length === 0 && currentStoreOrders.length > 0) {
             setSelectedOrderIds(currentStoreOrders.map((o) => o.id));
           }
@@ -246,10 +249,22 @@ export function StoreOutboundDialog({
               />
             </div>
 
-            <div className="space-y-1 sm:col-span-2">
+            <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">出库时间 (年月日 时分秒，支持未来时间)</Label>
-                <span className="text-[10px] text-muted-foreground font-mono">实际/预约发车时间</span>
+                <Label className="text-xs">申请时间 (当下时间)</Label>
+                <span className="text-[10px] text-muted-foreground font-mono">系统自动生成</span>
+              </div>
+              <Input
+                value={applyTime}
+                readOnly
+                className="h-8 text-xs font-mono bg-muted/40 cursor-not-allowed text-muted-foreground"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">出库时间 (年月日 时分秒)</Label>
+                <span className="text-[10px] text-muted-foreground font-mono">实际/预约发车 (支持未来)</span>
               </div>
               <Input
                 type="datetime-local"

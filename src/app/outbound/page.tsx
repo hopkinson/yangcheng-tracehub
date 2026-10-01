@@ -547,7 +547,7 @@ export default async function OutboundPage({
                               <div className="flex flex-col gap-0.5 font-mono text-[11px]">
                                 <div className="flex items-center gap-1 text-foreground font-medium">
                                   <span>出: {formatFullDateTime(order.outboundTime || order.createdAt)}</span>
-                                  {new Date(order.outboundTime || order.createdAt).getTime() > Date.now() && (
+                                  {isPending && new Date(order.outboundTime || order.createdAt).getTime() > Date.now() && (
                                     <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
                                       计划
                                     </Badge>
