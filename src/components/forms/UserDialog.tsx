@@ -14,11 +14,11 @@ import { toast } from "sonner";
 import { UserPlus, Pencil, Shield, Store } from "lucide-react";
 
 export const ROLE_LABELS: Record<string, { label: string; desc: string }> = {
-  ADMIN: { label: "管理员 (ADMIN)", desc: "系统全功能运维、用户与全局配置、兜底特批" },
-  FARMER_ADMIN: { label: "审核员 (FARMER_ADMIN)", desc: "主要管审批：蟹扣领用、出库发货、出库损耗审批（无角色与权限）" },
-  WAREHOUSE_ADMIN: { label: "库管员 (WAREHOUSE_ADMIN)", desc: "原料入池、暂养、捆扎分拣、出库发运、损耗盘点（无审批，无角色与权限）" },
-  QA_DIRECTOR: { label: "质检员 (QA_DIRECTOR)", desc: "各工序品控质检录入、检测报告上传（无审批，无角色与权限）" },
-  CHANNEL_VIEWER: { label: "渠道审计员 (山姆/CHANNEL_VIEWER)", desc: "专属渠道订单追溯与合规台账只读查询" },
+  ADMIN: { label: "系统管理员", desc: "系统全功能运维、用户与配置管理、特批权限" },
+  FARMER_ADMIN: { label: "业务审核员", desc: "负责蟹扣申领、出库发货与损耗处置等业务审批" },
+  WAREHOUSE_ADMIN: { label: "仓库管理员", desc: "负责原料入池、暂养监控、捆扎分拣与出库发货操作" },
+  QA_DIRECTOR: { label: "品质检验员", desc: "负责抽样检测、每日水质巡检与检验报告登记" },
+  CHANNEL_VIEWER: { label: "渠道审计员", desc: "专属渠道订单追溯与全流程合规证明只读查验" },
 };
 
 export interface ChannelOption {
@@ -152,7 +152,7 @@ export function UserDialog({
                       </FormControl>
                       {isEditing && (
                         <FormDescription className="text-[11px]">
-                          账号名为主键标识，创建后不可更改
+                          账号创建后不可更改
                         </FormDescription>
                       )}
                       <FormMessage />
@@ -272,7 +272,7 @@ export function UserDialog({
                           </SelectContent>
                         </Select>
                         <FormDescription className="text-[10px] text-amber-700 dark:text-amber-400">
-                          渠道人员将受到严格物理隔离，仅可查验该渠道的出库追溯与台账
+                          渠道人员仅可查验所绑定渠道的出库追溯与合规台账
                         </FormDescription>
                         <FormMessage />
                       </div>

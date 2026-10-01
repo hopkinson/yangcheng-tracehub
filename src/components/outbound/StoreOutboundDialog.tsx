@@ -181,24 +181,24 @@ export function StoreOutboundDialog({
       <DialogTrigger asChild>
         <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
           <Plus className="size-4" />
-          新建门店出库 (CK)
+          新建门店出库
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <StoreIcon className="size-5 text-primary" />
-            新建门店出库（多单合单出库）
+            新建门店出库
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            选定发货门店并勾选待发货订单，系统会按原料入池时间自动执行 FIFO 分配，不允许手动跳过更早批次。
+            选择发货门店与待发货订单，系统按先进先出原则自动分配冷库库存。
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 overflow-y-auto px-1 py-1">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-lg border bg-muted/20">
             <div className="space-y-1">
-              <Label className="text-xs">发货目的门店 (仅有待发订单可选)</Label>
+              <Label className="text-xs">发货目的门店</Label>
               <Select value={selectedStoreId} onValueChange={handleStoreChange}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue placeholder="选择门店" />

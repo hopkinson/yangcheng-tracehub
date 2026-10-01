@@ -30,7 +30,7 @@ export function TraceAuditLedger({ data }: TraceAuditLedgerProps) {
             <Scale className="size-4" />
           </div>
           <div className="min-w-0">
-            <div className="font-semibold text-foreground">额度守恒闭环</div>
+            <div className="font-semibold text-foreground">额度闭环管理</div>
             <div className="text-[11px] text-muted-foreground truncate">
               {hasMultipleFarmers ? "联合核定" : "核定"} {totalQuota.toLocaleString()} 只 · 本票核销 {count.toLocaleString()} 只
             </div>
@@ -69,7 +69,7 @@ export function TraceAuditLedger({ data }: TraceAuditLedgerProps) {
         <span>* 批次溯源面向渠道开放，发货总量受养殖户年度理论产量严格约束。</span>
         <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
           <CheckCircle2 className="size-3" />
-          数量守恒数学闭环证明有效
+          全流程数量闭环合规有效
         </span>
       </div>
     </div>

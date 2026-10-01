@@ -163,7 +163,7 @@ export default async function ColdStoragePage({
             保鲜预冷
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            分拣合格成品大闸蟹入库预冷（4~5℃），严格【只入不出】，出库发货统一经由「出库管理」集中办理。
+            分拣合格成品入库保鲜与预冷存储（4~5℃），发货请前往出库管理。
           </p>
         </div>
         <div className="flex items-center gap-2">

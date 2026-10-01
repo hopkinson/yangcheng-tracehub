@@ -196,7 +196,7 @@ export default async function SortingPage({
             分拣称重管理
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            精准分规定重 · 计算分拣损耗率 · 合格品入库作为冷库可出库存源头 · 设备精度校验安全联锁
+            大闸蟹规格分拣与称重管理，实时监控分拣损耗及设备校准状态。
           </p>
         </div>
         <div className="flex items-center flex-wrap gap-2">
@@ -249,7 +249,7 @@ export default async function SortingPage({
             </span>
             {exceptionMachines > 0 && (
               <span className="text-destructive font-semibold">
-                · {exceptionMachines} 台联锁锁定
+                · {exceptionMachines} 台校准异常停用
               </span>
             )}
             {pendingTasksCount > 0 && (
@@ -266,7 +266,7 @@ export default async function SortingPage({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Cpu className="size-4 text-primary" />
-                <h2 className="text-sm font-semibold text-foreground">分拣设备监控与校准卡控</h2>
+                <h2 className="text-sm font-semibold text-foreground">分拣设备监控与校准</h2>
             <Badge variant="outline" className="text-[10px] font-mono">
               共 {machines.length} 台设备
             </Badge>
@@ -276,7 +276,7 @@ export default async function SortingPage({
               </span>
               {exceptionMachines > 0 && (
                 <span className="text-destructive font-semibold">
-                  · {exceptionMachines} 台异常联锁
+                  · {exceptionMachines} 台异常停用
                 </span>
               )}
             </span>
@@ -335,7 +335,7 @@ export default async function SortingPage({
                 {isException ? (
                   <div className="p-1.5 rounded bg-destructive/15 border border-destructive/30 text-destructive text-[11px] font-semibold flex items-center gap-1.5 animate-pulse">
                     <ShieldAlert className="size-3.5 shrink-0" />
-                    <span className="truncate">安全联锁已启动，禁止开机</span>
+                    <span className="truncate">设备校准未通过，已停用锁定</span>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">

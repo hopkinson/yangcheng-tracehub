@@ -87,7 +87,7 @@ export default async function TagsPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">蟹扣管理</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {`蟹扣领用审批与日清日结轧平（领用数 = 完成绑扎${SHOW_TAG_RETURN ? " + 当日退回" : ""} + 当日结余）`}
+            防伪蟹扣申领核发与每日领用核销核对。
           </p>
         </div>
         {isWarehouseOrAdmin && <TagClaimDialog farmers={farmerOptions} userId={currentUserId} />}
@@ -106,7 +106,7 @@ export default async function TagsPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[140px]">蟹扣批次 (XK)</TableHead>
+                  <TableHead className="w-[140px]">蟹扣批次</TableHead>
                   <TableHead>领用日期</TableHead>
                   <TableHead>来源养殖户</TableHead>
                   <TableHead>申请领扣数</TableHead>

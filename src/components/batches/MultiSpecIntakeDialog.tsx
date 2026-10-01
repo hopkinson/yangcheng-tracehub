@@ -226,17 +226,17 @@ export function MultiSpecIntakeDialog({
       <DialogTrigger asChild>
         <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
           <Plus className="size-4" />
-          一码单多规格入池 (YL)
+          原料入池登记
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <Layers className="size-5 text-primary" />
-            原料批次到货入池登记（一码单多规格主从录入）
+            原料批次到货入池登记
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            一个到货批次对应一张入库码单，多规格逐行分配至独立的空暂养池（一池一批次物理隔离，只能选择空池）。
+            一个到货批次对应一张入库码单，不同规格分别存入空置暂养池。
           </DialogDescription>
         </DialogHeader>
 
@@ -244,7 +244,7 @@ export function MultiSpecIntakeDialog({
           {/* 码单主信息 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-lg border bg-muted/20">
             <div className="space-y-1">
-              <Label className="text-xs">供货养殖户 (JD)</Label>
+              <Label className="text-xs">供货养殖户</Label>
               <Select value={selectedFarmerId} onValueChange={setSelectedFarmerId}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue placeholder="选择养殖户" />

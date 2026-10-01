@@ -159,7 +159,7 @@ export function SortTaskDialog({
       return;
     }
     if (isMachineBlocked) {
-      toast.error("该设备校准未通过，安全联锁禁止开机作业！");
+      toast.error("该设备校准未通过，已停用锁定，禁止开机作业");
       return;
     }
 
@@ -205,7 +205,7 @@ export function SortTaskDialog({
       <DialogTrigger asChild>
         <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
           <Plus className="size-4" />
-          新建分拣任务 (FJR)
+          新建分拣任务
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
@@ -324,7 +324,7 @@ export function SortTaskDialog({
               <span>
                 {isMachineDisabled
                   ? "该设备处于【停用】状态，禁止开机作业！"
-                  : "该分拣机精度校准异常，已被系统安全联锁强制锁定，禁止开机作业！"}
+                  : "该分拣机精度校准异常，已停机锁定，请校准合格后再作业。"}
               </span>
             </div>
           )}

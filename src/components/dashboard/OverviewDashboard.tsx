@@ -275,10 +275,10 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
         id: `biz-machine-${m.id}`,
         level: "SEVERE",
         category: "BUSINESS",
-        catLabel: "设备联锁",
+        catLabel: "设备校准",
         target: `${m.name} (${m.code})`,
-        title: "动态分拣设备精度校验未通过",
-        reason: "传感器误差超标，联锁已强制停机，禁止派发分拣任务",
+        title: "分拣设备精度校验未通过",
+        reason: "传感器误差超标，设备已停机锁定，请校准后作业",
         time: "今日早班",
       });
     });
@@ -401,7 +401,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       level: "1. 签约核定额度",
       value: metrics.totalQuota,
       percentage: 100,
-      gate: "源头额度卡控（≤ 600只/亩）",
+      gate: "源头产能核定（≤ 600只/亩）",
       bgBar: "bg-indigo-500",
       textColor: "text-indigo-600 dark:text-indigo-400",
       delay: 0,
@@ -410,7 +410,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       level: "2. 原料实际入池",
       value: metrics.totalInPool,
       percentage: metrics.totalQuota > 0 ? (metrics.totalInPool / metrics.totalQuota) * 100 : 0,
-      gate: "一码单多规格实录入池",
+      gate: "多规格实录入池",
       bgBar: "bg-sky-500",
       textColor: "text-sky-600 dark:text-sky-400",
       delay: 150,
@@ -419,7 +419,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       level: "3. 蟹扣合规申领",
       value: metrics.totalTagClaimed,
       percentage: metrics.totalQuota > 0 ? (metrics.totalTagClaimed / metrics.totalQuota) * 100 : 0,
-      gate: "在池存活余量与额度双卡控",
+      gate: "在池存活与额度双重校验",
       bgBar: "bg-amber-500",
       textColor: "text-amber-600 dark:text-amber-400",
       delay: 300,
@@ -428,7 +428,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
       level: "4. 最终出库发运",
       value: metrics.totalOutboundCount,
       percentage: metrics.totalQuota > 0 ? (metrics.totalOutboundCount / metrics.totalQuota) * 100 : 0,
-      gate: "单票匹配冷库锁鲜库存",
+      gate: "冷库可用库存匹配校验",
       bgBar: "bg-emerald-500",
       textColor: "text-emerald-600 dark:text-emerald-400",
       delay: 450,
@@ -925,7 +925,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 </div>
 
                 <div className="mt-2.5 pt-2 border-t flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>留痕机制：双时间戳自动上链不可篡改</span>
+                  <span>留痕机制：操作与业务时间双重记录，全程留痕可溯</span>
                   <Link href="/ledgers" className="text-primary hover:underline flex items-center gap-0.5 group">
                     查看全链路合规台账 <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform" />
                   </Link>
@@ -934,7 +934,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
             </Card>
           </FadeIn>
 
-          {/* 2. 环境与水温监控矩阵（仅 maoshi 租户展示） */}
+          {/* 2. 环境与水温监控（仅 maoshi 租户展示） */}
           {isMaoshi && (
             <FadeIn>
               <Card className="border-border/80 shadow-xs bg-card overflow-hidden">
@@ -942,7 +942,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                   <div className="flex items-center gap-2">
                     <Thermometer className="size-4 text-primary" />
                     <CardTitle className="text-xs font-semibold uppercase tracking-wider">
-                      环境与暂养水温监控（态势矩阵）
+                      车间与暂养池温度监控
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1152,11 +1152,11 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="size-4 text-emerald-600" />
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider">
-                    数量闭环收敛漏斗
+                    全流程数量闭环漏斗
                   </CardTitle>
                 </div>
                 <span className="text-[10px] font-mono text-emerald-600 font-semibold">
-                  守恒状态: 100% 闭环
+                  闭环状态: 100% 受控
                 </span>
               </CardHeader>
               <CardContent className="p-3.5 space-y-3">
@@ -1185,7 +1185,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                         />
                       </div>
                       <div className="text-[10px] text-muted-foreground flex justify-between">
-                        <span>卡口：{step.gate}</span>
+                        <span>管控规则：{step.gate}</span>
                       </div>
                     </div>
                   ))}
@@ -1194,7 +1194,7 @@ export function OverviewDashboard({ metrics, activePools, qcRecords, businessAle
                 <div className="pt-2 border-t text-center">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[11px] font-medium animate-in fade-in duration-500">
                     <CheckCircle2 className="size-3.5 text-emerald-500" />
-                    全链路数量守恒，当前无越级数据
+                    全流程数量闭环合规，当前无异常超出
                   </div>
                 </div>
               </CardContent>

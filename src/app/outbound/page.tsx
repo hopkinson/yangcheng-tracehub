@@ -234,7 +234,7 @@ export default async function OutboundPage({
             出库管理
           </h1>
           <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-            <span>冷库规格化合格品出库闭环 · 支持门店多单合单出库与蟹卡提蟹统一出库</span>
+            <span>成品大闸蟹发货出库，支持门店合单发货与提蟹订单出库</span>
             <span className="inline-flex items-center gap-1 font-mono text-primary font-semibold bg-primary/10 px-2 py-0.5 rounded text-[11px] border border-primary/20">
               冷库可出总存量: {totalColdAvailable.toLocaleString()} 只
             </span>
@@ -397,7 +397,7 @@ export default async function OutboundPage({
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
-                        <TableHead className="w-[140px]">出库批次号 (CK)</TableHead>
+                        <TableHead className="w-[140px]">出库批次号</TableHead>
                         <TableHead className="w-[90px]">类型</TableHead>
                         <TableHead className="min-w-[150px]">去向</TableHead>
                         <TableHead className="min-w-[180px]">出库规格明细</TableHead>

@@ -27,10 +27,10 @@ export function ClearPoolDialog({
     toast.promise(
       clearPoolAction({ poolId: pool.id, reason: reason.trim(), userId }),
       {
-        loading: "正在清池并解绑规格...",
+        loading: "正在结算清池...",
         success: (res) => {
           setOpen(false);
-          return `清池成功！已结算在池活蟹 ${res.clearedCrabs} 只，规格已释放！`;
+          return `清池成功！已结算在池活蟹 ${res.clearedCrabs} 只，池位已腾空可用。`;
         },
         error: (err) => err?.message || "清池失败",
         finally: () => setLoading(false),
@@ -43,17 +43,17 @@ export function ClearPoolDialog({
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="h-6 text-[11px] px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 border-amber-500/30">
           <Sparkles className="size-3 mr-1" />
-          清池释放
+          清池盘点
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base text-amber-600 dark:text-amber-400">
             <AlertCircle className="size-5" />
-            清池盘点与规格解绑确认
+            清池盘点确认
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            对暂养池【{pool.name} ({pool.code})】进行清池结算。操作后在池残存将以盘点损耗结算归零，并解绑规格锁定。
+            对暂养池【{pool.name} ({pool.code})】进行清池结算。操作后在池活蟹将作为盘点损耗结算归零，腾空后可用于新批次入池。
           </DialogDescription>
         </DialogHeader>
 
@@ -81,7 +81,7 @@ export function ClearPoolDialog({
           <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={loading}>取消</Button>
           <Button variant="default" size="sm" onClick={handleClear} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white">
             {loading && <Loader2 className="size-3.5 animate-spin mr-1" />}
-            确认清池并释放规格
+            确认清空池位
           </Button>
         </div>
       </DialogContent>

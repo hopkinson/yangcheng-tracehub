@@ -203,7 +203,7 @@ export default async function PoolsPage({
             暂养监控
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            暂养池实时矩阵与在池存活流转 · 当日水质/巡检品控异常告警与双时间戳合规留痕
+            暂养池在池存量监控、每日水质巡检与在养状态跟踪
           </p>
         </div>
         {isWarehouseOrAdmin && <PoolDialog userId={currentUserId} />}
@@ -560,7 +560,7 @@ export default async function PoolsPage({
                   暂养品控留痕台账 (水质监测 / 暂养巡检)
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  记录时间 vs 系统上传时间双时间戳留痕 · 支持按池号/类别/日期精准检索与纸质原件穿透
+                  操作时间与业务时间双重记录 · 支持按池号/类别/日期检索与原件附件查阅
                 </p>
               </div>
 

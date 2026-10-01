@@ -311,7 +311,7 @@ export default async function ApprovalsPage({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          蟹扣领用与出库审批角色由「角色与权限」统一配置；损耗超标作为独立异常处置
+          处理蟹扣申领、出库发运与损耗审批，处置异常批次。
         </p>
       </div>
 

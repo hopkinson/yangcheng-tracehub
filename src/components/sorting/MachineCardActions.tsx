@@ -147,26 +147,26 @@ export function MachineCardActions({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="text-xs">
             <DropdownMenuLabel className="text-[11px] text-muted-foreground">
-              模拟校准状态切换
+              快捷标记校准状态
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => handleSetCalibration("QUALIFIED")}
               className="text-emerald-600 text-xs gap-1.5 cursor-pointer"
             >
-              <CheckCircle2 className="size-3.5" /> 设为【校验合格】(准予开机)
+              <CheckCircle2 className="size-3.5" /> 标记为【校验合格】
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleSetCalibration("EXCEPTION")}
               className="text-destructive text-xs gap-1.5 cursor-pointer"
             >
-              <AlertTriangle className="size-3.5" /> 设为【校验异常】(联锁拦截)
+              <AlertTriangle className="size-3.5" /> 标记为【校验异常】（暂停使用）
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleSetCalibration("PENDING")}
               className="text-amber-600 text-xs gap-1.5 cursor-pointer"
             >
-              <Clock className="size-3.5" /> 设为【待校验】
+              <Clock className="size-3.5" /> 标记为【待校验】
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

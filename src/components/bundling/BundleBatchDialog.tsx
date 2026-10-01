@@ -210,7 +210,7 @@ export function BundleBatchDialog({
       <DialogTrigger asChild>
         <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
           <Plus className="size-4" />
-          新建捆扎批次 (KZD)
+          新建捆扎批次
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
@@ -220,7 +220,7 @@ export function BundleBatchDialog({
             新建大闸蟹捆扎批次
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            按原料入池顺序处理；一个捆扎批次只绑定一个原料批次，可合并该批次的多个暂养池来源。
+            按入池顺序选择原料批次与对应暂养池，绑定蟹扣与班组开始捆扎。
           </DialogDescription>
         </DialogHeader>
 
@@ -317,9 +317,7 @@ export function BundleBatchDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">
-              蟹绳批次号 <span className="text-[11px] text-muted-foreground">（年度大批次，手工填报）</span>
-            </Label>
+            <Label className="text-xs">蟹绳批次号</Label>
             <Input
               value={ropeBatch}
               onChange={(e) => setRopeBatch(e.target.value)}

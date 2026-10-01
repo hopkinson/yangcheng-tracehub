@@ -63,9 +63,7 @@ export function TagClaimDialog({
     const count = Number(data.claimCount);
     if (count > maxClaimable) {
       form.setError("claimCount", {
-        message: SHOW_TAG_RETURN
-          ? `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只（蟹扣入仓 ${tagInbound} - 申领 ${tagClaimed} + 退回 ${tagReturned}）`
-          : `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只`,
+        message: `超出最大可领扣余量: 当前上限为 ${maxClaimable} 只`,
       });
       return;
     }
@@ -101,7 +99,7 @@ export function TagClaimDialog({
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Tag className="size-5 text-primary" />
-            <DialogTitle>蟹扣领用申请 (按养殖户)</DialogTitle>
+            <DialogTitle>蟹扣领用申请</DialogTitle>
           </div>
         </DialogHeader>
 
@@ -139,7 +137,7 @@ export function TagClaimDialog({
                   <span>{currentFarmer.quota.toLocaleString()} 只</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">蟹扣入仓数 (入池数):</span>
+                  <span className="text-muted-foreground">活蟹入池累计数:</span>
                   <span className="font-semibold">{tagInbound.toLocaleString()} 只</span>
                 </div>
                 <div className="flex justify-between">

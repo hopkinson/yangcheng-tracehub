@@ -50,7 +50,7 @@ export function TraceCertificateHeader({ data }: TraceCertificateHeaderProps) {
                     : "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
                 }`}
               >
-                {isPreview ? "待出库 · 履约链路预览" : "全链路已核验真"}
+                {isPreview ? "待出库 · 履约链路预览" : "全链路合规闭环"}
               </Badge>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">

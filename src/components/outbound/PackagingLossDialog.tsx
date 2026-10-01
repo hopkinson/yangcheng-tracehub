@@ -87,7 +87,7 @@ export function PackagingLossDialog({ locations }: { locations: ColdLocationStoc
           toast.error(result.message || "包装损耗登记失败");
           return;
         }
-        toast.success(`包装损耗已即时核销 ${result.totalLossRecorded} 只，无需审批`);
+        toast.success(`包装损耗登记成功，已核减 ${result.totalLossRecorded} 只`);
         form.reset({ coldStoreId: values.coldStoreId, losses: {}, reason: "" });
         setOpen(false);
       } catch (error) {
@@ -108,7 +108,7 @@ export function PackagingLossDialog({ locations }: { locations: ColdLocationStoc
         <DialogHeader>
           <DialogTitle>登记包装损耗</DialogTitle>
           <DialogDescription>
-            选择一个库位，可一次登记该库位多个规格的包装损耗。提交后直接从可用库存扣减并即时核销，不进入审批。
+            选择作业库位，登记多个规格的包装损耗，提交后直接从可用库存中扣减。
           </DialogDescription>
         </DialogHeader>
 

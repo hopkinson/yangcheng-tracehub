@@ -320,7 +320,7 @@ export default async function BatchesPage({
             原料批次
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            原料大闸蟹多规格入库码单流水 · 药残及重金属快检与品质试吃双时间戳合规品控留痕
+            原料大闸蟹到货入池记录、质检快检与品控留痕
           </p>
         </div>
         {isWarehouseOrAdmin && (
@@ -637,7 +637,7 @@ export default async function BatchesPage({
                   原料品控留痕台账 (药残及重金属快检 / 抽检试吃)
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  记录实际发生时间 vs 系统上传时间双时间戳留痕 · 支持按批次号/类别/日期精准检索与纸质原件穿透
+                  操作时间与业务时间双重记录 · 支持按批次号/类别/日期检索与原件附件查阅
                 </p>
               </div>
 

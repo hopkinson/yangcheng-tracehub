@@ -357,7 +357,7 @@ export function FarmerDialog({
 
             {/* 系统实时核定年度总额度 */}
             <div className="rounded-md border bg-primary/5 p-3 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground font-medium">系统实时核定年度总额度:</span>
+              <span className="text-xs text-muted-foreground font-medium">核定年度总额度:</span>
               <span className="font-mono font-bold text-lg text-primary">
                 {calculatedQuota.toLocaleString()} 只
               </span>

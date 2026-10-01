@@ -19,7 +19,7 @@ const ROLE_MAP: Record<string, string> = {
   FARMER_ADMIN: "审核员",
   WAREHOUSE_ADMIN: "库管员",
   QA_DIRECTOR: "质检员",
-  CHANNEL_VIEWER: "渠道审计员 (山姆)",
+  CHANNEL_VIEWER: "渠道审计员",
 };
 
 export function UserRoleSwitcher({
@@ -30,7 +30,10 @@ export function UserRoleSwitcher({
   if (!user) return null;
 
   const firstChar = (user.fullName || user.username || "用")[0];
-  const roleName = ROLE_MAP[user.role] || user.role;
+  const baseRole = ROLE_MAP[user.role] || user.role;
+  const roleName = user.role === "CHANNEL_VIEWER" && user.channelName
+    ? `渠道审计员 (${user.channelName})`
+    : baseRole;
 
   return (
     <Popover>
@@ -64,7 +67,7 @@ export function UserRoleSwitcher({
             <div className="flex items-center gap-1 text-[11px] text-muted-foreground truncate mt-0.5">
               <Shield className="size-3 shrink-0 text-primary/70" />
               <span className="truncate">
-                {roleName}
+                {baseRole}
                 {user.channelName ? ` · ${user.channelName}` : ""}
               </span>
             </div>

@@ -138,7 +138,7 @@ export function OutboundOrderDialog({
               name="storeId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>目标销售门店 (从主档选择)</FormLabel>
+                  <FormLabel>目标销售门店</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
@@ -183,7 +183,7 @@ export function OutboundOrderDialog({
               name="outboundCount"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>出库发运数量 (只) - 自动同步单票订单数</FormLabel>
+                  <FormLabel>出库发运数量 (只)</FormLabel>
                   <FormControl>
                     <Input type="number" min="1" max={maxAvailable || undefined} {...field} />
                   </FormControl>

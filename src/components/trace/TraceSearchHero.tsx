@@ -54,7 +54,7 @@ export function TraceSearchHero({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="支持输入订单号 (SO/SM/KK...) 或出库批次号 (CK...)"
+            placeholder="支持输入订单号、出库单号或原料批次号..."
             className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-8 text-sm placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           />
           {query && (
@@ -77,8 +77,8 @@ export function TraceSearchHero({
       <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
         <ShieldAlert className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
         <div className="leading-tight">
-          <strong>系统边界声明：</strong>
-          <span>不定位单只 · 不承担防伪。本系统为数量闭环管控与合规证明系统，证明发出的带扣蟹总量 ≤ 签约养殖户的理论核定产量。</span>
+          <strong>系统合规声明：</strong>
+          <span>本系统为数量闭环管控与合规证明系统：不追踪单只、不承担防伪功能，用于证明发出的带扣蟹总量不超过签约养殖户的核定产能。</span>
         </div>
       </div>
     </div>

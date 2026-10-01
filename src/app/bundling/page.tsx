@@ -189,7 +189,7 @@ export default async function BundlingPage({
             捆扎管理
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            原料批次先入先处理 · 蟹扣与原料身份绑定 · 严禁混扣混源头 · 只有完成捆扎方可进入分拣
+            原料绑扣与作业管理，一蟹一扣，绑定批次来源。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -576,7 +576,7 @@ export default async function BundlingPage({
           <table className="w-full min-w-[980px] text-xs text-left">
             <thead className="bg-muted/50 text-muted-foreground border-b uppercase font-mono">
               <tr>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">巡检记录号 (KZ)</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">巡检记录号</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[140px]">纸质表号</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">记录时间</th>
                 <th className="px-3 py-2.5 font-medium whitespace-nowrap w-[150px]">系统上传时间</th>

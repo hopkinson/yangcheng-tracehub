@@ -126,7 +126,7 @@ export function OrderImportDialog() {
           <div className="flex items-center justify-between pr-6">
             <DialogTitle className="flex items-center gap-2 text-base font-semibold">
               <FileSpreadsheet className="size-5 text-primary" />
-              发货订单批量导入与智能拆分
+              发货订单批量导入
             </DialogTitle>
             <Button
               variant="outline"
@@ -139,7 +139,7 @@ export function OrderImportDialog() {
             </Button>
           </div>
           <DialogDescription className="text-xs text-muted-foreground">
-            支持 Excel (.xlsx, .xls, .csv) 文件上传，自动解析订单与蟹卡多规格明细。
+            支持上传 Excel 或 CSV 文件，自动识别订单明细。
           </DialogDescription>
         </DialogHeader>
 
@@ -157,10 +157,10 @@ export function OrderImportDialog() {
           <div className="flex items-center justify-between pb-1 border-b">
             <TabsList className="h-8">
               <TabsTrigger value="CARD" className="text-xs">
-                蟹卡提货导入（自动拆分规格）
+                蟹卡提货订单
               </TabsTrigger>
               <TabsTrigger value="STORE" className="text-xs">
-                {getTenant().storeLabel}订单导入
+                {getTenant().storeLabel}订单
               </TabsTrigger>
             </TabsList>
           </div>

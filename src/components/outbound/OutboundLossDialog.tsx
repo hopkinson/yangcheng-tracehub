@@ -198,7 +198,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
             </Badge>
           </div>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            平铺填报每日收尾清库盘点差异并锁定可发库存；可点击【一键全清归零】快速结算，审核通过后核销。
+            填报每日清库盘点差异，支持一键清零结算，提交后进入审核核销。
           </DialogDescription>
         </DialogHeader>
 
@@ -218,7 +218,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
                 className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
               >
                 <Sparkles className="size-3" />
-                一键全清归零 (收尾清库)
+                一键清库归零
               </Button>
               <Button
                 type="button"
@@ -228,7 +228,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
                 className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
               >
                 <RotateCcw className="size-3" />
-                一键全部无损
+                重置为账面数
               </Button>
             </div>
           </div>
@@ -241,7 +241,7 @@ export function OutboundLossDialog({ specStocks }: { specStocks: SpecStock[] }) 
                 各规格损耗扣减与现场实盘
               </Label>
               <span className="text-[11px] text-muted-foreground">
-                双向联动换算 · 实盘填 0 即完成该规格清库
+                输入损耗或实盘数，实盘为 0 即完成该规格清库
               </span>
             </div>
 

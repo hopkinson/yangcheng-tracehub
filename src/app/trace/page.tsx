@@ -48,7 +48,7 @@ export default async function TracePage({
                 未检索到单号为 <span className="font-mono font-bold text-foreground">{searchTerm}</span> 的记录。
               </p>
               <p className="text-xs text-muted-foreground">
-                支持：SO系统单号、SM门店单号、KK蟹卡提货单号、CK出库单号、顺丰单号或 YL批次号。请点击上方快捷示例重试。
+                支持按订单号、出库单号、快递运单号或原料批次号查询，请核对后重新输入。
               </p>
             </div>
           </CardContent>

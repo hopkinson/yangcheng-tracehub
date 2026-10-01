@@ -112,7 +112,7 @@ export function SettleTagClaimDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{SHOW_TAG_RETURN ? "蟹扣退回与结余登记" : "蟹扣结余登记"} (日结核销)</DialogTitle>
+          <DialogTitle>蟹扣日结核销登记</DialogTitle>
           <DialogDescription>
             养殖户：{claim.farmer.name} ({claim.farmer.code})
           </DialogDescription>
@@ -130,7 +130,7 @@ export function SettleTagClaimDialog({
 
           {(outboundCount > 0 || totalDownstreamLoss > 0 || inColdStorage > 0) && (
             <div className="rounded border border-dashed border-border/80 bg-background/50 p-2 text-[11px] flex flex-col gap-1">
-              <div className="flex justify-between font-medium text-foreground pb-1 border-b border-border/40">
+              <div className="flex justify-between font-medium text-foreground pb-1 border-border/40">
                 <span className="text-muted-foreground">绑扣流向拆解:</span>
                 <span className="font-mono">{boundVal} 只</span>
               </div>
@@ -168,15 +168,7 @@ export function SettleTagClaimDialog({
             {isBalanced ? (
               <span className="inline-flex items-center text-emerald-600 font-sans font-medium text-xs">
                 <CheckCircle2 className="size-3.5 mr-1 shrink-0" />
-                {!SHOW_TAG_RETURN && returnedVal > 0 ? (
-                  "数量已完全轧平（系统已按历史数据完成核销）"
-                ) : (
-                  <>
-                    数量已完全轧平 (领扣 {claim.claimCount} = 绑扣 {boundVal}
-                    {totalDownstreamLoss > 0 ? ` [出库 ${outboundCount} + 损耗 ${totalDownstreamLoss}]` : ""}
-                    {SHOW_TAG_RETURN && returnedVal > 0 ? ` + 退回 ${returnedVal}` : ""} + 结余 {scrappedVal})
-                  </>
-                )}
+                数量已完全轧平（领扣与核销数量一致）
               </span>
             ) : (
               <span className="inline-flex items-center text-amber-600 font-sans font-medium text-xs">

@@ -148,7 +148,7 @@ export function ColdIntakeDialog({
         {trigger || (
           <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
             <Plus className="size-4" />
-            保鲜入库登记 (CR)
+            保鲜入库登记
           </Button>
         )}
       </DialogTrigger>
@@ -159,7 +159,7 @@ export function ColdIntakeDialog({
             成品大闸蟹保鲜预冷入库登记
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            保鲜库【只入不出】，入库数量受分拣合格量严格约束，整批全量入库不拆分，发货统一经由「出库管理」审批。
+            登记分拣合格品入库预冷，发货出库统一经由「出库管理」集中办理。
           </DialogDescription>
         </DialogHeader>
 

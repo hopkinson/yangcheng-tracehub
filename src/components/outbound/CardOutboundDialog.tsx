@@ -138,17 +138,17 @@ export function CardOutboundDialog({
       <DialogTrigger asChild>
         <Button variant="outline" className="h-9 gap-1.5 font-medium shadow-xs">
           <ShoppingBag className="size-4 text-primary" />
-          提蟹统一出库申请 (CK)
+          提蟹订单统一出库
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <ShoppingBag className="size-5 text-primary" />
-            提蟹订单统一出库申请
+            提蟹订单统一出库
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            将待发货提蟹订单统一合并为一张出库单，系统按原料入池时间自动 FIFO 分配冷库库存，发货后支持批量回填物流单号。
+            合并待发货提蟹订单并创建出库单，系统按先进先出原则匹配冷库库存。
           </DialogDescription>
         </DialogHeader>
 
