@@ -332,7 +332,7 @@ async function buildTraceFromOutbound(
         { label: "发货去向", value: outOrder.store?.name || outOrder.storeName || "指定门店" },
         { label: "发货数量", value: `${line.count || outOrder.outboundCount} 只` },
         { label: "物流承运", value: outboundLogistics },
-        { label: "出库时间", value: formatFullDateTime(outOrder.outboundTime || outOrder.createdAt) },
+        { label: "预约出库时间", value: formatFullDateTime(outOrder.outboundTime || outOrder.createdAt) },
         { label: "出库状态", value: isApproved ? "已出库 (核验放行)" : "待核准出库" },
         { label: "申请人 / 时间", value: `${outOrder.applicant?.fullName || "出库员"} · ${formatFullDateTime(outOrder.createdAt)}` },
         { label: "审核人 / 时间", value: outOrder.approvedAt ? `${outOrder.approver?.fullName || "审核员"} · ${formatFullDateTime(outOrder.approvedAt)}` : (isApproved ? "已核准" : "待审核") },

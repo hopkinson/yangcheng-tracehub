@@ -404,7 +404,7 @@ export default async function OutboundPage({
                         <TableHead className="w-[110px]">总数</TableHead>
                         <TableHead className="w-[90px]">状态</TableHead>
                         <TableHead className="min-w-[160px]">物流信息</TableHead>
-                        <TableHead className="min-w-[170px]">出库/审核时间</TableHead>
+                        <TableHead className="min-w-[170px]">预约出库/审核时间</TableHead>
                         <TableHead className="text-right w-[140px]">操作</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -542,11 +542,11 @@ export default async function OutboundPage({
                               )}
                             </TableCell>
 
-                            {/* 8. 出库/审核时间 */}
+                            {/* 8. 预约出库/审核时间 */}
                             <TableCell className="align-middle">
                               <div className="flex flex-col gap-0.5 font-mono text-[11px]">
                                 <div className="flex items-center gap-1 text-foreground font-medium">
-                                  <span>出: {formatFullDateTime(order.outboundTime || order.createdAt)}</span>
+                                  <span>预约出库: {formatFullDateTime(order.outboundTime || order.createdAt)}</span>
                                   {isPending && new Date(order.outboundTime || order.createdAt).getTime() > Date.now() && (
                                     <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
                                       计划

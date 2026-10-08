@@ -112,7 +112,7 @@ export function OutboundDetailDialog({
               <span className="font-mono font-bold text-primary">{order.outboundCount} 只</span>
             </div>
             <div>
-              <span className="text-[11px] text-muted-foreground block">实际/计划出库时间</span>
+              <span className="text-[11px] text-muted-foreground block">预约出库时间</span>
               <span className="font-mono font-medium text-foreground">
                 {formatFullDateTime(order.outboundTime || order.createdAt)}
               </span>
