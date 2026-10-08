@@ -302,7 +302,7 @@ export default async function SortingPage({
             }
 
             const calibTime = m.lastCalibratedAt || calibrate?.checkTime;
-            const calibTimeStr = calibTime ? formatTime(calibTime) : "06:35";
+            const calibTimeStr = calibTime ? formatTime(calibTime) : "—";
 
             return (
               <Card

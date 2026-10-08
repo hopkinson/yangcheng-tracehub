@@ -27,11 +27,8 @@ export async function completeDailyCloseAction(type: DailyCloseType) {
       const dayRange = getBeijingDayRange(businessDate);
       const hasTodayOutbound = await prisma.outboundOrder.findFirst({
         where: {
-          status: { not: "REJECTED" },
-          OR: [
-            { createdAt: { gte: dayRange.gte, lte: dayRange.lte } },
-            { approvedAt: { gte: dayRange.gte, lte: dayRange.lte } },
-          ],
+          status: "APPROVED",
+          outboundTime: dayRange,
         },
         select: { id: true },
       });

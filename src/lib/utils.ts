@@ -144,6 +144,10 @@ export function parseBeijingDateTime(value?: string | Date | null): Date {
   const trimmed = value.trim();
   if (!trimmed) return new Date();
   const normalizedDate = trimmed.replace(/\//g, "-");
+  // 纯日期末尾的 -DD 不是时区偏移；按北京时间当天零点解析。
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+    return new Date(`${normalizedDate}T00:00:00+08:00`);
+  }
   if (normalizedDate.endsWith("Z") || /[+-]\d{2}(:\d{2})?$/.test(normalizedDate)) {
     return new Date(normalizedDate);
   }
@@ -198,4 +202,3 @@ export function getFileDropHandlers(
     },
   };
 }
-

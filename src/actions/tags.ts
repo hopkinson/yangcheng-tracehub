@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { getBeijingDateStr } from "@/lib/utils";
+import { formatISODate, getBeijingDateStr, getBeijingDayRange } from "@/lib/utils";
 
 export async function requestTagClaimAction(data: {
   farmerId: string;
@@ -37,8 +37,7 @@ export async function requestTagClaimAction(data: {
       throw new Error(tagCheck.reason);
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = getBeijingDayRange(formatISODate()).gte;
 
     // 校验该养殖户是否存在历史未轧平的蟹扣（不得隔日留存）
     const unBalancedPrevious = await tx.tagClaim.findFirst({
@@ -218,4 +217,3 @@ export async function settleDailyTagClaimAction(data: {
     return updatedClaim;
   });
 }
-

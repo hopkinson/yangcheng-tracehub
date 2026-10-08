@@ -661,8 +661,8 @@ export default async function LedgersPage({
   });
 
   const outboundHeaderRows = outboundOrders.map((order) => {
-    // ponytail: 历史数据出库时间优先取审批时间(approvedAt)，若未审批则以实际/预计出库时间或申请时间兜底
-    const actualOutTime = order.approvedAt || order.outboundTime || order.createdAt;
+    // 优先使用填写的业务出库时间；仅缺失时以历史审核时间或申请时间兜底。
+    const actualOutTime = order.outboundTime || order.approvedAt || order.createdAt;
     const exportRow: ExportValue[] = [
       formatDate(order.createdAt),
       formatTime(order.createdAt),
@@ -695,7 +695,7 @@ export default async function LedgersPage({
   });
 
   const outboundDetailRows = outboundOrders.flatMap((order) => {
-    const actualOutTime = order.approvedAt || order.outboundTime || order.createdAt;
+    const actualOutTime = order.outboundTime || order.approvedAt || order.createdAt;
     return order.lines.map((line) => {
       const bundle = line.coldLog.sortTask.bundleBatch;
       const sourceBatch = bundle.sourceBatch;

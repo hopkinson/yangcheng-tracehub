@@ -18,7 +18,7 @@
     "tenant:reset:yangcheng": "node scripts/reset-tenant.js --tenant=default",
     "test": "node scripts/run-tests.js tests/client-directives.test.ts tests/beijing-time.test.ts tests/invariants.test.ts tests/diagnose-farmer-duplicate-validation.test.ts tests/e2e-workflow.test.ts tests/tag-bundling-rule.test.ts tests/cold-fifo.test.ts tests/outbound-fifo.test.ts",
     "test:unit": "node scripts/run-tests.js tests/invariants.test.ts",
-    "test:time": "node scripts/run-tests.js tests/beijing-time.test.ts",
+    "test:time": "node scripts/run-tests.js tests/beijing-time.test.ts tests/outbound-time-preservation.test.ts tests/business-time-audit.test.ts",
     "test:directives": "node scripts/run-tests.js tests/client-directives.test.ts",
     "test:e2e": "node scripts/run-tests.js tests/e2e-workflow.test.ts",
     "test:fresh": "node scripts/run-tests.js --fresh tests/invariants.test.ts tests/e2e-workflow.test.ts tests/outbound-fifo.test.ts",

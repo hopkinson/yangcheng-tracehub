@@ -2,6 +2,8 @@
  * 阳澄股份大闸蟹溯源系统 - 五大数量守恒与卡控纯函数引擎 (PRD V2.1)
  */
 
+import { getBeijingYear } from "./utils";
+
 export interface FarmerQuotaCheck {
   annualQuota: number;
   cumulativeInPool: number;
@@ -609,7 +611,7 @@ export const Invariants = {
 
       // 4. M月D日 (如 9月28日, 默认当年)
       m = s.match(/(?:^|[^\d])(\d{1,2})月(\d{1,2})日/);
-      if (m) return `${new Date().getFullYear()}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+      if (m) return `${getBeijingYear()}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
     }
     const today = new Date();
     return today.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);

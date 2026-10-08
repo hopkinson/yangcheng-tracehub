@@ -142,7 +142,7 @@ export default async function DashboardPage() {
   }).reduce((sum, stock) => sum + stock.available, 0);
   // 8. 出库（合规发运口径：仅统计已审批出库，排除驳回与待审核）
   const todayOutboundOrders = outboundOrders.filter(
-    (o) => o.status === "APPROVED" && isToday(o.approvedAt || o.outboundTime || o.createdAt)
+    (o) => o.status === "APPROVED" && isToday(o.outboundTime || o.approvedAt || o.createdAt)
   );
   const todayOutboundTotalCount = todayOutboundOrders.reduce((s, o) => s + o.outboundCount, 0);
   const todayOutboundOriginalOrdersCount = new Set(todayOutboundOrders.flatMap((o) => o.lines.map((l) => l.orderNo || o.id))).size;

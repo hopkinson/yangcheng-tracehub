@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { safeRevalidate } from "@/lib/revalidate";
 import { normalizeEnclosureCodes, validateEnclosureCodes } from "@/lib/enclosures";
+import { getBeijingYear } from "@/lib/utils";
 
 /**
  * 校验养殖户姓名是否在指定自然年度内重复
@@ -18,7 +19,7 @@ export async function checkFarmerNameAction(data: {
     await requireRole(["FARMER_ADMIN", "ADMIN"]);
     const cleanName = data.name.trim();
     if (!cleanName) return { exists: false };
-    const targetYear = data.year || new Date().getFullYear();
+    const targetYear = data.year || getBeijingYear();
 
     const existing = await prisma.farmer.findFirst({
       where: {
@@ -89,7 +90,7 @@ export async function createFarmerAction(data: {
   try {
     await requireRole(["FARMER_ADMIN", "ADMIN"]);
     return await prisma.$transaction(async (tx) => {
-      const currentYear = new Date().getFullYear();
+      const currentYear = getBeijingYear();
       const cleanName = data.name.trim();
 
       // 1. 养殖户姓名录入全校验与查重（同年度全系统唯一，不得重复建档）
