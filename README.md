@@ -90,6 +90,8 @@ pnpm dev
 
 ### 4.3 Docker 容器化一键拉起
 
+线上数据同步到独立本地快照并排查单票：参见 [本地数据库排查](docs/LOCAL_DATABASE_DIAGNOSIS.md)。配置后运行 `pnpm db:sync:prod`，再运行 `pnpm db:diagnose-outbound -- CK-20260930-005`。
+
 ```bash
 docker compose up -d
 ```

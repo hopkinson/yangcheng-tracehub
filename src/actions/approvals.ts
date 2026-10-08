@@ -234,6 +234,7 @@ export async function approveOutboundOrderAction(data: {
         entityId: order.id,
         details: JSON.stringify({
           orderCode: order.code,
+          outboundTime: order.outboundTime.toISOString(),
           approved: data.approved,
           outboundCount: order.outboundCount,
           reason: data.rejectReason || data.comment,
@@ -322,4 +323,3 @@ export async function approveOutboundLossAction(data: {
     return updated;
   });
 }
-
