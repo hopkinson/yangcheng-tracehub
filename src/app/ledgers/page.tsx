@@ -191,10 +191,23 @@ export default async function LedgersPage({
     isChannelViewer
       ? []
       : prisma.farmer.findMany({
-          include: {
-            enclosures: true,
-            batches: true,
-            tagClaims: { where: { status: "APPROVED" } },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            farmType: true,
+            area: true,
+            quota: true,
+            creditRating: true,
+            status: true,
+            contractUrl: true,
+            contractName: true,
+            enclosures: { select: { code: true } },
+            batches: { select: { inPoolCount: true } },
+            tagClaims: {
+              where: { status: "APPROVED" },
+              select: { claimCount: true, boundCount: true, scrappedCount: true, returnedCount: true },
+            },
           },
           orderBy: { code: "asc" },
         }),
@@ -202,23 +215,41 @@ export default async function LedgersPage({
       ? []
       : prisma.tagClaim.findMany({
           where: dateFilter ? { claimDate: dateFilter } : undefined,
-          include: {
+          select: {
+            id: true,
+            code: true,
+            claimDate: true,
+            claimCount: true,
+            boundCount: true,
+            scrappedCount: true,
+            returnedCount: true,
+            isBalanced: true,
+            status: true,
+            farmerId: true,
             farmer: {
-              include: {
-                tagClaims: { where: { status: "APPROVED" } },
-                batches: true,
+              select: {
+                id: true,
+                name: true,
+                quota: true,
               },
             },
-            applicant: true,
-            approver: true,
+            applicant: { select: { fullName: true } },
+            approver: { select: { fullName: true } },
             bundleBatches: {
-              include: {
+              select: {
                 sortTasks: {
-                  include: {
+                  select: {
+                    lossCount: true,
                     coldLogs: {
-                      include: {
-                        outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
-                        outboundLosses: { where: { status: { not: "REJECTED" } } },
+                      select: {
+                        outboundLines: {
+                          where: { outboundOrder: { status: { not: "REJECTED" } } },
+                          select: { count: true },
+                        },
+                        outboundLosses: {
+                          where: { status: { not: "REJECTED" } },
+                          select: { count: true },
+                        },
                       },
                     },
                   },
@@ -232,20 +263,64 @@ export default async function LedgersPage({
       ? []
       : prisma.batch.findMany({
           where: dateFilter ? { inPoolTime: dateFilter } : undefined,
-          include: {
-            farmer: { include: { enclosures: true } },
-            enclosure: true,
-            pool: true,
-            items: { include: { pool: true } },
+          select: {
+            id: true,
+            code: true,
+            inPoolTime: true,
+            gender: true,
+            weightTier: true,
+            inPoolCount: true,
+            outPoolCount: true,
+            lossCount: true,
+            quickCheck: true,
+            sampleCheck: true,
+            escort: true,
+            farmer: {
+              select: {
+                name: true,
+                enclosures: { select: { code: true } },
+              },
+            },
+            enclosure: { select: { code: true } },
+            pool: { select: { name: true, code: true } },
+            items: {
+              select: {
+                id: true,
+                gender: true,
+                weightTier: true,
+                weight: true,
+                inPoolCount: true,
+                outPoolCount: true,
+                lossCount: true,
+                pool: { select: { name: true, code: true } },
+              },
+            },
             bundleBatches: {
-              include: {
-                lines: true,
+              select: {
+                lossCount: true,
+                lines: {
+                  select: {
+                    gender: true,
+                    weightTier: true,
+                    count: true,
+                    lossCount: true,
+                  },
+                },
                 sortTasks: {
-                  include: {
+                  select: {
+                    gender: true,
+                    weightTier: true,
+                    lossCount: true,
                     coldLogs: {
-                      include: {
-                        outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
-                        outboundLosses: { where: { status: { not: "REJECTED" } } },
+                      select: {
+                        outboundLines: {
+                          where: { outboundOrder: { status: { not: "REJECTED" } } },
+                          select: { count: true },
+                        },
+                        outboundLosses: {
+                          where: { status: { not: "REJECTED" } },
+                          select: { count: true, lossType: true },
+                        },
                       },
                     },
                   },
@@ -259,11 +334,35 @@ export default async function LedgersPage({
       ? []
       : prisma.bundleBatch.findMany({
           where: dateFilter ? { date: dateFilter } : undefined,
-          include: {
-            group: true,
-            tagClaim: { include: { farmer: true } },
-            sourceBatch: true,
-            lines: { include: { pool: true } },
+          select: {
+            id: true,
+            code: true,
+            date: true,
+            doneAt: true,
+            createdAt: true,
+            status: true,
+            inputCount: true,
+            qualifiedCount: true,
+            lossCount: true,
+            ropeBatch: true,
+            group: { select: { name: true, code: true } },
+            tagClaim: {
+              select: {
+                code: true,
+                farmer: { select: { name: true } },
+              },
+            },
+            sourceBatch: { select: { code: true } },
+            lines: {
+              select: {
+                gender: true,
+                weightTier: true,
+                count: true,
+                qualifiedCount: true,
+                lossCount: true,
+                pool: { select: { name: true, code: true } },
+              },
+            },
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
@@ -271,9 +370,25 @@ export default async function LedgersPage({
       ? []
       : prisma.sortTask.findMany({
           where: dateFilter ? { date: dateFilter } : undefined,
-          include: {
-            machine: true,
-            bundleBatch: { include: { sourceBatch: true } },
+          select: {
+            id: true,
+            code: true,
+            date: true,
+            doneAt: true,
+            createdAt: true,
+            gender: true,
+            weightTier: true,
+            status: true,
+            inputCount: true,
+            qualifiedCount: true,
+            lossCount: true,
+            machine: { select: { name: true, code: true } },
+            bundleBatch: {
+              select: {
+                code: true,
+                sourceBatch: { select: { code: true } },
+              },
+            },
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
@@ -281,11 +396,34 @@ export default async function LedgersPage({
       ? []
       : prisma.coldLog.findMany({
           where: dateFilter ? { createdAt: dateFilter } : undefined,
-          include: {
-            store: true,
-            sortTask: { include: { bundleBatch: { include: { sourceBatch: true } } } },
-            outboundLines: { where: { outboundOrder: { status: { not: "REJECTED" } } } },
-            outboundLosses: { where: { status: { not: "REJECTED" } } },
+          select: {
+            id: true,
+            code: true,
+            createdAt: true,
+            count: true,
+            operator: true,
+            store: { select: { name: true, code: true } },
+            sortTask: {
+              select: {
+                code: true,
+                gender: true,
+                weightTier: true,
+                bundleBatch: {
+                  select: {
+                    code: true,
+                    sourceBatch: { select: { code: true } },
+                  },
+                },
+              },
+            },
+            outboundLines: {
+              where: { outboundOrder: { status: { not: "REJECTED" } } },
+              select: { count: true },
+            },
+            outboundLosses: {
+              where: { status: { not: "REJECTED" } },
+              select: { count: true, lossType: true },
+            },
           },
           orderBy: { createdAt: "desc" },
         }),
@@ -303,23 +441,56 @@ export default async function LedgersPage({
             }
           : {}),
       },
-      include: {
-        store: true,
-        channel: true,
-        applicant: true,
-        approver: true,
+      select: {
+        id: true,
+        code: true,
+        type: true,
+        outboundCount: true,
+        createdAt: true,
+        outboundTime: true,
+        approvedAt: true,
+        transportCompany: true,
+        logisticsNo: true,
+        contactName: true,
+        contactPhone: true,
+        store: { select: { name: true } },
+        channel: { select: { name: true } },
+        applicant: { select: { fullName: true } },
+        approver: { select: { fullName: true } },
         lines: {
-          include: {
-            order: true,
+          select: {
+            gender: true,
+            weightTier: true,
+            count: true,
             coldLog: {
-              include: {
-                store: true,
+              select: {
+                code: true,
                 sortTask: {
-                  include: {
+                  select: {
+                    code: true,
                     bundleBatch: {
-                      include: {
-                        sourceBatch: { include: { farmer: { include: { enclosures: true } }, enclosure: true, pool: true } },
-                        lines: { include: { pool: true } },
+                      select: {
+                        code: true,
+                        lines: {
+                          select: {
+                            gender: true,
+                            weightTier: true,
+                            pool: { select: { code: true } },
+                          },
+                        },
+                        sourceBatch: {
+                          select: {
+                            code: true,
+                            pool: { select: { code: true } },
+                            enclosure: { select: { code: true } },
+                            farmer: {
+                              select: {
+                                name: true,
+                                enclosures: { select: { code: true } },
+                              },
+                            },
+                          },
+                        },
                       },
                     },
                   },
@@ -336,6 +507,19 @@ export default async function LedgersPage({
         ...(selectedCat ? { cat: selectedCat } : {}),
         ...(dateFilter ? { checkTime: dateFilter } : {}),
       },
+      select: {
+        id: true,
+        code: true,
+        checkTime: true,
+        cat: true,
+        formNo: true,
+        uploader: true,
+        result: true,
+        conclusion: true,
+        reason: true,
+        fileUrl: true,
+        fileName: true,
+      },
       orderBy: { checkTime: "desc" },
     }),
     prisma.order.findMany({
@@ -349,16 +533,45 @@ export default async function LedgersPage({
             }
           : {}),
       },
-      include: {
+      select: {
+        id: true,
+        code: true,
+        orderNo: true,
+        type: true,
+        status: true,
+        gender: true,
+        weightTier: true,
+        count: true,
+        deliveryDate: true,
+        importTime: true,
+        storeName: true,
+        specModel: true,
         outboundLines: {
           where: { outboundOrder: { status: { not: "REJECTED" } } },
-          include: {
-            outboundOrder: { include: { store: true, channel: true } },
+          select: {
+            count: true,
+            waybillNo: true,
+            expressCompany: true,
+            outboundOrder: {
+              select: {
+                code: true,
+                logisticsNo: true,
+                transportCompany: true,
+                store: { select: { name: true } },
+              },
+            },
             coldLog: {
-              include: {
+              select: {
+                code: true,
                 sortTask: {
-                  include: {
-                    bundleBatch: { include: { sourceBatch: true } },
+                  select: {
+                    code: true,
+                    bundleBatch: {
+                      select: {
+                        code: true,
+                        sourceBatch: { select: { code: true } },
+                      },
+                    },
                   },
                 },
               },
@@ -372,12 +585,19 @@ export default async function LedgersPage({
       ? []
       : prisma.outboundLine.findMany({
           where: { outboundOrder: { status: "APPROVED" } },
-          include: {
+          select: {
+            count: true,
             coldLog: {
-              include: {
+              select: {
                 sortTask: {
-                  include: {
-                    bundleBatch: { include: { sourceBatch: { include: { farmer: true } } } },
+                  select: {
+                    bundleBatch: {
+                      select: {
+                        sourceBatch: {
+                          select: { farmerId: true },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -388,8 +608,17 @@ export default async function LedgersPage({
 
   const shippedByFarmer = new Map<string, number>();
   for (const line of allApprovedOutboundLines) {
-    const farmerId = line.coldLog.sortTask.bundleBatch.sourceBatch.farmer.id;
-    shippedByFarmer.set(farmerId, (shippedByFarmer.get(farmerId) || 0) + line.count);
+    const farmerId = line.coldLog?.sortTask?.bundleBatch?.sourceBatch?.farmerId;
+    if (farmerId) {
+      shippedByFarmer.set(farmerId, (shippedByFarmer.get(farmerId) || 0) + line.count);
+    }
+  }
+
+  const farmerStatMap = new Map<string, { cumulativeBound: number; inPoolCount: number; quota: number }>();
+  for (const f of farmers) {
+    const bound = f.tagClaims.reduce((s, c) => s + (c.boundCount || 0), 0);
+    const inPool = f.batches.reduce((s, b) => s + (b.inPoolCount || 0), 0);
+    farmerStatMap.set(f.id, { cumulativeBound: bound, inPoolCount: inPool, quota: f.quota });
   }
 
   const farmerRows = farmers.map((farmer) => {
@@ -510,8 +739,13 @@ export default async function LedgersPage({
 
   const tagClaimRows = rawTagClaims.map((claim) => {
     const isRejected = claim.status === "REJECTED";
-    const cumulativeBound = claim.farmer.tagClaims.reduce((sum, item) => sum + item.boundCount, 0);
-    const tagInboundCount = claim.farmer.batches?.reduce((sum, b) => sum + b.inPoolCount, 0) ?? 0;
+    const fStat = farmerStatMap.get(claim.farmerId) || {
+      cumulativeBound: 0,
+      inPoolCount: 0,
+      quota: claim.farmer.quota,
+    };
+    const cumulativeBound = fStat.cumulativeBound;
+    const tagInboundCount = fStat.inPoolCount;
     const balanceDiff = claim.claimCount - claim.boundCount - claim.returnedCount - claim.scrappedCount;
 
     const { outboundCount, totalDownstreamLoss } = Invariants.getClaimDownstreamMetrics(claim);

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { OverviewDashboard } from "@/components/dashboard/OverviewDashboard";
-import { formatISODate } from "@/lib/utils";
+import { formatISODate, getBeijingDayRange } from "@/lib/utils";
 import { aggregateTraceableColdStocks } from "@/lib/cold-stock";
 import { getCurrentUser } from "@/lib/auth";
 import { summarizeBatchItems } from "@/lib/holding-pool";
@@ -9,114 +9,251 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const todayStr = formatISODate();
-  const isToday = (d: Date | string | null | undefined): boolean => Boolean(d && formatISODate(d) === todayStr);
+  const todayRange = getBeijingDayRange(todayStr);
+
   const [
-    farmers,
-    batches,
+    // 1. 全局额度与大盘聚合 (数据库端轻量聚合)
+    farmerAgg,
+    batchAgg,
+    tagClaimAgg,
+    outboundAgg,
+    totalOrdersCount,
+    totalBatchesCount,
+    totalBundleBatchesCount,
+    totalSortTasksCount,
+    totalOutboundOrdersCount,
+
+    // 2. 存活与暂养池 (仅查询有效池与有效存活批次)
+    liveBatches,
     pools,
-    tagClaims,
-    bundleBatches,
-    sortTasks,
-    sortMachines,
+
+    // 3. 今日业务明细 (严格按北京时间当天过滤)
+    todayOrders,
+    pendingOrders,
+    todayBatches,
+    todayTagClaims,
+    pendingTagClaimsCount,
+    todayBundleBatches,
+    todaySortTasks,
+    todayColdLogs,
     coldStores,
-    coldLogs,
-    orders,
-    outboundOrders,
-    outboundLosses,
-    qcRecords,
+    todayOutboundOrders,
+    pendingOutboundOrdersCount,
+
+    // 4. 冷库规格库存与日结探活
+    sortTasksForCold,
+    coldLogsForCold,
+    outboundLinesForCold,
+    outboundLossesForCold,
     dailyCloseLogs,
+
+    // 5. 业务预警与品控动态 (定向过滤与限制条数)
+    frozenBatchesRaw,
+    highLossTasksRaw,
+    uncalibratedMachinesRaw,
+    unbalancedTagClaimsRaw,
+    qcRecordsRaw,
     currentUser,
   ] = await Promise.all([
-    prisma.farmer.findMany(),
-    prisma.batch.findMany({ include: { pool: true, farmer: true, items: true } }),
-    prisma.holdingPool.findMany({ include: { batches: true, batchItems: true }, orderBy: { code: "asc" } }),
-    prisma.tagClaim.findMany({ orderBy: { claimDate: "desc" } }),
-    prisma.bundleBatch.findMany({ include: { lines: true, group: true } }),
-    prisma.sortTask.findMany({
-      include: { machine: true, bundleBatch: { select: { sourceBatchId: true } } },
+    // 1. 聚合
+    prisma.farmer.aggregate({ _sum: { quota: true } }),
+    prisma.batch.aggregate({ _sum: { inPoolCount: true, outPoolCount: true, lossCount: true } }),
+    prisma.tagClaim.aggregate({ where: { status: "APPROVED" }, _sum: { claimCount: true } }),
+    prisma.outboundOrder.aggregate({ where: { status: "APPROVED" }, _sum: { outboundCount: true } }),
+    prisma.order.count(),
+    prisma.batch.count(),
+    prisma.bundleBatch.count(),
+    prisma.sortTask.count(),
+    prisma.outboundOrder.count(),
+
+    // 2. 在池存活批次与暂养池（仅在养状态）
+    prisma.batch.findMany({
+      where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+      select: {
+        inPoolCount: true,
+        outPoolCount: true,
+        lossCount: true,
+        items: {
+          select: { inPoolCount: true, outPoolCount: true, lossCount: true },
+        },
+      },
     }),
-    prisma.sortMachine.findMany(),
-    prisma.coldStore.findMany({ include: { logs: true } }),
-    prisma.coldLog.findMany(),
-    prisma.order.findMany(),
-    prisma.outboundOrder.findMany({ include: { store: true, lines: true } }),
-    prisma.outboundLossRecord.findMany(),
-    prisma.qCRecord.findMany({ orderBy: { checkTime: "desc" } }),
+    prisma.holdingPool.findMany({
+      where: { code: { in: ["ZY-01", "ZY-02", "ZY-03", "ZY-04", "ZY-05", "ZY-06", "ZY-07", "ZY-08"] } },
+      include: {
+        batches: {
+          where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
+          select: { inPoolCount: true, outPoolCount: true, lossCount: true },
+        },
+        batchItems: {
+          where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
+          select: { inPoolCount: true, outPoolCount: true, lossCount: true },
+        },
+      },
+      orderBy: { code: "asc" },
+    }),
+
+    // 3. 今日数据
+    prisma.order.findMany({
+      where: {
+        OR: [{ deliveryDate: todayRange }, { importTime: todayRange }],
+      },
+      select: { id: true, orderNo: true, count: true },
+    }),
+    prisma.order.findMany({
+      where: { status: "PENDING" },
+      select: { count: true },
+    }),
+    prisma.batch.findMany({
+      where: { inPoolTime: todayRange },
+      select: { inPoolCount: true, lossCount: true },
+    }),
+    prisma.tagClaim.findMany({
+      where: { claimDate: todayRange },
+      select: { claimCount: true },
+    }),
+    prisma.tagClaim.count({ where: { status: "PENDING" } }),
+    prisma.bundleBatch.findMany({
+      where: { date: todayRange },
+      select: {
+        status: true,
+        qualifiedCount: true,
+        lossCount: true,
+        lines: { select: { count: true } },
+      },
+    }),
+    prisma.sortTask.findMany({
+      where: { date: todayRange },
+      select: { qualifiedCount: true, lossCount: true },
+    }),
+    prisma.coldLog.findMany({
+      where: { createdAt: todayRange, type: "INTAKE" },
+      select: { count: true },
+    }),
+    prisma.coldStore.findMany({
+      select: { id: true },
+    }),
+    prisma.outboundOrder.findMany({
+      where: {
+        status: "APPROVED",
+        OR: [
+          { outboundTime: todayRange },
+          { approvedAt: todayRange },
+          { createdAt: todayRange },
+        ],
+      },
+      select: {
+        id: true,
+        outboundCount: true,
+        lines: { select: { orderNo: true } },
+      },
+    }),
+    prisma.outboundOrder.count({ where: { status: "PENDING" } }),
+
+    // 4. 冷库库存推导所需精简数据
+    prisma.sortTask.findMany({
+      where: { status: "COMPLETED" },
+      select: {
+        id: true,
+        code: true,
+        gender: true,
+        weightTier: true,
+        bundleBatch: { select: { sourceBatchId: true } },
+      },
+    }),
+    prisma.coldLog.findMany({
+      where: { type: "INTAKE" },
+      select: { id: true, count: true, type: true, sortTaskId: true },
+    }),
+    prisma.outboundLine.findMany({
+      where: { outboundOrder: { status: { not: "REJECTED" } } },
+      select: { count: true, coldLogId: true },
+    }),
+    prisma.outboundLossRecord.findMany({
+      where: { status: { not: "REJECTED" } },
+      select: { count: true, coldLogId: true, status: true, lossType: true },
+    }),
     prisma.auditLog.findMany({
-      where: { action: { in: ["DAILY_POOL_CLOSE", "DAILY_COLD_CLOSE"] } },
+      where: {
+        action: { in: ["DAILY_POOL_CLOSE", "DAILY_COLD_CLOSE"] },
+        createdAt: todayRange,
+      },
       orderBy: { createdAt: "desc" },
       take: 4,
+    }),
+
+    // 5. 业务预警与最新品控
+    prisma.batch.findMany({
+      where: { OR: [{ status: "FROZEN" }, { isException: true }] },
+      select: { id: true, code: true, exceptionReason: true, lossReason: true, inPoolTime: true },
+    }),
+    prisma.sortTask.findMany({
+      where: { status: "COMPLETED", lossRate: { gt: 5.0 } },
+      select: { id: true, code: true, lossRate: true, lossCount: true, inputCount: true, date: true },
+    }),
+    prisma.sortMachine.findMany({
+      where: { lastCalibrationStatus: "EXCEPTION" },
+      select: { id: true, code: true, name: true },
+    }),
+    prisma.tagClaim.findMany({
+      where: { status: "APPROVED", isBalanced: false },
+      include: { farmer: { select: { name: true } } },
+    }),
+    prisma.qCRecord.findMany({
+      orderBy: { checkTime: "desc" },
+      take: 20,
     }),
     getCurrentUser(),
   ]);
 
   // 1. 额度与全链累计统计
-  const totalQuota = farmers.reduce((sum, f) => sum + f.quota, 0);
-  const totalInPool = batches.reduce((sum, b) => sum + b.inPoolCount, 0);
-  const totalOutPool = batches.reduce((sum, b) => sum + b.outPoolCount, 0);
-  const totalLoss = batches.reduce((sum, b) => sum + b.lossCount, 0);
-  const totalLiveInPool = batches
-    .filter((b) => ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"].includes(b.status))
-    .reduce(
-      (sum, b) => sum + (b.items.length ? summarizeBatchItems(b.items).remaining : Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount)),
-      0
-    );
+  const totalQuota = farmerAgg._sum.quota || 0;
+  const totalInPool = batchAgg._sum.inPoolCount || 0;
+  const totalLiveInPool = liveBatches.reduce(
+    (sum, b) =>
+      sum +
+      (b.items.length
+        ? summarizeBatchItems(b.items).remaining
+        : Math.max(0, b.inPoolCount - b.outPoolCount - b.lossCount)),
+    0
+  );
 
-  const totalTagClaimed = tagClaims
-    .filter((c) => c.status === "APPROVED")
-    .reduce((sum, c) => sum + c.claimCount, 0);
+  const totalTagClaimed = tagClaimAgg._sum.claimCount || 0;
+  const totalOutboundApproved = outboundAgg._sum.outboundCount || 0;
 
-  const totalOutboundApproved = outboundOrders
-    .filter((o) => o.status === "APPROVED")
-    .reduce((sum, o) => sum + o.outboundCount, 0);
-
-  // 2. 8 张环节卡细分指标（当日 / 累计 / 待办）
-  // 1. 订单
-  const todayOrders = orders.filter((o) => isToday(o.deliveryDate) || isToday(o.importTime));
+  // 2. 环节指标计算
   const todayOriginalOrdersCount = new Set(todayOrders.map((o) => o.orderNo || o.id)).size;
-  const pendingOrders = orders.filter((o) => o.status === "PENDING");
   const pendingDeliveryTotalCount = pendingOrders.reduce((s, o) => s + o.count, 0);
 
-  // 2. 原料
-  const todayBatches = batches.filter((b) => isToday(b.inPoolTime));
   const todayInPoolTotalCount = todayBatches.reduce((s, b) => s + b.inPoolCount, 0);
-
-  // 3. 蟹扣申领
-  const todayTagClaims = tagClaims.filter((c) => isToday(c.claimDate));
-  const todayTagClaimsTotalCount = todayTagClaims.reduce((s, c) => s + c.claimCount, 0);
-  const pendingTagClaimsCount = tagClaims.filter((c) => c.status === "PENDING").length;
-
-  // 4. 暂养与在池推导（仅展示正式暂养池 ZY-01 ~ ZY-08）
-  const activePools = pools
-    .filter((p) => /^ZY-0[1-8]$/.test(p.code))
-    .map((p) => {
-      const itemIn = p.batchItems.reduce((s, i) => s + i.inPoolCount, 0);
-      const itemOut = p.batchItems.reduce((s, i) => s + i.outPoolCount, 0);
-      const itemLoss = p.batchItems.reduce((s, i) => s + i.lossCount, 0);
-      const itemLive = Math.max(0, itemIn - itemOut - itemLoss);
-
-      const directIn = p.batches.reduce((s, b) => s + b.inPoolCount, 0);
-      const directOut = p.batches.reduce((s, b) => s + b.outPoolCount, 0);
-      const directLoss = p.batches.reduce((s, b) => s + b.lossCount, 0);
-      const directLive = Math.max(0, directIn - directOut - directLoss);
-
-      const totalLive = p.batchItems.length > 0 ? itemLive : directLive;
-
-      return {
-        id: p.id,
-        code: p.code,
-        name: p.name,
-        currentGender: p.currentGender,
-        currentWeightTier: p.currentWeightTier,
-        liveCount: totalLive,
-      };
-    });
-
-  const todayPoolInCount = todayInPoolTotalCount;
   const todayPoolLossCount = todayBatches.reduce((s, b) => s + (b.lossCount || 0), 0);
+  const todayTagClaimsTotalCount = todayTagClaims.reduce((s, c) => s + c.claimCount, 0);
 
-  // 5. 捆扎
-  const todayBundleBatches = bundleBatches.filter((b) => isToday(b.date));
+  // 暂养池展示 (ZY-01 ~ ZY-08)
+  const activePools = pools.map((p) => {
+    const itemIn = p.batchItems.reduce((s, i) => s + i.inPoolCount, 0);
+    const itemOut = p.batchItems.reduce((s, i) => s + i.outPoolCount, 0);
+    const itemLoss = p.batchItems.reduce((s, i) => s + i.lossCount, 0);
+    const itemLive = Math.max(0, itemIn - itemOut - itemLoss);
+
+    const directIn = p.batches.reduce((s, b) => s + b.inPoolCount, 0);
+    const directOut = p.batches.reduce((s, b) => s + b.outPoolCount, 0);
+    const directLoss = p.batches.reduce((s, b) => s + b.lossCount, 0);
+    const directLive = Math.max(0, directIn - directOut - directLoss);
+
+    const totalLive = p.batchItems.length > 0 ? itemLive : directLive;
+
+    return {
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      currentGender: p.currentGender,
+      currentWeightTier: p.currentWeightTier,
+      liveCount: totalLive,
+    };
+  });
+
+  // 捆扎
   const todayBundleTotalCount = todayBundleBatches.reduce(
     (s, b) => s + (b.qualifiedCount || b.lines.reduce((ls, l) => ls + l.count, 0)),
     0
@@ -124,85 +261,74 @@ export default async function DashboardPage() {
   const todayBundleLossCount = todayBundleBatches.reduce((s, b) => s + (b.lossCount || 0), 0);
   const todayBundleDoneCount = todayBundleBatches.filter((b) => b.status === "COMPLETED").length;
 
-  // 6. 分拣
-  const todaySortTasks = sortTasks.filter((t) => isToday(t.date));
+  // 分拣
   const todaySortQualifiedCount = todaySortTasks.reduce((s, t) => s + t.qualifiedCount, 0);
   const todaySortLossCount = todaySortTasks.reduce((s, t) => s + t.lossCount, 0);
 
-  // 7. 预冷
-  const todayColdLogs = coldLogs.filter((l) => isToday(l.createdAt) && l.type === "INTAKE");
+  // 预冷
   const todayColdIntakeCount = todayColdLogs.reduce((s, l) => s + l.count, 0);
   const todayColdBatchesCount = todayColdLogs.length;
+
+  // 冷库即时可用库存
   const totalColdStockCount = aggregateTraceableColdStocks({
-    sortTasks,
-    coldLogs,
-    outboundLines: outboundOrders.filter((order) => order.status !== "REJECTED").flatMap((order) => order.lines),
-    outboundLosses,
+    sortTasks: sortTasksForCold,
+    coldLogs: coldLogsForCold,
+    outboundLines: outboundLinesForCold,
+    outboundLosses: outboundLossesForCold,
     defaultSpecs: [],
   }).reduce((sum, stock) => sum + stock.available, 0);
-  // 8. 出库（合规发运口径：仅统计已审批出库，排除驳回与待审核）
-  const todayOutboundOrders = outboundOrders.filter(
-    (o) => o.status === "APPROVED" && isToday(o.outboundTime || o.approvedAt || o.createdAt)
-  );
+
+  // 出库
   const todayOutboundTotalCount = todayOutboundOrders.reduce((s, o) => s + o.outboundCount, 0);
-  const todayOutboundOriginalOrdersCount = new Set(todayOutboundOrders.flatMap((o) => o.lines.map((l) => l.orderNo || o.id))).size;
-  const pendingOutboundOrdersCount = outboundOrders.filter((o) => o.status === "PENDING").length;
-  const closeDate = formatISODate();
-  const poolCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_POOL_CLOSE" && formatISODate(log.createdAt) === closeDate);
-  const coldCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_COLD_CLOSE" && formatISODate(log.createdAt) === closeDate);
+  const todayOutboundOriginalOrdersCount = new Set(
+    todayOutboundOrders.flatMap((o) => o.lines.map((l) => l.orderNo || o.id))
+  ).size;
+
+  const poolCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_POOL_CLOSE");
+  const coldCloseCompleted = dailyCloseLogs.some((log) => log.action === "DAILY_COLD_CLOSE");
 
   const beijingHour = Number(
     new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" }).format(new Date())
   );
   const isClosingTime = beijingHour >= 18 || todayOutboundOrders.length > 0;
 
-  // 3. 业务预警数据采集
-  const frozenBatches = batches
-    .filter((b) => b.status === "FROZEN" || b.isException)
-    .map((b) => ({
-      id: b.id,
-      code: b.code,
-      reason: b.exceptionReason || b.lossReason,
-      time: b.inPoolTime.toISOString(),
-    }));
+  // 3. 业务预警
+  const frozenBatches = frozenBatchesRaw.map((b) => ({
+    id: b.id,
+    code: b.code,
+    reason: b.exceptionReason || b.lossReason,
+    time: b.inPoolTime.toISOString(),
+  }));
 
-  const highLossTasks = sortTasks
-    .filter((t) => t.status === "COMPLETED" && t.lossRate > 5.0)
-    .map((t) => ({
-      id: t.id,
-      code: t.code,
-      lossRate: t.lossRate,
-      lossCount: t.lossCount,
-      inputCount: t.inputCount,
-      time: t.date.toISOString(),
-    }));
+  const highLossTasks = highLossTasksRaw.map((t) => ({
+    id: t.id,
+    code: t.code,
+    lossRate: t.lossRate,
+    lossCount: t.lossCount,
+    inputCount: t.inputCount,
+    time: t.date.toISOString(),
+  }));
 
-  const uncalibratedMachines = sortMachines
-    .filter((m) => m.lastCalibrationStatus === "EXCEPTION")
-    .map((m) => ({
-      id: m.id,
-      code: m.code,
-      name: m.name,
-    }));
+  const uncalibratedMachines = uncalibratedMachinesRaw.map((m) => ({
+    id: m.id,
+    code: m.code,
+    name: m.name,
+  }));
 
-  const unbalancedTagClaims = tagClaims
-    .filter((c) => c.status === "APPROVED" && !c.isBalanced)
-    .map((c) => {
-      const farmer = farmers.find((f) => f.id === c.farmerId);
-      const accounted = (c.boundCount || 0) + (c.returnedCount || 0) + (c.scrappedCount || 0);
-      return {
-        id: c.id,
-        code: c.code || "",
-        farmerName: farmer?.name || "未知养殖户",
-        claimCount: c.claimCount,
-        accountedCount: accounted,
-        diff: c.claimCount - accounted,
-        claimDate: c.claimDate.toISOString(),
-      };
-    });
+  const unbalancedTagClaims = unbalancedTagClaimsRaw.map((c) => {
+    const accounted = (c.boundCount || 0) + (c.returnedCount || 0) + (c.scrappedCount || 0);
+    return {
+      id: c.id,
+      code: c.code || "",
+      farmerName: c.farmer?.name || "未知养殖户",
+      claimCount: c.claimCount,
+      accountedCount: accounted,
+      diff: c.claimCount - accounted,
+      claimDate: c.claimDate.toISOString(),
+    };
+  });
 
-  // 序列化 QC 记录供客户端组件使用
-  const serializedQCRecords = qcRecords.map((q) => ({
+  const serializedQCRecords = qcRecordsRaw.map((q) => ({
     id: q.id,
     code: q.code,
     cat: q.cat,
@@ -221,15 +347,15 @@ export default async function DashboardPage() {
       metrics={{
         todayOrdersCount: todayOriginalOrdersCount,
         pendingDeliveryTotalCount,
-        totalOrdersCount: orders.length,
+        totalOrdersCount,
         todayBatchesCount: todayBatches.length,
         todayInPoolTotalCount,
-        totalBatchesCount: batches.length,
+        totalBatchesCount,
         todayTagClaimsCount: todayTagClaims.length,
         todayTagClaimsTotalCount,
         totalTagClaimsCount: totalTagClaimed,
         pendingTagClaimsCount,
-        todayPoolInCount,
+        todayPoolInCount: todayInPoolTotalCount,
         todayPoolLossCount,
         activePoolsCount: activePools.filter((p) => p.liveCount > 0).length,
         totalLiveInPoolCount: totalLiveInPool,
@@ -237,11 +363,11 @@ export default async function DashboardPage() {
         todayBundleTotalCount,
         todayBundleLossCount,
         todayBundleDoneCount,
-        totalBundleBatchesCount: bundleBatches.length,
+        totalBundleBatchesCount,
         todaySortTasksCount: todaySortTasks.length,
         todaySortQualifiedCount,
         todaySortLossCount,
-        totalSortTasksCount: sortTasks.length,
+        totalSortTasksCount,
         todayColdIntakeCount,
         todayColdBatchesCount,
         activeColdStoresCount: coldStores.length,
@@ -254,7 +380,7 @@ export default async function DashboardPage() {
         todayOutboundTotalCount,
         todayOutboundOriginalOrdersCount,
         pendingOutboundOrdersCount,
-        totalOutboundOrdersCount: outboundOrders.length,
+        totalOutboundOrdersCount,
         totalOutboundCount: totalOutboundApproved,
         totalQuota,
         totalInPool,

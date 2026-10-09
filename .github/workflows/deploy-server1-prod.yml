@@ -224,7 +224,7 @@ jobs:
             cat << 'ENV_EOF' > .env.production
             NODE_ENV=production
             PORT=3000
-            DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public&connection_limit=10"
+            DATABASE_URL="postgresql://yangchenghu88:Yangcheng88-@pgm-uf6032h49cdqz5jc.pg.rds.aliyuncs.com:5432/yangcheng_tracehub?schema=public&connection_limit=20"
             AUTH_SECRET="yangcheng-tracehub-secret-key-prod-2026-auth-session"
             NEXT_PUBLIC_TENANT=default
             ENV_EOF
