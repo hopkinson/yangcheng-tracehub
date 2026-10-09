@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +23,9 @@ export function LedgerTabCarousel({
   ledgers,
   className,
 }: LedgerTabCarouselProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -103,7 +107,14 @@ export function LedgerTabCarousel({
                 <TabsTrigger
                   key={ledger.key}
                   value={ledger.key}
-                  onClick={(e) => e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest" })}
+                  onClick={(e) => {
+                    e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest" });
+                    const params = new URLSearchParams(searchParams.toString());
+                    if (params.get("tab") !== ledger.key) {
+                      params.set("tab", ledger.key);
+                      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+                    }
+                  }}
                   className={cn(
                     "group relative flex h-9 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 py-1 text-left text-xs font-normal transition-all duration-150 whitespace-nowrap",
                     "text-muted-foreground hover:border-border/50 hover:bg-background/80 hover:text-foreground active:scale-[0.985]",

@@ -1102,14 +1102,15 @@ export default async function LedgersPage({
         />
 
         {ledgers.map((ledger) => {
+          const isCurrentTab = ledger.key === validTab;
           const page = pageFor(ledger.no);
           const pageSize = pageSizeFor(ledger.no);
-          const pagedRows = paginate(ledger.rows, page, pageSize);
-          const exportRows = ledger.rows.map((row) => row.exportRow);
+          const pagedRows = isCurrentTab ? paginate(ledger.rows, page, pageSize) : [];
+          const exportRows = isCurrentTab ? ledger.rows.map((row) => row.exportRow) : [];
           const isOutboundHeader = ledger.no === 8;
           const matrixHeaders = ["出库批次", "礼卡/门店名称", ...SPEC_MATRIX.map((item) => item.header), "合计"];
-          const pagedOutboundMatrixRows = isOutboundHeader ? paginate(outboundMatrixRows, page, pageSize) : [];
-          const exportSections = isOutboundHeader
+          const pagedOutboundMatrixRows = isOutboundHeader && isCurrentTab ? paginate(outboundMatrixRows, page, pageSize) : [];
+          const exportSections = isOutboundHeader && isCurrentTab
             ? [
                 { headers: ledger.headers, rows: exportRows },
                 { title: "成品出库规格矩阵", headers: matrixHeaders, rows: outboundMatrixRows },
@@ -1131,23 +1132,27 @@ export default async function LedgersPage({
                 pageParam={`l${ledger.no}Page`}
                 pageSizeParam={`l${ledger.no}PageSize`}
               >
-                <div className="flex flex-col gap-4">
-                  <LedgerTable
-                    headers={ledger.headers}
-                    rows={pagedRows.map((row) => row.displayRow)}
-                    emptyText={ledger.empty}
-                  />
-                  {isOutboundHeader && outboundMatrixRows.length > 0 && (
-                    <div className="flex flex-col gap-2">
-                      <div className="text-xs font-medium text-muted-foreground">成品出库规格矩阵</div>
-                      <LedgerTable
-                        headers={matrixHeaders}
-                        rows={pagedOutboundMatrixRows as ReactNode[][]}
-                        emptyText="暂无出库规格汇总"
-                      />
-                    </div>
-                  )}
-                </div>
+                {isCurrentTab ? (
+                  <div className="flex flex-col gap-4">
+                    <LedgerTable
+                      headers={ledger.headers}
+                      rows={pagedRows.map((row) => row.displayRow)}
+                      emptyText={ledger.empty}
+                    />
+                    {isOutboundHeader && outboundMatrixRows.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-xs font-medium text-muted-foreground">成品出库规格矩阵</div>
+                        <LedgerTable
+                          headers={matrixHeaders}
+                          rows={pagedOutboundMatrixRows as ReactNode[][]}
+                          emptyText="暂无出库规格汇总"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-xs text-muted-foreground">点击上方标签即可加载该台账明细…</div>
+                )}
               </LedgerCardSection>
             </TabsContent>
           );

@@ -6,7 +6,7 @@ import { OrderTable } from "@/components/orders/OrderTable";
 import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
-import { formatISODate } from "@/lib/utils";
+import { formatISODate, getBeijingDayRange } from "@/lib/utils";
 import { Invariants } from "@/lib/invariants";
 import { aggregatePipelineStocks } from "@/lib/order-stock";
 
@@ -30,34 +30,15 @@ export default async function OrdersPage({
   const todayStr = formatISODate(now);
   const tomorrow = new Date(now.getTime() + 86400000);
   const tomorrowStr = formatISODate(tomorrow);
-
-  // 1. 查询全部订单
-  const allOrders = await prisma.order.findMany({
-    orderBy: [{ deliveryDate: "asc" }, { createdAt: "desc" }],
-  });
-
-  const availableDates = Array.from(
-    new Set(allOrders.map((o) => formatISODate(o.deliveryDate)))
-  ).sort();
-
   const targetDateStr = params.date || "all";
+  const orderDateFilter = targetDateStr === "all" ? undefined : { deliveryDate: getBeijingDayRange(targetDateStr) };
 
-  // 联动过滤订单明细列表
-  const displayedOrders =
-    targetDateStr === "all"
-      ? allOrders
-      : allOrders.filter(
-          (o: any) => formatISODate(o.deliveryDate) === targetDateStr
-        );
-
-  const totalOrders = displayedOrders.length;
-  const pagedOrders = displayedOrders.slice(
-    (page - 1) * pageSize,
-    page * pageSize
-  );
-
-  // 2. 并行查询全流程工序数据（暂养、捆扎、分拣、保鲜）
+  // 1. 并行查询日期维度、分页订单列表、需求汇总与全流程工序数据
   const [
+    distinctDates,
+    totalOrders,
+    pagedOrders,
+    demandOrders,
     batches,
     batchItems,
     bundleBatches,
@@ -66,12 +47,32 @@ export default async function OrdersPage({
     outboundLines,
     outboundLosses,
   ] = await Promise.all([
+    // 可用发货日期精简获取 (仅查日期字段去重)
+    prisma.order.findMany({
+      select: { deliveryDate: true },
+      distinct: ["deliveryDate"],
+      orderBy: { deliveryDate: "asc" },
+    }),
+    // 数据库级总数统计与原生分页
+    prisma.order.count({ where: orderDateFilter }),
+    prisma.order.findMany({
+      where: orderDateFilter,
+      orderBy: [{ deliveryDate: "asc" }, { createdAt: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    // 仅查询当前所选范围的订单规格需求
+    prisma.order.findMany({
+      where: orderDateFilter,
+      select: { gender: true, weightTier: true, count: true, status: true },
+    }),
+    // 工序数据：暂养批次仅查在养存活数据
     prisma.batch.findMany({
-      where: { status: { not: "FROZEN" } },
+      where: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } },
       select: { id: true, gender: true, weightTier: true, inPoolCount: true, outPoolCount: true, lossCount: true, status: true },
     }),
     prisma.batchItem.findMany({
-      where: { batch: { status: { not: "FROZEN" } } },
+      where: { batch: { status: { in: ["TEMPORARY_HOLDING", "PARTIALLY_OUTBOUND"] } } },
       select: { batchId: true, gender: true, weightTier: true, inPoolCount: true, outPoolCount: true, lossCount: true },
     }),
     prisma.bundleBatch.findMany({
@@ -88,9 +89,14 @@ export default async function OrdersPage({
       select: { count: true, coldLogId: true },
     }),
     prisma.outboundLossRecord.findMany({
+      where: { status: { not: "REJECTED" } },
       select: { count: true, coldLogId: true },
     }),
   ]);
+
+  const availableDates = Array.from(
+    new Set(distinctDates.map((o) => formatISODate(o.deliveryDate)))
+  ).sort();
 
   const pipelineStocks = aggregatePipelineStocks({
     batches,
@@ -108,7 +114,7 @@ export default async function OrdersPage({
     { gender: string; weightTier: string; totalNeeded: number; shippedCount: number; pendingCount: number }
   > = {};
 
-  for (const o of displayedOrders) {
+  for (const o of demandOrders) {
     const key = `${o.gender}_${o.weightTier}`;
     if (!demandSummaryMap[key]) {
       demandSummaryMap[key] = {

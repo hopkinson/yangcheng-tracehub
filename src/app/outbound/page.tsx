@@ -121,11 +121,21 @@ export default async function OutboundPage({
     }),
     prisma.sortTask.findMany({
       where: { status: "COMPLETED" },
-      include: {
+      select: {
+        id: true,
+        code: true,
+        gender: true,
+        weightTier: true,
         bundleBatch: {
-          include: {
-            tagClaim: { include: { farmer: true } },
-            lines: { include: { pool: true } },
+          select: {
+            sourceBatchId: true,
+            tagClaim: {
+              select: {
+                farmer: {
+                  select: { name: true, code: true },
+                },
+              },
+            },
           },
         },
       },
