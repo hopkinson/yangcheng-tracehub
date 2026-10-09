@@ -290,8 +290,8 @@ export default async function LedgersPage({
       },
     }),
     // 养殖户查询 (ledger1 或 ledger3)
-    !needFarmers || isChannelViewer
-      ? Promise.resolve([])
+    isChannelViewer || (validTab !== "ledger1" && validTab !== "ledger3")
+      ? []
       : validTab === "ledger1"
       ? prisma.farmer.findMany({
           select: {
@@ -326,8 +326,8 @@ export default async function LedgersPage({
           },
         }),
     // 蟹扣申领查询 (ledger3)
-    !needTagClaims || isChannelViewer
-      ? Promise.resolve([])
+    isChannelViewer || validTab !== "ledger3"
+      ? []
       : prisma.tagClaim.findMany({
           where: dateFilter ? { claimDate: dateFilter } : undefined,
           select: {
@@ -375,9 +375,9 @@ export default async function LedgersPage({
           orderBy: { claimDate: "desc" },
         }),
     // 原料批次查询 (ledger2 原料批次 或 ledger4 暂养池流水)
-    isChannelViewer || (!needRawMaterialBatches && !needHoldingPoolBatches)
-      ? Promise.resolve([])
-      : needRawMaterialBatches
+    isChannelViewer || (validTab !== "ledger2" && validTab !== "ledger4")
+      ? []
+      : validTab === "ledger2"
       ? prisma.batch.findMany({
           where: dateFilter ? { inPoolTime: dateFilter } : undefined,
           select: {
@@ -477,8 +477,8 @@ export default async function LedgersPage({
           orderBy: { inPoolTime: "desc" },
         }),
     // 捆扎批次查询 (ledger5)
-    !needBundleBatches || isChannelViewer
-      ? Promise.resolve([])
+    isChannelViewer || validTab !== "ledger5"
+      ? []
       : prisma.bundleBatch.findMany({
           where: dateFilter ? { date: dateFilter } : undefined,
           select: {
@@ -514,8 +514,8 @@ export default async function LedgersPage({
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
     // 分拣任务查询 (ledger6)
-    !needSortTasks || isChannelViewer
-      ? Promise.resolve([])
+    isChannelViewer || validTab !== "ledger6"
+      ? []
       : prisma.sortTask.findMany({
           where: dateFilter ? { date: dateFilter } : undefined,
           select: {
@@ -541,8 +541,8 @@ export default async function LedgersPage({
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
     // 保鲜冷库查询 (ledger7)
-    !needColdLogs || isChannelViewer
-      ? Promise.resolve([])
+    isChannelViewer || validTab !== "ledger7"
+      ? []
       : prisma.coldLog.findMany({
           where: dateFilter ? { createdAt: dateFilter } : undefined,
           select: {
@@ -577,8 +577,8 @@ export default async function LedgersPage({
           orderBy: { createdAt: "desc" },
         }),
     // 出库单查询 (ledger8, ledger9)
-    !needOutboundOrders
-      ? Promise.resolve([])
+    validTab !== "ledger8" && validTab !== "ledger9"
+      ? []
       : prisma.outboundOrder.findMany({
           where: {
             status: { not: "REJECTED" },
@@ -655,8 +655,8 @@ export default async function LedgersPage({
           orderBy: { createdAt: "desc" },
         }),
     // 品控记录查询 (ledger10)
-    !needQcRecords
-      ? Promise.resolve([])
+    validTab !== "ledger10"
+      ? []
       : prisma.qCRecord.findMany({
           where: {
             ...(selectedCat ? { cat: selectedCat } : {}),
@@ -678,8 +678,8 @@ export default async function LedgersPage({
           orderBy: { checkTime: "desc" },
         }),
     // 订单查询 (ledger11, ledger12)
-    !needOrders
-      ? Promise.resolve([])
+    validTab !== "ledger11" && validTab !== "ledger12"
+      ? []
       : prisma.order.findMany({
           where: {
             ...(dateFilter ? { deliveryDate: dateFilter } : {}),
@@ -740,8 +740,8 @@ export default async function LedgersPage({
           orderBy: [{ deliveryDate: "desc" }, { importTime: "desc" }],
         }),
     // 养殖户出库累计辅助查询 (仅 ledger1 需要)
-    !needApprovedOutboundLines || isChannelViewer
-      ? Promise.resolve([])
+    isChannelViewer || validTab !== "ledger1"
+      ? []
       : prisma.outboundLine.findMany({
           where: { outboundOrder: { status: "APPROVED" } },
           select: {
@@ -766,7 +766,7 @@ export default async function LedgersPage({
   ]);
 
   const shippedByFarmer = new Map<string, number>();
-  if (needApprovedOutboundLines) {
+  if (validTab === "ledger1") {
     for (const line of allApprovedOutboundLines as any[]) {
       const farmerId = line.coldLog?.sortTask?.bundleBatch?.sourceBatch?.farmerId;
       if (farmerId) {
@@ -776,7 +776,7 @@ export default async function LedgersPage({
   }
 
   const farmerStatMap = new Map<string, { cumulativeBound: number; inPoolCount: number; quota: number }>();
-  if (needTagClaims) {
+  if (validTab === "ledger3") {
     for (const f of farmers as any[]) {
       const bound = f.tagClaims?.reduce((s: number, c: any) => s + (c.boundCount || 0), 0) || 0;
       const inPool = f.batches?.reduce((s: number, b: any) => s + (b.inPoolCount || 0), 0) || 0;
