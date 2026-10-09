@@ -1,23 +1,23 @@
-name: "测试环境数据重置"
+name: "测试环境 - 数据重置"
 
 on:
   workflow_dispatch:
     inputs:
       server:
-        description: "仅允许重置测试环境；生产环境不提供清库入口"
+        description: "选择目标环境"
         type: choice
-        default: "1-test (服务器 1: admin-test)"
+        default: "1-test (服务器 1)"
         options:
-          - "1-test (服务器 1: admin-test)"
-          - "2-test (服务器 2: 测试环境)"
+          - "1-test (服务器 1)"
+          - "2-test (服务器 2)"
       confirm:
-        description: "我已知晓该操作将清空所选测试数据库并确认执行"
+        description: "确认清空所选测试库"
         type: boolean
         default: false
 
 jobs:
   reset-server1-test:
-    name: "服务器 1 测试环境 - 重置数据"
+    name: "重置服务器1"
     if: startsWith(github.event.inputs.server, '1-test') && (github.event.inputs.confirm == true || github.event.inputs.confirm == 'true')
     runs-on: ubuntu-latest
     environment: test
@@ -28,10 +28,10 @@ jobs:
       SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_1 || secrets.SERVER_SSH_KEY }}
       SERVER_PORT: ${{ secrets.SERVER_PORT_1 || vars.SERVER_PORT_1 || secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
     steps:
-      - name: "检出最新仓库脚本"
+      - name: "检出代码"
         uses: actions/checkout@v4
 
-      - name: "同步测试环境重置脚本 (密码模式)"
+      - name: "上传脚本 (密码)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -43,7 +43,7 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "同步测试环境重置脚本 (密钥模式)"
+      - name: "上传脚本 (密钥)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -55,7 +55,7 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "重置隔离测试数据库 (密码模式)"
+      - name: "执行重置 (密码)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -76,7 +76,7 @@ jobs:
             docker compose exec -T app-test node scripts/reset-tenant.js --tenant=default --force
             docker compose restart app-test
 
-      - name: "重置隔离测试数据库 (密钥模式)"
+      - name: "执行重置 (密钥)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -97,7 +97,7 @@ jobs:
             docker compose exec -T app-test node scripts/reset-tenant.js --tenant=default --force
             docker compose restart app-test
   reset-server2-test:
-    name: "服务器 2 测试环境 - 重置数据"
+    name: "重置服务器2"
     if: startsWith(github.event.inputs.server, '2-test') && (github.event.inputs.confirm == true || github.event.inputs.confirm == 'true')
     runs-on: ubuntu-latest
     environment: test
@@ -108,10 +108,10 @@ jobs:
       SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY_2 || secrets.SERVER_2_SSH_KEY || secrets.SERVER_SSH_KEY }}
       SERVER_PORT: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || secrets.SERVER_2_PORT || vars.SERVER_2_PORT || 22 }}
     steps:
-      - name: "检出最新仓库脚本"
+      - name: "检出代码"
         uses: actions/checkout@v4
 
-      - name: "同步测试环境重置脚本 (密码模式)"
+      - name: "上传脚本 (密码)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -123,7 +123,7 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "同步测试环境重置脚本 (密钥模式)"
+      - name: "上传脚本 (密钥)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -135,7 +135,7 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "重置服务器 2 隔离测试数据库 (密码模式)"
+      - name: "执行重置 (密码)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY == ''
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -156,7 +156,7 @@ jobs:
             docker compose exec -T app node scripts/reset-tenant.js --tenant=maoshi --force
             docker compose restart app
 
-      - name: "重置服务器 2 隔离测试数据库 (密钥模式)"
+      - name: "执行重置 (密钥)"
         if: env.SERVER_HOST != '' && env.SERVER_SSH_KEY != ''
         uses: appleboy/ssh-action@v1.0.3
         with:

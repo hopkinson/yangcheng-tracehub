@@ -1,4 +1,4 @@
-name: "部署 · 服务器 2 (yangcheng.traview.cn - 手动触发)"
+name: "服务器2 - 部署"
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    name: "构建并发布到服务器 2"
+    name: "部署服务器2"
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -21,31 +21,31 @@ jobs:
       SERVER_PASSWORD_2: ${{ secrets.SERVER_PASSWORD_2 || secrets.SERVER_2_PASSWORD }}
       SERVER_PORT_2: ${{ secrets.SERVER_PORT_2 || vars.SERVER_PORT_2 || 22 }}
     steps:
-      - name: "检出代码仓库"
+      - name: "检出代码"
         uses: actions/checkout@v4
 
-      - name: "初始化 pnpm 环境"
+      - name: "安装 pnpm"
         uses: pnpm/action-setup@v4
 
-      - name: "配置 Node.js 22"
+      - name: "配置 Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "pnpm"
 
-      - name: "安装项目依赖"
+      - name: "安装依赖"
         run: pnpm install --frozen-lockfile
 
-      - name: "生成 Prisma 客户端"
+      - name: "生成 Prisma"
         run: pnpm prisma:generate
 
-      - name: "TypeScript 类型安全检查"
+      - name: "类型检查"
         run: pnpm typecheck
 
       # =========================================================================
       # 打包纯净源码 (仅 ~1.8MB) 并通过 SCP 传输至服务器 2，彻底杜绝大镜像包传输超时
       # =========================================================================
-      - name: "打包生产源码包"
+      - name: "打包源码"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         run: |
           echo "📦 使用 git archive 打包纯净项目源码..."
@@ -53,7 +53,7 @@ jobs:
           echo "✅ 源码打包完成，文件大小:"
           ls -lh app-source.tar.gz
 
-      - name: "传输源码包至服务器 2"
+      - name: "上传源码"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -67,7 +67,7 @@ jobs:
           target: "/tmp"
           overwrite: true
 
-      - name: "SSH 部署并平滑上线 (服务器 2)"
+      - name: "远程部署"
         if: "github.event_name != 'pull_request' && env.SERVER_HOST_2 != ''"
         uses: appleboy/ssh-action@v1.0.3
         with:

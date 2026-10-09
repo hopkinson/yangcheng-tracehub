@@ -900,7 +900,7 @@ export default async function LedgersPage({
     });
   });
 
-  const tagClaimRows = (validTab === "ledger3" ? rawTagClaims : []).map((claim: any) => {
+  const tagClaimRows = rawTagClaims.map((claim: any) => {
     const isRejected = claim.status === "REJECTED";
     const fStat = farmerStatMap.get(claim.farmerId) || {
       cumulativeBound: 0,
