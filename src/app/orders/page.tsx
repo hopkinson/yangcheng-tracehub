@@ -61,10 +61,11 @@ export default async function OrdersPage({
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
-    // 仅查询当前所选范围的订单规格需求
-    prisma.order.findMany({
+    // 仅查询当前所选范围的订单规格需求 (数据库端原子聚合)
+    prisma.order.groupBy({
+      by: ["gender", "weightTier", "status"],
       where: orderDateFilter,
-      select: { gender: true, weightTier: true, count: true, status: true },
+      _sum: { count: true },
     }),
     // 工序数据：暂养批次仅查在养存活数据
     prisma.batch.findMany({
@@ -125,11 +126,12 @@ export default async function OrdersPage({
         pendingCount: 0,
       };
     }
-    demandSummaryMap[key].totalNeeded += o.count;
+    const count = o._sum.count || 0;
+    demandSummaryMap[key].totalNeeded += count;
     if (o.status === "SHIPPED") {
-      demandSummaryMap[key].shippedCount += o.count;
+      demandSummaryMap[key].shippedCount += count;
     } else {
-      demandSummaryMap[key].pendingCount += o.count;
+      demandSummaryMap[key].pendingCount += count;
     }
   }
 

@@ -178,6 +178,9 @@ export default async function LedgersPage({
   const [currentUser, params] = await Promise.all([getCurrentUser(), searchParams]);
   const selectedDateStr = params.date?.trim();
   const selectedCat = params.cat?.trim();
+  const rawTab = params.tab?.trim();
+  const validTab = /^ledger([1-9]|1[0-2])$/.test(rawTab ?? "") ? rawTab! : "ledger1";
+
   const parsePositive = (value?: string, fallback = 1) => Math.max(1, Number(value) || fallback);
   const pageFor = (index: number) => parsePositive(params[`l${index}Page`]);
   const pageSizeFor = (index: number) => parsePositive(params[`l${index}PageSize`], 10);
@@ -187,10 +190,110 @@ export default async function LedgersPage({
   const isChannelViewer = currentUser?.role === "CHANNEL_VIEWER";
   const channelId = currentUser?.channelId;
 
-  const [farmers, rawTagClaims, batches, bundleBatches, sortTasks, coldLogs, outboundOrders, qcRecords, orders, allApprovedOutboundLines] = await Promise.all([
-    isChannelViewer
-      ? []
-      : prisma.farmer.findMany({
+  const [
+    // 快速徽标计数统计
+    countFarmers,
+    countBatchItems,
+    countBatches,
+    countTagClaims,
+    countBundleLines,
+    countBundleBatches,
+    countSortTasks,
+    countColdLogs,
+    countOutboundOrders,
+    countOutboundLines,
+    countQcRecords,
+    countStoreOrders,
+    countCrabCardOrders,
+    // 当前激活 Tab 所需的具体数据集
+    farmers,
+    rawTagClaims,
+    batches,
+    bundleBatches,
+    sortTasks,
+    coldLogs,
+    outboundOrders,
+    qcRecords,
+    orders,
+    allApprovedOutboundLines,
+  ] = await Promise.all([
+    isChannelViewer ? 0 : prisma.farmer.count(),
+    isChannelViewer ? 0 : prisma.batchItem.count({ where: dateFilter ? { batch: { inPoolTime: dateFilter } } : undefined }),
+    isChannelViewer ? 0 : prisma.batch.count({ where: dateFilter ? { inPoolTime: dateFilter } : undefined }),
+    isChannelViewer ? 0 : prisma.tagClaim.count({ where: dateFilter ? { claimDate: dateFilter } : undefined }),
+    isChannelViewer ? 0 : prisma.bundleLine.count({ where: dateFilter ? { bundleBatch: { date: dateFilter } } : undefined }),
+    isChannelViewer ? 0 : prisma.bundleBatch.count({ where: dateFilter ? { date: dateFilter } : undefined }),
+    isChannelViewer ? 0 : prisma.sortTask.count({ where: dateFilter ? { date: dateFilter } : undefined }),
+    isChannelViewer ? 0 : prisma.coldLog.count({ where: dateFilter ? { createdAt: dateFilter } : undefined }),
+    prisma.outboundOrder.count({
+      where: {
+        status: { not: "REJECTED" },
+        ...(isChannelViewer ? { channelId: channelId || "__NO_CHANNEL__" } : {}),
+        ...(dateFilter
+          ? {
+              OR: [
+                { createdAt: dateFilter },
+                { outboundTime: dateFilter },
+                { approvedAt: dateFilter },
+              ],
+            }
+          : {}),
+      },
+    }),
+    prisma.outboundLine.count({
+      where: {
+        outboundOrder: {
+          status: { not: "REJECTED" },
+          ...(isChannelViewer ? { channelId: channelId || "__NO_CHANNEL__" } : {}),
+          ...(dateFilter
+            ? {
+                OR: [
+                  { createdAt: dateFilter },
+                  { outboundTime: dateFilter },
+                  { approvedAt: dateFilter },
+                ],
+              }
+            : {}),
+        },
+      },
+    }),
+    prisma.qCRecord.count({
+      where: {
+        ...(selectedCat ? { cat: selectedCat } : {}),
+        ...(dateFilter ? { checkTime: dateFilter } : {}),
+      },
+    }),
+    prisma.order.count({
+      where: {
+        type: "STORE_ORDER",
+        ...(dateFilter ? { deliveryDate: dateFilter } : {}),
+        ...(isChannelViewer
+          ? {
+              outboundLines: {
+                some: { outboundOrder: { channelId: channelId || "__NO_CHANNEL__", status: { not: "REJECTED" } } },
+              },
+            }
+          : {}),
+      },
+    }),
+    prisma.order.count({
+      where: {
+        type: "CRAB_CARD",
+        ...(dateFilter ? { deliveryDate: dateFilter } : {}),
+        ...(isChannelViewer
+          ? {
+              outboundLines: {
+                some: { outboundOrder: { channelId: channelId || "__NO_CHANNEL__", status: { not: "REJECTED" } } },
+              },
+            }
+          : {}),
+      },
+    }),
+    // 养殖户查询 (ledger1 或 ledger3)
+    !needFarmers || isChannelViewer
+      ? Promise.resolve([])
+      : validTab === "ledger1"
+      ? prisma.farmer.findMany({
           select: {
             id: true,
             code: true,
@@ -210,9 +313,21 @@ export default async function LedgersPage({
             },
           },
           orderBy: { code: "asc" },
+        })
+      : prisma.farmer.findMany({
+          select: {
+            id: true,
+            quota: true,
+            batches: { select: { inPoolCount: true } },
+            tagClaims: {
+              where: { status: "APPROVED" },
+              select: { boundCount: true },
+            },
+          },
         }),
-    isChannelViewer
-      ? []
+    // 蟹扣申领查询 (ledger3)
+    !needTagClaims || isChannelViewer
+      ? Promise.resolve([])
       : prisma.tagClaim.findMany({
           where: dateFilter ? { claimDate: dateFilter } : undefined,
           select: {
@@ -259,9 +374,11 @@ export default async function LedgersPage({
           },
           orderBy: { claimDate: "desc" },
         }),
-    isChannelViewer
-      ? []
-      : prisma.batch.findMany({
+    // 原料批次查询 (ledger2 原料批次 或 ledger4 暂养池流水)
+    isChannelViewer || (!needRawMaterialBatches && !needHoldingPoolBatches)
+      ? Promise.resolve([])
+      : needRawMaterialBatches
+      ? prisma.batch.findMany({
           where: dateFilter ? { inPoolTime: dateFilter } : undefined,
           select: {
             id: true,
@@ -329,9 +446,39 @@ export default async function LedgersPage({
             },
           },
           orderBy: { inPoolTime: "desc" },
+        })
+      : prisma.batch.findMany({
+          where: dateFilter ? { inPoolTime: dateFilter } : undefined,
+          select: {
+            id: true,
+            code: true,
+            inPoolTime: true,
+            inPoolCount: true,
+            outPoolCount: true,
+            lossCount: true,
+            farmer: {
+              select: {
+                name: true,
+                enclosures: { select: { code: true } },
+              },
+            },
+            enclosure: { select: { code: true } },
+            pool: { select: { name: true, code: true } },
+            items: {
+              select: {
+                id: true,
+                inPoolCount: true,
+                outPoolCount: true,
+                lossCount: true,
+                pool: { select: { name: true, code: true } },
+              },
+            },
+          },
+          orderBy: { inPoolTime: "desc" },
         }),
-    isChannelViewer
-      ? []
+    // 捆扎批次查询 (ledger5)
+    !needBundleBatches || isChannelViewer
+      ? Promise.resolve([])
       : prisma.bundleBatch.findMany({
           where: dateFilter ? { date: dateFilter } : undefined,
           select: {
@@ -366,8 +513,9 @@ export default async function LedgersPage({
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
-    isChannelViewer
-      ? []
+    // 分拣任务查询 (ledger6)
+    !needSortTasks || isChannelViewer
+      ? Promise.resolve([])
       : prisma.sortTask.findMany({
           where: dateFilter ? { date: dateFilter } : undefined,
           select: {
@@ -392,8 +540,9 @@ export default async function LedgersPage({
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         }),
-    isChannelViewer
-      ? []
+    // 保鲜冷库查询 (ledger7)
+    !needColdLogs || isChannelViewer
+      ? Promise.resolve([])
       : prisma.coldLog.findMany({
           where: dateFilter ? { createdAt: dateFilter } : undefined,
           select: {
@@ -427,66 +576,71 @@ export default async function LedgersPage({
           },
           orderBy: { createdAt: "desc" },
         }),
-    prisma.outboundOrder.findMany({
-      where: {
-        status: { not: "REJECTED" },
-        ...(isChannelViewer ? { channelId: channelId || "__NO_CHANNEL__" } : {}),
-        ...(dateFilter
-          ? {
-              OR: [
-                { createdAt: dateFilter },
-                { outboundTime: dateFilter },
-                { approvedAt: dateFilter },
-              ],
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        code: true,
-        type: true,
-        outboundCount: true,
-        createdAt: true,
-        outboundTime: true,
-        approvedAt: true,
-        transportCompany: true,
-        logisticsNo: true,
-        contactName: true,
-        contactPhone: true,
-        store: { select: { name: true } },
-        channel: { select: { name: true } },
-        applicant: { select: { fullName: true } },
-        approver: { select: { fullName: true } },
-        lines: {
+    // 出库单查询 (ledger8, ledger9)
+    !needOutboundOrders
+      ? Promise.resolve([])
+      : prisma.outboundOrder.findMany({
+          where: {
+            status: { not: "REJECTED" },
+            ...(isChannelViewer ? { channelId: channelId || "__NO_CHANNEL__" } : {}),
+            ...(dateFilter
+              ? {
+                  OR: [
+                    { createdAt: dateFilter },
+                    { outboundTime: dateFilter },
+                    { approvedAt: dateFilter },
+                  ],
+                }
+              : {}),
+          },
           select: {
-            gender: true,
-            weightTier: true,
-            count: true,
-            coldLog: {
+            id: true,
+            code: true,
+            type: true,
+            outboundCount: true,
+            createdAt: true,
+            outboundTime: true,
+            approvedAt: true,
+            transportCompany: true,
+            logisticsNo: true,
+            contactName: true,
+            contactPhone: true,
+            store: { select: { name: true } },
+            channel: { select: { name: true } },
+            applicant: { select: { fullName: true } },
+            approver: { select: { fullName: true } },
+            lines: {
               select: {
-                code: true,
-                sortTask: {
+                gender: true,
+                weightTier: true,
+                count: true,
+                coldLog: {
                   select: {
                     code: true,
-                    bundleBatch: {
+                    sortTask: {
                       select: {
                         code: true,
-                        lines: {
-                          select: {
-                            gender: true,
-                            weightTier: true,
-                            pool: { select: { code: true } },
-                          },
-                        },
-                        sourceBatch: {
+                        bundleBatch: {
                           select: {
                             code: true,
-                            pool: { select: { code: true } },
-                            enclosure: { select: { code: true } },
-                            farmer: {
+                            lines: {
                               select: {
-                                name: true,
-                                enclosures: { select: { code: true } },
+                                gender: true,
+                                weightTier: true,
+                                pool: { select: { code: true } },
+                              },
+                            },
+                            sourceBatch: {
+                              select: {
+                                code: true,
+                                pool: { select: { code: true } },
+                                enclosure: { select: { code: true } },
+                                farmer: {
+                                  select: {
+                                    name: true,
+                                    enclosures: { select: { code: true } },
+                                  },
+                                },
                               },
                             },
                           },
@@ -498,78 +652,84 @@ export default async function LedgersPage({
               },
             },
           },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.qCRecord.findMany({
-      where: {
-        ...(selectedCat ? { cat: selectedCat } : {}),
-        ...(dateFilter ? { checkTime: dateFilter } : {}),
-      },
-      select: {
-        id: true,
-        code: true,
-        checkTime: true,
-        cat: true,
-        formNo: true,
-        uploader: true,
-        result: true,
-        conclusion: true,
-        reason: true,
-        fileUrl: true,
-        fileName: true,
-      },
-      orderBy: { checkTime: "desc" },
-    }),
-    prisma.order.findMany({
-      where: {
-        ...(dateFilter ? { deliveryDate: dateFilter } : {}),
-        ...(isChannelViewer
-          ? {
-              outboundLines: {
-                some: { outboundOrder: { channelId: channelId || "__NO_CHANNEL__", status: { not: "REJECTED" } } },
-              },
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        code: true,
-        orderNo: true,
-        type: true,
-        status: true,
-        gender: true,
-        weightTier: true,
-        count: true,
-        deliveryDate: true,
-        importTime: true,
-        storeName: true,
-        specModel: true,
-        outboundLines: {
-          where: { outboundOrder: { status: { not: "REJECTED" } } },
+          orderBy: { createdAt: "desc" },
+        }),
+    // 品控记录查询 (ledger10)
+    !needQcRecords
+      ? Promise.resolve([])
+      : prisma.qCRecord.findMany({
+          where: {
+            ...(selectedCat ? { cat: selectedCat } : {}),
+            ...(dateFilter ? { checkTime: dateFilter } : {}),
+          },
           select: {
+            id: true,
+            code: true,
+            checkTime: true,
+            cat: true,
+            formNo: true,
+            uploader: true,
+            result: true,
+            conclusion: true,
+            reason: true,
+            fileUrl: true,
+            fileName: true,
+          },
+          orderBy: { checkTime: "desc" },
+        }),
+    // 订单查询 (ledger11, ledger12)
+    !needOrders
+      ? Promise.resolve([])
+      : prisma.order.findMany({
+          where: {
+            ...(dateFilter ? { deliveryDate: dateFilter } : {}),
+            ...(isChannelViewer
+              ? {
+                  outboundLines: {
+                    some: { outboundOrder: { channelId: channelId || "__NO_CHANNEL__", status: { not: "REJECTED" } } },
+                  },
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            code: true,
+            orderNo: true,
+            type: true,
+            status: true,
+            gender: true,
+            weightTier: true,
             count: true,
-            waybillNo: true,
-            expressCompany: true,
-            outboundOrder: {
+            deliveryDate: true,
+            importTime: true,
+            storeName: true,
+            specModel: true,
+            outboundLines: {
+              where: { outboundOrder: { status: { not: "REJECTED" } } },
               select: {
-                code: true,
-                logisticsNo: true,
-                transportCompany: true,
-                store: { select: { name: true } },
-              },
-            },
-            coldLog: {
-              select: {
-                code: true,
-                sortTask: {
+                count: true,
+                waybillNo: true,
+                expressCompany: true,
+                outboundOrder: {
                   select: {
                     code: true,
-                    bundleBatch: {
+                    logisticsNo: true,
+                    transportCompany: true,
+                    store: { select: { name: true } },
+                  },
+                },
+                coldLog: {
+                  select: {
+                    code: true,
+                    sortTask: {
                       select: {
                         code: true,
-                        sourceBatch: { select: { code: true } },
+                        bundleBatch: {
+                          select: {
+                            code: true,
+                            sourceBatch: { select: { code: true } },
+                          },
+                        },
                       },
                     },
                   },
@@ -577,12 +737,11 @@ export default async function LedgersPage({
               },
             },
           },
-        },
-      },
-      orderBy: [{ deliveryDate: "desc" }, { importTime: "desc" }],
-    }),
-    isChannelViewer
-      ? []
+          orderBy: [{ deliveryDate: "desc" }, { importTime: "desc" }],
+        }),
+    // 养殖户出库累计辅助查询 (仅 ledger1 需要)
+    !needApprovedOutboundLines || isChannelViewer
+      ? Promise.resolve([])
       : prisma.outboundLine.findMany({
           where: { outboundOrder: { status: "APPROVED" } },
           select: {
@@ -607,21 +766,25 @@ export default async function LedgersPage({
   ]);
 
   const shippedByFarmer = new Map<string, number>();
-  for (const line of allApprovedOutboundLines) {
-    const farmerId = line.coldLog?.sortTask?.bundleBatch?.sourceBatch?.farmerId;
-    if (farmerId) {
-      shippedByFarmer.set(farmerId, (shippedByFarmer.get(farmerId) || 0) + line.count);
+  if (needApprovedOutboundLines) {
+    for (const line of allApprovedOutboundLines as any[]) {
+      const farmerId = line.coldLog?.sortTask?.bundleBatch?.sourceBatch?.farmerId;
+      if (farmerId) {
+        shippedByFarmer.set(farmerId, (shippedByFarmer.get(farmerId) || 0) + line.count);
+      }
     }
   }
 
   const farmerStatMap = new Map<string, { cumulativeBound: number; inPoolCount: number; quota: number }>();
-  for (const f of farmers) {
-    const bound = f.tagClaims.reduce((s, c) => s + (c.boundCount || 0), 0);
-    const inPool = f.batches.reduce((s, b) => s + (b.inPoolCount || 0), 0);
-    farmerStatMap.set(f.id, { cumulativeBound: bound, inPoolCount: inPool, quota: f.quota });
+  if (needTagClaims) {
+    for (const f of farmers as any[]) {
+      const bound = f.tagClaims?.reduce((s: number, c: any) => s + (c.boundCount || 0), 0) || 0;
+      const inPool = f.batches?.reduce((s: number, b: any) => s + (b.inPoolCount || 0), 0) || 0;
+      farmerStatMap.set(f.id, { cumulativeBound: bound, inPoolCount: inPool, quota: f.quota });
+    }
   }
 
-  const farmerRows = farmers.map((farmer) => {
+  const farmerRows = (validTab === "ledger1" ? farmers : []).map((farmer: any) => {
     let cumulativeClaimed = 0, cumulativeBound = 0, cumulativeScrapped = 0, cumulativeReturned = 0;
     for (const c of farmer.tagClaims) {
       cumulativeClaimed += c.claimCount;
@@ -629,13 +792,13 @@ export default async function LedgersPage({
       cumulativeScrapped += c.scrappedCount;
       cumulativeReturned += c.returnedCount;
     }
-    const cumulativeInPool = farmer.batches.reduce((sum, batch) => sum + batch.inPoolCount, 0);
+    const cumulativeInPool = farmer.batches?.reduce((sum: number, batch: any) => sum + batch.inPoolCount, 0) || 0;
     const cumulativeOutbound = shippedByFarmer.get(farmer.id) || 0;
     const exportRow: ExportValue[] = [
       farmer.code,
       farmer.name,
       farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹",
-      farmer.enclosures.map((item) => item.code).join(", ") || "—",
+      farmer.enclosures?.map((item: any) => item.code).join(", ") || "—",
       farmer.area,
       farmer.quota,
       cumulativeInPool,
@@ -660,8 +823,8 @@ export default async function LedgersPage({
     return { exportRow, displayRow };
   });
 
-  const rawMaterialRows = batches.flatMap((batch) => {
-    const items = batch.items.length
+  const rawMaterialRows = (validTab === "ledger2" ? batches : []).flatMap((batch: any) => {
+    const items = batch.items?.length
       ? batch.items
       : [{
           id: `${batch.id}-fallback`,
@@ -673,7 +836,7 @@ export default async function LedgersPage({
           lossCount: batch.lossCount,
           pool: batch.pool,
         }];
-    return items.map((item) => {
+    return items.map((item: any) => {
       const itemTier = Invariants.normalizeWeightTier(item.weightTier);
       let downstreamShipped = 0;
       let downstreamProcessLoss = 0;
@@ -737,7 +900,7 @@ export default async function LedgersPage({
     });
   });
 
-  const tagClaimRows = rawTagClaims.map((claim) => {
+  const tagClaimRows = (validTab === "ledger3" ? rawTagClaims : []).map((claim: any) => {
     const isRejected = claim.status === "REJECTED";
     const fStat = farmerStatMap.get(claim.farmerId) || {
       cumulativeBound: 0,
@@ -773,7 +936,7 @@ export default async function LedgersPage({
     return { exportRow, displayRow: exportRow as ReactNode[] };
   });
 
-  const holdingPoolRows = batches.flatMap((batch) => {
+  const holdingPoolRows = (validTab === "ledger4" ? batches : []).flatMap((batch: any) => {
     const groups = new Map<string, { poolName: string; poolCode: string; inCount: number; outCount: number; lossCount: number }>();
     const items = batch.items.length
       ? batch.items
@@ -799,7 +962,7 @@ export default async function LedgersPage({
         group.poolCode,
         batch.code,
         batch.farmer.name,
-        batch.farmer.enclosures?.map((e) => e.code).join(", ") || batch.enclosure?.code || "—",
+        batch.farmer?.enclosures?.map((e: any) => e.code).join(", ") || batch.enclosure?.code || "—",
         group.inCount,
         group.outCount,
         Math.max(0, group.inCount - group.outCount - group.lossCount),
@@ -810,8 +973,8 @@ export default async function LedgersPage({
     });
   });
 
-  const bundlingRows = bundleBatches.flatMap((batch) => {
-    const lines = batch.lines.length
+  const bundlingRows = (validTab === "ledger5" ? bundleBatches : []).flatMap((batch: any) => {
+    const lines = batch.lines?.length
       ? batch.lines
       : [{
           id: `${batch.id}-fallback`,
@@ -822,7 +985,7 @@ export default async function LedgersPage({
           qualifiedCount: batch.qualifiedCount,
           lossCount: batch.lossCount,
         }];
-    return lines.map((line) => {
+    return lines.map((line: any) => {
       const qualified = batch.status === "COMPLETED" ? line.qualifiedCount ?? Math.max(0, line.count - (line.lossCount ?? 0)) : 0;
       const loss = batch.status === "COMPLETED" ? line.lossCount ?? Math.max(0, line.count - qualified) : 0;
       const exportRow: ExportValue[] = [
@@ -849,7 +1012,7 @@ export default async function LedgersPage({
     });
   });
 
-  const sortingRows = sortTasks.map((task) => {
+  const sortingRows = (validTab === "ledger6" ? sortTasks : []).map((task: any) => {
     const exportRow: ExportValue[] = [
       formatDate(task.date),
       formatTime(task.doneAt || task.createdAt),
@@ -869,21 +1032,21 @@ export default async function LedgersPage({
     return { exportRow, displayRow: exportRow as ReactNode[] };
   });
 
-  const coldRows = coldLogs.map((log) => {
-    const shipped = log.outboundLines.reduce((sum, line) => sum + line.count, 0);
-    const packagingLoss = log.outboundLosses.reduce((sum, item) => sum + (item.lossType === "PACKAGING" ? item.count : 0), 0);
-    const clearanceLoss = log.outboundLosses.reduce((sum, item) => sum + (item.lossType === "PACKAGING" ? 0 : item.count), 0);
+  const coldRows = (validTab === "ledger7" ? coldLogs : []).map((log: any) => {
+    const shipped = log.outboundLines?.reduce((sum: number, line: any) => sum + line.count, 0) || 0;
+    const packagingLoss = log.outboundLosses?.reduce((sum: number, item: any) => sum + (item.lossType === "PACKAGING" ? item.count : 0), 0) || 0;
+    const clearanceLoss = log.outboundLosses?.reduce((sum: number, item: any) => sum + (item.lossType === "PACKAGING" ? 0 : item.count), 0) || 0;
     const loss = packagingLoss + clearanceLoss;
     const exportRow: ExportValue[] = [
       formatDate(log.createdAt),
       formatTime(log.createdAt),
       log.code,
-      log.store.name || "—",
-      log.store.code,
-      log.sortTask.bundleBatch.sourceBatch.code,
-      log.sortTask.bundleBatch.code,
-      log.sortTask.code,
-      specText(log.sortTask.gender, log.sortTask.weightTier),
+      log.store?.name || "—",
+      log.store?.code || "—",
+      log.sortTask?.bundleBatch?.sourceBatch?.code || "—",
+      log.sortTask?.bundleBatch?.code || "—",
+      log.sortTask?.code || "—",
+      specText(log.sortTask?.gender, log.sortTask?.weightTier),
       log.count,
       shipped,
       packagingLoss,
@@ -894,7 +1057,7 @@ export default async function LedgersPage({
     return { exportRow, displayRow: exportRow as ReactNode[] };
   });
 
-  const outboundHeaderRows = outboundOrders.map((order) => {
+  const outboundHeaderRows = (validTab === "ledger8" ? outboundOrders : []).map((order: any) => {
     // 优先使用填写的业务出库时间；仅缺失时以历史审核时间或申请时间兜底。
     const actualOutTime = order.outboundTime || order.approvedAt || order.createdAt;
     const exportRow: ExportValue[] = [
@@ -913,13 +1076,13 @@ export default async function LedgersPage({
     return { exportRow, displayRow: exportRow as ReactNode[] };
   });
 
-  const outboundMatrixRows = outboundOrders.map((order) => {
+  const outboundMatrixRows = (validTab === "ledger8" ? outboundOrders : []).map((order: any) => {
     const counts = new Map<string, number>();
-    for (const line of order.lines) {
+    for (const line of order.lines || []) {
       const key = `${line.gender}_${normalizeWeightTier(line.weightTier)}`;
       counts.set(key, (counts.get(key) || 0) + line.count);
     }
-    const destination = order.type === "CRAB_CARD" ? "蟹卡宅配" : `${order.channel.name} / ${order.store.name}`;
+    const destination = order.type === "CRAB_CARD" ? "蟹卡宅配" : `${order.channel?.name} / ${order.store?.name}`;
     return [
       order.code,
       destination,
@@ -928,35 +1091,35 @@ export default async function LedgersPage({
     ] as ExportValue[];
   });
 
-  const outboundDetailRows = outboundOrders.flatMap((order) => {
+  const outboundDetailRows = (validTab === "ledger9" ? outboundOrders : []).flatMap((order: any) => {
     const actualOutTime = order.outboundTime || order.approvedAt || order.createdAt;
-    return order.lines.map((line) => {
-      const bundle = line.coldLog.sortTask.bundleBatch;
-      const sourceBatch = bundle.sourceBatch;
-      const sourcePools = bundle.lines
-        .filter((item) => item.gender === line.gender && normalizeWeightTier(item.weightTier) === normalizeWeightTier(line.weightTier))
-        .map((item) => item.pool.code);
+    return (order.lines || []).map((line: any) => {
+      const bundle = line.coldLog?.sortTask?.bundleBatch;
+      const sourceBatch = bundle?.sourceBatch;
+      const sourcePools = (bundle?.lines || [])
+        .filter((item: any) => item.gender === line.gender && normalizeWeightTier(item.weightTier) === normalizeWeightTier(line.weightTier))
+        .map((item: any) => item.pool?.code);
       const exportRow: ExportValue[] = [
         formatDate(order.createdAt),
         formatTime(order.createdAt),
         actualOutTime ? formatDateTime(actualOutTime) : "—",
         order.code,
-        sourceBatch.code,
-        bundle.code,
-        line.coldLog.sortTask.code,
-        line.coldLog.code,
+        sourceBatch?.code || "—",
+        bundle?.code || "—",
+        line.coldLog?.sortTask?.code || "—",
+        line.coldLog?.code || "—",
         specText(line.gender, line.weightTier),
         genderText(line.gender),
         line.count,
-        Array.from(new Set(sourcePools)).join(", ") || sourceBatch.pool.code || "—",
-        sourceBatch.farmer.name,
-        sourceBatch.farmer.enclosures?.map((e) => e.code).join(", ") || sourceBatch.enclosure?.code || "—",
+        Array.from(new Set(sourcePools)).filter(Boolean).join(", ") || sourceBatch?.pool?.code || "—",
+        sourceBatch?.farmer?.name || "—",
+        sourceBatch?.farmer?.enclosures?.map((e: any) => e.code).join(", ") || sourceBatch?.enclosure?.code || "—",
       ];
       return { exportRow, displayRow: exportRow as ReactNode[] };
     });
   });
 
-  const qcRows = qcRecords.map((record) => {
+  const qcRows = (validTab === "ledger10" ? qcRecords : []).map((record: any) => {
     const result =
       record.result === "QUALIFIED" || record.conclusion === "合格"
         ? "合格"
@@ -989,12 +1152,12 @@ export default async function LedgersPage({
     return { exportRow, displayRow };
   });
 
-  const storeOrderRows = orders
-    .filter((order) => order.type === "STORE_ORDER")
-    .flatMap((order) => {
-      const lines = order.outboundLines.length ? order.outboundLines : [null];
-      return lines.map((line) => {
-        const task = line?.coldLog.sortTask;
+  const storeOrderRows = (validTab === "ledger11" ? orders : [])
+    .filter((order: any) => order.type === "STORE_ORDER")
+    .flatMap((order: any) => {
+      const lines = order.outboundLines?.length ? order.outboundLines : [null];
+      return lines.map((line: any) => {
+        const task = line?.coldLog?.sortTask;
         const bundle = task?.bundleBatch;
         const exportRow: ExportValue[] = [
           formatDate(order.deliveryDate),
@@ -1002,27 +1165,27 @@ export default async function LedgersPage({
           formatDate(order.importTime),
           formatTime(order.importTime),
           order.orderNo,
-          order.storeName || line?.outboundOrder.store.name || "—",
+          order.storeName || line?.outboundOrder?.store?.name || "—",
           specText(order.gender, order.weightTier),
           genderText(order.gender),
           line?.count ?? order.count,
           orderStatusText(order.status),
-          line?.outboundOrder.code || "—",
-          bundle?.sourceBatch.code || "—",
+          line?.outboundOrder?.code || "—",
+          bundle?.sourceBatch?.code || "—",
           bundle?.code || "—",
           task?.code || "—",
-          line?.coldLog.code || "—",
-          line?.waybillNo || line?.outboundOrder.logisticsNo || "—",
+          line?.coldLog?.code || "—",
+          line?.waybillNo || line?.outboundOrder?.logisticsNo || "—",
         ];
         return { exportRow, displayRow: exportRow as ReactNode[] };
       });
     });
 
-  const crabCardRows = orders
-    .filter((order) => order.type === "CRAB_CARD")
-    .flatMap((order) => {
-      const lines = order.outboundLines.length ? order.outboundLines : [null];
-      return lines.map((line) => {
+  const crabCardRows = (validTab === "ledger12" ? orders : [])
+    .filter((order: any) => order.type === "CRAB_CARD")
+    .flatMap((order: any) => {
+      const lines = order.outboundLines?.length ? order.outboundLines : [null];
+      return lines.map((line: any) => {
         const exportRow: ExportValue[] = [
           formatDate(order.deliveryDate),
           order.code,
@@ -1034,10 +1197,10 @@ export default async function LedgersPage({
           genderText(order.gender),
           line?.count ?? order.count,
           orderStatusText(order.status),
-          line?.outboundOrder.code || "—",
-          line?.expressCompany || line?.outboundOrder.transportCompany || "—",
+          line?.outboundOrder?.code || "—",
+          line?.expressCompany || line?.outboundOrder?.transportCompany || "—",
           line?.waybillNo || "—",
-          line?.waybillNo ? "—" : line?.outboundOrder.logisticsNo || "—",
+          line?.waybillNo ? "—" : line?.outboundOrder?.logisticsNo || "—",
         ];
         return { exportRow, displayRow: exportRow as ReactNode[] };
       });
@@ -1059,22 +1222,21 @@ export default async function LedgersPage({
   };
 
   const ledgers = [
-    { key: "ledger1", no: 1, label: "01 养殖户主档", title: "01 养殖户主档", sheet: "01 养殖户主档", headers: headers.l1, rows: farmerRows, empty: "暂无养殖户主档数据" },
-    { key: "ledger2", no: 2, label: "02 原料批次", title: "02 原料批次台账", sheet: "02 原料批次台账", headers: headers.l2, rows: rawMaterialRows, empty: "暂无原料批次数据" },
-    { key: "ledger3", no: 3, label: "03 蟹扣领用", title: "03 蟹扣领用台账", sheet: "03 蟹扣领用台账", headers: headers.l3, rows: tagClaimRows, empty: "暂无蟹扣领用数据" },
-    { key: "ledger4", no: 4, label: "04 暂养池流水", title: "04 暂养池流水", sheet: "04 暂养池流水", headers: headers.l4, rows: holdingPoolRows, empty: "暂无暂养池流水" },
-    { key: "ledger5", no: 5, label: "05 捆扎作业", title: "05 捆扎作业台账", sheet: "05 捆扎作业台账", headers: headers.l5, rows: bundlingRows, empty: "暂无捆扎作业数据" },
-    { key: "ledger6", no: 6, label: "06 分拣作业", title: "06 分拣作业台账", sheet: "06 分拣作业台账", headers: headers.l6, rows: sortingRows, empty: "暂无分拣作业数据" },
-    { key: "ledger7", no: 7, label: "07 保鲜预冷", title: "07 保鲜预冷台账", sheet: "07 保鲜预冷台账", headers: headers.l7, rows: coldRows, empty: "暂无保鲜预冷数据" },
-    { key: "ledger8", no: 8, label: "08 出库单", title: "08 出库单", sheet: "08 出库单", headers: headers.l8, rows: outboundHeaderRows, empty: "暂无出库单数据" },
-    { key: "ledger9", no: 9, label: "09 出库明细", title: "09 出库明细", sheet: "09 出库明细", headers: headers.l9, rows: outboundDetailRows, empty: "暂无出库明细" },
-    { key: "ledger10", no: 10, label: "10 品控记录", title: "10 品控记录表", sheet: "10 品控记录表", headers: headers.l10, rows: qcRows, empty: "暂无品控记录" },
-    { key: "ledger11", no: 11, label: "11 门店订单", title: "11 门店订单台账", sheet: "11 门店订单台账", headers: headers.l11, rows: storeOrderRows, empty: "暂无门店订单数据" },
-    { key: "ledger12", no: 12, label: "12 提蟹订单", title: "12 提蟹订单台账", sheet: "12 提蟹订单台账", headers: headers.l12, rows: crabCardRows, empty: "暂无提蟹订单数据" },
+    { key: "ledger1", no: 1, label: "01 养殖户主档", title: "01 养殖户主档", sheet: "01 养殖户主档", headers: headers.l1, rows: farmerRows, count: validTab === "ledger1" ? farmerRows.length : countFarmers, empty: "暂无养殖户主档数据" },
+    { key: "ledger2", no: 2, label: "02 原料批次", title: "02 原料批次台账", sheet: "02 原料批次台账", headers: headers.l2, rows: rawMaterialRows, count: validTab === "ledger2" ? rawMaterialRows.length : (countBatchItems > 0 ? countBatchItems : countBatches), empty: "暂无原料批次数据" },
+    { key: "ledger3", no: 3, label: "03 蟹扣领用", title: "03 蟹扣领用台账", sheet: "03 蟹扣领用台账", headers: headers.l3, rows: tagClaimRows, count: validTab === "ledger3" ? tagClaimRows.length : countTagClaims, empty: "暂无蟹扣领用数据" },
+    { key: "ledger4", no: 4, label: "04 暂养池流水", title: "04 暂养池流水", sheet: "04 暂养池流水", headers: headers.l4, rows: holdingPoolRows, count: validTab === "ledger4" ? holdingPoolRows.length : countBatches, empty: "暂无暂养池流水" },
+    { key: "ledger5", no: 5, label: "05 捆扎作业", title: "05 捆扎作业台账", sheet: "05 捆扎作业台账", headers: headers.l5, rows: bundlingRows, count: validTab === "ledger5" ? bundlingRows.length : (countBundleLines > 0 ? countBundleLines : countBundleBatches), empty: "暂无捆扎作业数据" },
+    { key: "ledger6", no: 6, label: "06 分拣作业", title: "06 分拣作业台账", sheet: "06 分拣作业台账", headers: headers.l6, rows: sortingRows, count: validTab === "ledger6" ? sortingRows.length : countSortTasks, empty: "暂无分拣作业数据" },
+    { key: "ledger7", no: 7, label: "07 保鲜预冷", title: "07 保鲜预冷台账", sheet: "07 保鲜预冷台账", headers: headers.l7, rows: coldRows, count: validTab === "ledger7" ? coldRows.length : countColdLogs, empty: "暂无保鲜预冷数据" },
+    { key: "ledger8", no: 8, label: "08 出库单", title: "08 出库单", sheet: "08 出库单", headers: headers.l8, rows: outboundHeaderRows, count: validTab === "ledger8" ? outboundHeaderRows.length : countOutboundOrders, empty: "暂无出库单数据" },
+    { key: "ledger9", no: 9, label: "09 出库明细", title: "09 出库明细", sheet: "09 出库明细", headers: headers.l9, rows: outboundDetailRows, count: validTab === "ledger9" ? outboundDetailRows.length : countOutboundLines, empty: "暂无出库明细" },
+    { key: "ledger10", no: 10, label: "10 品控记录", title: "10 品控记录表", sheet: "10 品控记录表", headers: headers.l10, rows: qcRows, count: validTab === "ledger10" ? qcRows.length : countQcRecords, empty: "暂无品控记录" },
+    { key: "ledger11", no: 11, label: "11 门店订单", title: "11 门店订单台账", sheet: "11 门店订单台账", headers: headers.l11, rows: storeOrderRows, count: validTab === "ledger11" ? storeOrderRows.length : countStoreOrders, empty: "暂无门店订单数据" },
+    { key: "ledger12", no: 12, label: "12 提蟹订单", title: "12 提蟹订单台账", sheet: "12 提蟹订单台账", headers: headers.l12, rows: crabCardRows, count: validTab === "ledger12" ? crabCardRows.length : countCrabCardOrders, empty: "暂无提蟹订单数据" },
   ];
 
-  const validTab = params.tab && ledgers.some((l) => l.key === params.tab) ? params.tab : "ledger1";
-  const totalLedgerRecords = ledgers.reduce((acc, l) => acc + l.rows.length, 0);
+  const totalLedgerRecords = ledgers.reduce((acc, l) => acc + l.count, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -1097,7 +1259,7 @@ export default async function LedgersPage({
             key: l.key,
             no: l.no,
             label: l.label,
-            count: l.rows.length,
+            count: l.count,
           }))}
         />
 
@@ -1126,7 +1288,7 @@ export default async function LedgersPage({
                 exportHeaders={ledger.headers}
                 exportRows={exportRows}
                 exportSections={exportSections}
-                total={ledger.rows.length}
+                total={ledger.count}
                 page={page}
                 pageSize={pageSize}
                 pageParam={`l${ledger.no}Page`}

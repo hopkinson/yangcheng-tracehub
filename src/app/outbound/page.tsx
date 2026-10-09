@@ -58,8 +58,10 @@ export default async function OutboundPage({
   const pageSize = Math.max(1, Number(params.pageSize) || 10);
   const activeTab = params.tab === "loss" ? "loss" : params.tab === "qc" ? "qc" : "delivery";
 
+  const currentUser = await getCurrentUser();
+  const currentUserId = currentUser?.id || "";
+
   const [
-    currentUser,
     totalOrders,
     orders,
     totalLossOrders,
@@ -74,39 +76,54 @@ export default async function OutboundPage({
     totalQCRecords,
     qcRecords,
     coldLogs,
+    lastStoreOutbound,
   ] = await Promise.all([
-    getCurrentUser(),
     prisma.outboundOrder.count(),
-    prisma.outboundOrder.findMany({
-      skip: activeTab === "delivery" ? (page - 1) * pageSize : 0,
-      take: activeTab === "delivery" ? pageSize : 10,
-      include: {
-        coldLog: { include: { store: true } },
-        batch: { include: { farmer: true, pool: true } },
-        store: { include: { channel: true } },
-        channel: true,
-        lines: true,
-        applicant: true,
-        approver: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.outboundLossOrder.count(),
-    prisma.outboundLossOrder.findMany({
-      skip: activeTab === "loss" ? (page - 1) * pageSize : 0,
-      take: activeTab === "loss" ? pageSize : 10,
-      include: {
-        applicant: true,
-        approver: true,
-        items: true,
-        records: {
+    activeTab === "delivery"
+      ? prisma.outboundOrder.findMany({
+          skip: (page - 1) * pageSize,
+          take: pageSize,
           include: {
             coldLog: { include: { store: true } },
+            batch: { include: { farmer: true, pool: true } },
+            store: { include: { channel: true } },
+            channel: true,
+            lines: true,
+            applicant: true,
+            approver: true,
           },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
+          orderBy: { createdAt: "desc" },
+        })
+      : activeTab === "qc"
+      ? prisma.outboundOrder.findMany({
+          take: 20,
+          select: {
+            id: true,
+            code: true,
+            type: true,
+            store: { select: { name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
+    prisma.outboundLossOrder.count(),
+    activeTab === "loss"
+      ? prisma.outboundLossOrder.findMany({
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            applicant: true,
+            approver: true,
+            items: true,
+            records: {
+              include: {
+                coldLog: { include: { store: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
     prisma.outboundLossOrder.count({
       where: { status: "PENDING" },
     }),
@@ -152,14 +169,16 @@ export default async function OutboundPage({
         cat: { in: ["PACK_INSPECT", "VEHICLE_INSPECT", "SHIP_LOG"] },
       },
     }),
-    prisma.qCRecord.findMany({
-      where: {
-        cat: { in: ["PACK_INSPECT", "VEHICLE_INSPECT", "SHIP_LOG"] },
-      },
-      skip: activeTab === "qc" ? (page - 1) * pageSize : 0,
-      take: activeTab === "qc" ? pageSize : 10,
-      orderBy: { checkTime: "desc" },
-    }),
+    activeTab === "qc"
+      ? prisma.qCRecord.findMany({
+          where: {
+            cat: { in: ["PACK_INSPECT", "VEHICLE_INSPECT", "SHIP_LOG"] },
+          },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          orderBy: { checkTime: "desc" },
+        })
+      : [],
     prisma.coldLog.findMany({
       where: { type: "INTAKE" },
       include: {
@@ -167,19 +186,18 @@ export default async function OutboundPage({
       },
       orderBy: { createdAt: "desc" },
     }),
+    currentUserId
+      ? prisma.outboundOrder.findFirst({
+          where: { applicantId: currentUserId, type: "STORE_ORDER" },
+          orderBy: { createdAt: "desc" },
+          select: { transportCompany: true, contactName: true, contactPhone: true },
+        })
+      : null,
   ]);
 
-  const currentUserId = currentUser?.id || "";
   const isWarehouseOrAdmin = currentUser?.role === "WAREHOUSE_ADMIN" || currentUser?.role === "ADMIN";
   const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role || "");
   const canApproveOutbound = canApprove(currentUser?.role, approvalSetting.outboundRole);
-  const lastStoreOutbound = currentUserId
-    ? await prisma.outboundOrder.findFirst({
-        where: { applicantId: currentUserId, type: "STORE_ORDER" },
-        orderBy: { createdAt: "desc" },
-        select: { transportCompany: true, contactName: true, contactPhone: true },
-      })
-    : null;
 
   const outboundRefOptions = orders.map((o) => ({
     label: `${o.code} (${o.type === "STORE_ORDER" ? "门店订单" : "提蟹订单"}${o.store?.name ? ` - ${o.store.name}` : ""})`,
