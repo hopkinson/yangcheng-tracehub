@@ -515,6 +515,7 @@ export async function createStoreOutboundAction(data: {
           entityId: created.id,
           details: JSON.stringify({
             orderCode,
+            outboundTime: created.outboundTime.toISOString(),
             storeName: store.name,
             totalCrabCount,
             ordersCount: orders.length,
@@ -607,6 +608,7 @@ export async function createCardUnifiedOutboundAction(data: {
           entityId: created.id,
           details: JSON.stringify({
             orderCode,
+            outboundTime: created.outboundTime.toISOString(),
             totalCrabCount,
             ordersCount: orders.length,
             allocationMode: "FIFO_BY_SOURCE_BATCH",
@@ -751,7 +753,7 @@ export async function createOutboundOrderAction(data: {
   applicantId: string;
   outboundTime?: string | Date;
 }) {
-  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const operator = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   const channelOrderCount = data.channelOrderCount ?? data.outboundCount;
   return await prisma.$transaction(async (tx) => {
     const batch = await tx.batch.findUniqueOrThrow({
@@ -795,6 +797,16 @@ export async function createOutboundOrderAction(data: {
       },
     });
 
+    await tx.auditLog.create({
+      data: {
+        operatorId: operator.id,
+        action: "OUTBOUND_REQUEST",
+        entityType: "OUTBOUND_ORDER",
+        entityId: order.id,
+        details: JSON.stringify({ orderCode, outboundTime: order.outboundTime.toISOString() }),
+      },
+    });
+
     try {
       revalidatePath("/outbound");
       revalidatePath("/approvals");
@@ -810,7 +822,7 @@ export async function resubmitOutboundOrderAction(data: {
   applicantId: string;
   outboundTime?: string | Date;
 }) {
-  await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const operator = await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
     const order = await tx.outboundOrder.findUniqueOrThrow({
       where: { id: data.orderId },
@@ -845,6 +857,20 @@ export async function resubmitOutboundOrderAction(data: {
         status: "PENDING",
         rejectReason: null,
         ...(data.outboundTime ? { outboundTime: parseBeijingDateTime(data.outboundTime) } : {}),
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: operator.id,
+        action: "RESUBMIT_OUTBOUND",
+        entityType: "OUTBOUND_ORDER",
+        entityId: order.id,
+        details: JSON.stringify({
+          orderCode: order.code,
+          previousOutboundTime: order.outboundTime.toISOString(),
+          outboundTime: updated.outboundTime.toISOString(),
+        }),
       },
     });
 

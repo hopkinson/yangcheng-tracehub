@@ -205,9 +205,15 @@ async function main() {
       contactName: "FIFO测试联系人",
       contactPhone: "13800000000",
       applicantId: admin.id,
+      outboundTime: "2026-10-01T00:00:00+08:00",
     });
     if (!outbound.success) throw new Error(outbound.message);
     outboundId = outbound.id;
+
+    const requestAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityId: outbound.id, action: "STORE_OUTBOUND_REQUEST" },
+    });
+    assert.equal(JSON.parse(requestAudit.details!).outboundTime, "2026-09-30T16:00:00.000Z", "申请审计必须保存凌晨预约时间原值");
 
     const lines = await prisma.outboundLine.findMany({
       where: { outboundOrderId: outbound.id },
@@ -263,6 +269,14 @@ async function main() {
       applicantId: admin.id,
     });
     assert.equal(resubmitted.status, "PENDING", "保持原门店和原数量时应允许重新提报");
+    const resubmitAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityId: outbound.id, action: "RESUBMIT_OUTBOUND" },
+    });
+    assert.deepEqual(JSON.parse(resubmitAudit.details!), {
+      orderCode: outbound.code,
+      previousOutboundTime: "2026-09-30T16:00:00.000Z",
+      outboundTime: "2026-09-30T16:00:00.000Z",
+    }, "未改预约时间的重新提报也应保留前后值");
 
     console.log("✓ 出库按原料入池时间 FIFO 自动拆行并保持全链路绑定");
   } finally {
