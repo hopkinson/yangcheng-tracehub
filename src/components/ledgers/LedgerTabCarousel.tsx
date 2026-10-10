@@ -11,7 +11,7 @@ export interface LedgerTabItem {
   key: string;
   no: number;
   label: string;
-  count: number;
+  count: number | null;
 }
 
 interface LedgerTabCarouselProps {
@@ -133,12 +133,12 @@ export function LedgerTabCarousel({
                   <span
                     className={cn(
                       "shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums transition-colors",
-                      ledger.count > 0
+                      ledger.count !== null && ledger.count > 0
                         ? "bg-primary/10 font-semibold text-primary group-data-[state=active]:bg-primary/15 group-data-[state=active]:text-primary"
                         : "text-muted-foreground/40"
                     )}
                   >
-                    {ledger.count}
+                    {ledger.count ?? "…"}
                   </span>
                 </TabsTrigger>
               );

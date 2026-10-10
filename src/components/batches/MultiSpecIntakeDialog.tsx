@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { batchIntakeTimeSchema } from "@/lib/validations/schemas";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -19,7 +23,7 @@ import { Layers, Plus, Trash2, Loader2, Camera, Upload, X, ExternalLink } from "
 import { createMultiSpecBatchAction } from "@/actions/batches";
 import { uploadFileAction } from "@/actions/upload";
 import { Invariants } from "@/lib/invariants";
-import { cn, getFileDropHandlers, getPreviewFileUrl } from "@/lib/utils";
+import { cn, formatDateTime, getFileDropHandlers, getPreviewFileUrl } from "@/lib/utils";
 
 const WEIGHT_TIERS: readonly string[] = ["2.5两", "3.0两", "3.5两", "4.0两", "4.5两", "5.0两", "5.5两", "6.0两"];
 
@@ -55,6 +59,10 @@ export function MultiSpecIntakeDialog({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const timeForm = useForm<{ inPoolTime: string }>({
+    resolver: zodResolver(batchIntakeTimeSchema),
+    defaultValues: { inPoolTime: "" },
+  });
 
   const [selectedFarmerId, setSelectedFarmerId] = useState(farmers[0]?.id || "");
   const selectedFarmer = farmers.find((f) => f.id === selectedFarmerId);
@@ -163,8 +171,7 @@ export function MultiSpecIntakeDialog({
     e.target.value = "";
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = ({ inPoolTime }: { inPoolTime: string }) => {
     if (!selectedFarmerId || items.length === 0) {
       toast.error("请选择养殖户并添加至少一行有效明细");
       return;
@@ -192,6 +199,7 @@ export function MultiSpecIntakeDialog({
 
     startTransition(async () => {
       const res = await createMultiSpecBatchAction({
+        inPoolTime,
         farmerId: selectedFarmerId,
         enclosureId: selectedEnclosureId,
         formNo,
@@ -222,7 +230,10 @@ export function MultiSpecIntakeDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (nextOpen) timeForm.reset({ inPoolTime: formatDateTime(new Date()).replace(" ", "T") });
+      setOpen(nextOpen);
+    }}>
       <DialogTrigger asChild>
         <Button className="h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-xs">
           <Plus className="size-4" />
@@ -240,9 +251,19 @@ export function MultiSpecIntakeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 overflow-y-auto px-1 py-1">
+        <Form {...timeForm}>
+        <form onSubmit={timeForm.handleSubmit(handleSubmit)} className="flex flex-col gap-3.5 flex-1 overflow-y-auto px-1 py-1">
           {/* 码单主信息 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-lg border bg-muted/20">
+            <FormField control={timeForm.control} name="inPoolTime" render={({ field }) => (
+              <FormItem className="flex flex-col gap-1">
+                <FormLabel className="text-xs">入池时间（北京时间）</FormLabel>
+                <FormControl>
+                  <Input type="datetime-local" step={60} className="h-8 text-xs" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
             <div className="space-y-1">
               <Label className="text-xs">供货养殖户</Label>
               <Select value={selectedFarmerId} onValueChange={setSelectedFarmerId}>
@@ -542,6 +563,7 @@ export function MultiSpecIntakeDialog({
             </Button>
           </div>
         </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

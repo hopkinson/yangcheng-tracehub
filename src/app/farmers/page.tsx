@@ -69,7 +69,7 @@ export default async function FarmersPage({
       cumulativeClaimed += t.claimCount;
       cumulativeBound += t.boundCount || 0;
     }
-    const remainingQuota = Math.max(0, f.quota - cumulativeBound);
+    const remainingQuota = Math.max(0, f.quota - cumulativeInPool);
     return {
       ...f,
       cumulativeInPool,
@@ -150,7 +150,7 @@ export default async function FarmersPage({
                     <TableHead className="w-[140px]">养殖水域与总额度</TableHead>
                     <TableHead className="w-[130px]">蟹扣入仓数</TableHead>
                     <TableHead className="w-[130px]">蟹扣申领数</TableHead>
-                    <TableHead className="min-w-[180px]">年度蟹扣余额</TableHead>
+                    <TableHead className="min-w-[180px]">年度额度结余</TableHead>
                     <TableHead className="w-[100px]">合作状态</TableHead>
                     <TableHead className="text-right w-[110px]">操作</TableHead>
                   </TableRow>
@@ -255,7 +255,7 @@ export default async function FarmersPage({
                           </div>
                         </TableCell>
 
-                        {/* 5. 年度蟹扣余额 */}
+                        {/* 5. 年度额度结余 */}
                         <TableCell>
                           <div className="flex flex-col gap-1.5 min-w-[160px]">
                             <div className="flex items-baseline justify-between gap-2">

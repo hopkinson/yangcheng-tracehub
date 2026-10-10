@@ -9,7 +9,8 @@ import { requireRole } from "@/lib/auth";
 import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 import { assertDailyCloseOpen } from "@/actions/daily-close";
 
-import { getBeijingDateStr } from "@/lib/utils";
+import { getBeijingDateStr, parseBeijingDateTime } from "@/lib/utils";
+import { bundleCompletionTimeSchema, sortCompletionTimeSchema } from "@/lib/validations/schemas";
 
 function revalidate(path: string) {
   try {
@@ -462,10 +463,16 @@ export async function createBundleBatchAction(data: {
 export async function completeBundleBatchAction(
   bundleId: string,
   lineResults: Array<{ lineId: string; qualifiedCount: number }>,
-  lossReason?: string
+  lossReason?: string,
+  doneAt?: string
 ) {
   try {
     await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+    if (doneAt !== undefined) {
+      const parsed = bundleCompletionTimeSchema.safeParse({ doneAt });
+      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    }
+    const completionTime = doneAt === undefined ? new Date() : parseBeijingDateTime(doneAt);
     const batch = await prisma.bundleBatch.findUnique({
       where: { id: bundleId },
       include: { lines: true },
@@ -517,7 +524,7 @@ export async function completeBundleBatchAction(
           lossRate: lossRes.lossRate,
           lossReason: lossReason?.trim() || null,
           status: "COMPLETED",
-          doneAt: new Date(),
+          doneAt: completionTime,
         },
       });
       if (completeResult.count !== 1) {
@@ -574,10 +581,11 @@ export async function completeBundleBatchAction(
     revalidate("/bundling");
     revalidate("/sorting");
     revalidate("/tags");
+    revalidate("/ledgers");
     revalidate("/");
     return {
       success: true,
-      message: `捆扎批次 ${batch.code} 已完成！合格 ${totalQualified} 只，损耗 ${lossRes.lossCount} 只（${lossRes.lossRate}%）`,
+      message: `捆扎批次 ${batch.code} 已完成！合格 ${totalQualified} 只，捆扎加工损耗 ${lossRes.lossCount} 只（${lossRes.lossRate}%）`,
     };
   } catch (error: any) {
     console.error("completeBundleBatchAction error:", error);
@@ -973,8 +981,13 @@ export async function createSortTasksAction(data: {
   }
 }
 
-export async function completeSortTaskAction(taskId: string, qualifiedCount: number) {
+export async function completeSortTaskAction(taskId: string, qualifiedCount: number, doneAt?: string) {
   try {
+    if (doneAt !== undefined) {
+      const parsed = sortCompletionTimeSchema.safeParse({ doneAt });
+      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    }
+    const completionTime = doneAt === undefined ? new Date() : parseBeijingDateTime(doneAt);
     const task = await prisma.sortTask.findUnique({ where: { id: taskId } });
     if (!task) return { success: false, message: "分拣任务未找到" };
 
@@ -994,18 +1007,19 @@ export async function completeSortTaskAction(taskId: string, qualifiedCount: num
         lossCount: lossRes.lossCount,
         lossRate: lossRes.lossRate,
         status: "COMPLETED",
-        doneAt: new Date(),
+        doneAt: completionTime,
       },
     });
 
     revalidate("/sorting");
+    revalidate("/ledgers");
     revalidate("/cold-storage");
     revalidate("/outbound");
     revalidate("/");
     return {
       success: true,
       isException: lossRes.isException,
-      message: `分拣任务已完成！合格入库 ${qualifiedCount} 只，损耗 ${lossRes.lossCount} 只（${lossRes.lossRate}%）`,
+      message: `分拣任务已完成！合格入库 ${qualifiedCount} 只，机器分拣损耗 ${lossRes.lossCount} 只（${lossRes.lossRate}%）`,
     };
   } catch (error: any) {
     console.error("completeSortTaskAction error:", error);
@@ -1014,9 +1028,15 @@ export async function completeSortTaskAction(taskId: string, qualifiedCount: num
 }
 
 export async function batchCompleteSortTasksAction(
-  items: Array<{ taskId: string; qualifiedCount: number }>
+  items: Array<{ taskId: string; qualifiedCount: number }>,
+  doneAt?: string
 ) {
   try {
+    if (doneAt !== undefined) {
+      const parsed = sortCompletionTimeSchema.safeParse({ doneAt });
+      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    }
+    const completionTime = doneAt === undefined ? new Date() : parseBeijingDateTime(doneAt);
     if (!items || items.length === 0) {
       return { success: false, message: "请提供至少一个需要结算的分拣任务" };
     }
@@ -1068,7 +1088,6 @@ export async function batchCompleteSortTasksAction(
       totalLoss += lossRes.lossCount;
     }
 
-    const now = new Date();
     await prisma.$transaction(
       updates.map((u) =>
         prisma.sortTask.update({
@@ -1078,13 +1097,14 @@ export async function batchCompleteSortTasksAction(
             lossCount: u.lossCount,
             lossRate: u.lossRate,
             status: "COMPLETED",
-            doneAt: now,
+            doneAt: completionTime,
           },
         })
       )
     );
 
     revalidate("/sorting");
+    revalidate("/ledgers");
     revalidate("/cold-storage");
     revalidate("/outbound");
     revalidate("/");
@@ -1092,7 +1112,7 @@ export async function batchCompleteSortTasksAction(
     const overallLossRate = totalInput > 0 ? Number(((totalLoss / totalInput) * 100).toFixed(2)) : 0;
     return {
       success: true,
-      message: `成功批量完成 ${items.length} 笔分拣任务！总合格 ${totalQualified} 只，总损耗 ${totalLoss} 只（综合损耗率 ${overallLossRate}%）`,
+      message: `成功批量完成 ${items.length} 笔分拣任务！总合格 ${totalQualified} 只，机器分拣损耗 ${totalLoss} 只（综合损耗率 ${overallLossRate}%）`,
     };
   } catch (error: any) {
     console.error("batchCompleteSortTasksAction error:", error);

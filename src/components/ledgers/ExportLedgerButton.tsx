@@ -1,48 +1,40 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
-import { getBeijingDateStr } from "@/lib/utils";
-import * as XLSX from "xlsx";
-import {
-  generateLedgerWorkbook,
-  type ExportValue,
-  type ExportSection,
-} from "@/lib/excel";
-
-export type { ExportValue, ExportSection };
-
 interface ExportLedgerButtonProps {
   filename: string;
-  sheetName: string;
-  headers?: string[];
-  rows?: ExportValue[][];
-  sections?: ExportSection[];
+  exportUrl: string;
   label?: string;
 }
 
 export function ExportLedgerButton({
   filename,
-  sheetName,
-  headers = [],
-  rows = [],
-  sections,
+  exportUrl,
   label = "导出 Excel",
 }: ExportLedgerButtonProps) {
-  function handleExport() {
-    const workbook = generateLedgerWorkbook({
-      sheetName,
-      headers,
-      rows,
-      sections,
-    });
-    XLSX.writeFile(workbook, `${filename}_${getBeijingDateStr()}.xlsx`);
+  const [pending, setPending] = useState(false);
+  async function handleExport() {
+    setPending(true);
+    try {
+      const response = await fetch(exportUrl);
+      if (!response.ok) throw new Error((await response.json()).error || "导出失败");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${filename}.xlsx`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "导出失败，请稍后重试"); }
+    finally { setPending(false); }
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={handleExport} className="flex items-center gap-1.5 text-xs">
+    <Button variant="outline" size="sm" onClick={handleExport} disabled={pending} className="flex items-center gap-1.5 text-xs">
       <Download className="size-3.5" data-icon="inline-start" />
-      {label}
+      {pending ? "导出中…" : label}
     </Button>
   );
 }

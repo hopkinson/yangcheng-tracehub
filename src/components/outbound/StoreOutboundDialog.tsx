@@ -71,7 +71,7 @@ export function StoreOutboundDialog({
   }, [stores, pendingOrders]);
 
   const [selectedStoreId, setSelectedStoreId] = useState(activeStores[0]?.id || stores[0]?.id || "");
-  const [transportCompany, setTransportCompany] = useState(defaults?.transportCompany || "苏州市冷链物流专车");
+  const [transportCompany, setTransportCompany] = useState(defaults?.transportCompany || "苏州陆路通航空货运有限公司");
   const [contactName, setContactName] = useState(defaults?.contactName || "");
   const [contactPhone, setContactPhone] = useState(defaults?.contactPhone || "");
   const [outboundTime, setOutboundTime] = useState<string>(
@@ -171,6 +171,9 @@ export function StoreOutboundDialog({
       onOpenChange={(v) => {
         setOpen(v);
         if (v) {
+          setTransportCompany(defaults?.transportCompany || "苏州陆路通航空货运有限公司");
+          setContactName(defaults?.contactName || "");
+          setContactPhone(defaults?.contactPhone || "");
           setOutboundTime((getBeijingTimeString(new Date()) || "").replace(" ", "T"));
           if (selectedOrderIds.length === 0 && currentStoreOrders.length > 0) {
             setSelectedOrderIds(currentStoreOrders.map((o) => o.id));

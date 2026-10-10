@@ -8,7 +8,7 @@ import { ResubmitTagClaimDialog } from "@/components/forms/ResubmitTagClaimDialo
 import { SettleTagClaimDialog } from "@/components/forms/SettleTagClaimDialog";
 import { UnbalancedClaimsBanner } from "@/components/tags/UnbalancedClaimsBanner";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
-import { formatDate } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 import { TAG_CLAIM_APPROVAL } from "@/config/approval";
 import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
 import { Tag } from "lucide-react";
@@ -107,19 +107,20 @@ export default async function TagsPage({
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[140px]">蟹扣批次</TableHead>
-                  <TableHead>领用日期</TableHead>
+                  <TableHead>申请时间</TableHead>
                   <TableHead>来源养殖户</TableHead>
                   <TableHead>申请领扣数</TableHead>
                   <TableHead>申请人</TableHead>
                   <TableHead>审批状态</TableHead>
                   <TableHead>审批人 / 意见</TableHead>
+                  <TableHead>审批时间</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {tagClaims.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-6 text-muted-foreground">
                       暂无蟹扣领用申请记录
                     </TableCell>
                   </TableRow>
@@ -133,7 +134,7 @@ export default async function TagsPage({
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {formatDate(claim.claimDate)}
+                        {formatDateTime(claim.claimDate)}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
@@ -184,6 +185,9 @@ export default async function TagsPage({
                         ) : (
                           "待审批"
                         )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs whitespace-nowrap">
+                        {claim.status === "PENDING" ? "—" : claim.approvedAt ? formatDateTime(claim.approvedAt) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         {claim.status === "APPROVED" && isWarehouseOrAdmin && (

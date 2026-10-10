@@ -567,7 +567,7 @@ export function FarmerDetailDialog({
                 { label: "年度总额度", val: farmer.quota, pct: 100, bar: "bg-primary", txt: "text-primary" },
                 { label: "蟹扣入仓数", sub: "入池螃蟹", val: farmer.cumulativeInPool, pct: inPoolPct, bar: "bg-blue-500 dark:bg-blue-400", txt: "text-blue-600 dark:text-blue-400" },
                 { label: "蟹扣申领数", sub: "向协会申领", val: farmer.cumulativeClaimed, pct: claimedPct, bar: "bg-amber-500 dark:bg-amber-400", txt: "text-amber-600 dark:text-amber-400" },
-                { label: "年度蟹扣余额", sub: "额度余量", val: farmer.remainingQuota, pct: Math.min(100, (farmer.remainingQuota / quota) * 100), bar: "bg-emerald-600 dark:bg-emerald-400", txt: "text-emerald-600 dark:text-emerald-400" },
+                { label: "年度额度结余", sub: "年度额度 − 累计入池", val: farmer.remainingQuota, pct: Math.min(100, (farmer.remainingQuota / quota) * 100), bar: "bg-emerald-600 dark:bg-emerald-400", txt: "text-emerald-600 dark:text-emerald-400" },
                 ...(farmer.cumulativeBound != null
                   ? [{
                       label: "累计绑扎合格",
@@ -599,7 +599,7 @@ export function FarmerDetailDialog({
             </div>
 
             <div className="flex items-center justify-between pt-1.5 text-xs border-t border-border/30">
-              <span className="text-muted-foreground">年度蟹扣余额 (额度余量)</span>
+              <span className="text-muted-foreground">年度额度结余 (年度额度 − 累计入池)</span>
               <span
                 className={`font-mono font-semibold ${
                   (farmer.remainingQuota / quota) <= 0.1

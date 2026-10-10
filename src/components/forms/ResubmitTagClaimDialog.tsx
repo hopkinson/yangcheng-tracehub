@@ -6,6 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TagClaimTimeField } from "@/components/forms/TagClaimTimeField";
+import { formatDateTime } from "@/lib/utils";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { resubmitTagClaimAction } from "@/actions/tags";
 import { resubmitTagClaimFormSchema, type ResubmitTagClaimFormValues } from "@/lib/validations/schemas";
@@ -19,6 +21,7 @@ export function ResubmitTagClaimDialog({
   claim: {
     id: string;
     claimCount: number;
+    claimDate: Date | string;
     farmer: { name: string; code: string };
     approvalComment?: string | null;
   };
@@ -31,6 +34,7 @@ export function ResubmitTagClaimDialog({
     resolver: zodResolver(resubmitTagClaimFormSchema),
     defaultValues: {
       claimCount: claim.claimCount,
+      claimDate: formatDateTime(claim.claimDate).replace(" ", "T"),
     },
   });
 
@@ -38,9 +42,10 @@ export function ResubmitTagClaimDialog({
     if (open) {
       form.reset({
         claimCount: claim.claimCount,
+        claimDate: formatDateTime(claim.claimDate).replace(" ", "T"),
       });
     }
-  }, [open, claim.claimCount, form]);
+  }, [open, claim.claimCount, claim.claimDate, form]);
 
   async function onSubmit(data: ResubmitTagClaimFormValues) {
     setLoading(true);
@@ -49,6 +54,7 @@ export function ResubmitTagClaimDialog({
         claimId: claim.id,
         claimCount: Number(data.claimCount),
         applicantId: userId,
+        claimDate: data.claimDate,
       });
       toast.success("已重新提交领用申请，请等待审批");
       setOpen(false);
@@ -84,6 +90,7 @@ export function ResubmitTagClaimDialog({
               </div>
             )}
 
+            <TagClaimTimeField />
             <FormField
               control={form.control}
               name="claimCount"

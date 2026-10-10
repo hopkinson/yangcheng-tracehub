@@ -4,7 +4,8 @@ import nextCache from "next/cache";
 import * as utils from "../src/lib/utils";
 import { Invariants } from "../src/lib/invariants";
 import { prisma } from "../src/lib/prisma";
-import { requestTagClaimAction } from "../src/actions/tags";
+import { requestTagClaimAction, resubmitTagClaimAction } from "../src/actions/tags";
+import { tagClaimTimeSchema } from "../src/lib/validations/schemas";
 import { checkFarmerNameAction, createFarmerAction } from "../src/actions/farmers";
 import { completeDailyCloseAction } from "../src/actions/daily-close";
 
@@ -47,6 +48,34 @@ test("业务时间在 UTC 服务器上保持北京时间口径", async (t) => {
     assert.equal(utils.formatFullDateTime(boundary), "2026-10-08 00:00:00");
     assert.equal(saved.code, "XK2026100801");
     assert.equal(utils.formatISODate(saved.claimDate), "2026-10-08");
+    assert.equal(utils.formatDateTime(saved.claimDate), "2026-10-08 02:30");
+    await requestTagClaimAction({ farmerId: "farmer", claimCount: 10, applicantId: "admin", claimDate: "2026-10-07T18:45" });
+    assert.equal(utils.formatDateTime(saved.claimDate), "2026-10-07 18:45");
+    assert.equal(utils.formatFullDateTime(boundary), "2026-10-08 00:00:00");
+    assert.equal(saved.code, "XK2026100801");
+    assert.equal(tagClaimTimeSchema.safeParse("2026-02-30T12:00").success, false);
+    assert.equal(tagClaimTimeSchema.safeParse("2026-10-08T25:00").success, false);
+    await assert.rejects(requestTagClaimAction({ farmerId: "farmer", claimCount: 10, applicantId: "admin", claimDate: "" }));
+  });
+  await t.test("驳回重提保存修改的申领时间并清空旧审批信息", async (t) => {
+    let saved: any;
+    const tx = {
+      tagClaim: {
+        findUniqueOrThrow: async () => ({
+          id: "claim", status: "REJECTED", claimDate: new Date("2026-10-07T12:00+08:00"),
+          farmer: { code: "JD", quota: 6000, batches: [{ inPoolCount: 100 }], tagClaims: [] },
+        }),
+        update: async ({ data }: any) => { saved = data; return data; },
+      },
+      auditLog: { create: async () => ({}) },
+    };
+    stub(t, prisma, "$transaction", async (fn: any) => fn(tx));
+    await resubmitTagClaimAction({ claimId: "claim", claimCount: 10, applicantId: "admin", claimDate: "2026-10-08T01:15" });
+    assert.equal(utils.formatDateTime(saved.claimDate), "2026-10-08 01:15");
+    assert.equal(saved.status, "PENDING");
+    assert.equal(saved.approvedAt, null);
+    assert.equal(saved.approverId, null);
+    assert.equal(saved.approvalComment, null);
   });
   await t.test("跨年建档与姓名查重使用北京年份", async (t) => {
     clock.setTime(new Date("2027-01-01T02:00:00+08:00").getTime());

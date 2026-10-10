@@ -2,6 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { sortCompletionTimeSchema } from "@/lib/validations/schemas";
+import { formatDateTime } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +40,10 @@ export function BatchCompleteSortDialog({
   sourceBatchCode: string;
   tasks: BatchSortTaskItem[];
 }) {
+  const timeForm = useForm<{ doneAt: string }>({
+    resolver: zodResolver(sortCompletionTimeSchema),
+    defaultValues: { doneAt: "" },
+  });
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -43,6 +52,7 @@ export function BatchCompleteSortDialog({
   );
 
   const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) timeForm.reset({ doneAt: formatDateTime(new Date()).replace(" ", "T") });
     if (nextOpen) setQualifiedCounts(Object.fromEntries(tasks.map((t) => [t.id, t.inputCount])));
     setOpen(nextOpen);
   };
@@ -69,8 +79,7 @@ export function BatchCompleteSortDialog({
   });
 
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = ({ doneAt }: { doneAt: string }) => {
 
     const invalid = tasks.find((t) => {
       const q = qualifiedCounts[t.id];
@@ -90,7 +99,7 @@ export function BatchCompleteSortDialog({
         qualifiedCount: qualifiedCounts[t.id],
       }));
 
-      const res = await batchCompleteSortTasksAction(items);
+      const res = await batchCompleteSortTasksAction(items, doneAt);
       if (res.success) {
         toast.success(res.message);
         setOpen(false);
@@ -105,7 +114,7 @@ export function BatchCompleteSortDialog({
       <DialogTrigger asChild>
         <Button
           size="sm"
-          className="h-7 px-2.5 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs"
+          className="h-7 px-2.5 text-xs gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
         >
           <CheckCircle2 className="size-3.5" />
           批量确认结果
@@ -114,7 +123,7 @@ export function BatchCompleteSortDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            <CheckCircle2 className="size-5 text-emerald-600" />
+            <CheckCircle2 className="size-5 text-primary" />
             批量确认分拣合格数量与损耗结算
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
@@ -122,124 +131,139 @@ export function BatchCompleteSortDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 flex-1 overflow-y-auto px-1">
-          {/* 明细表格 */}
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-muted/50 text-muted-foreground border-b font-mono text-[11px]">
-                <tr>
-                  <th className="px-3 py-2 font-medium">任务号 / 规格</th>
-                  <th className="px-3 py-2 font-medium text-right w-[90px]">投入 (只)</th>
-                  <th className="px-3 py-2 font-medium text-right w-[130px]">合格只数 (入库)</th>
-                  <th className="px-3 py-2 font-medium text-right w-[90px]">结算损耗</th>
-                  <th className="px-3 py-2 font-medium text-right w-[90px]">损耗率</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {rows.map(({ task, qualified, lossCount, lossRate, isException }) => {
-                  const isFemale = task.gender === "FEMALE";
-                  return (
-                    <tr key={task.id} className="hover:bg-muted/20">
-                      <td className="px-3 py-2">
-                        <div className="font-mono text-muted-foreground text-[11px]">{task.code}</div>
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium mt-0.5 ${
-                            isFemale
-                              ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                              : "bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                          }`}
-                        >
-                          {isFemale ? "母" : "公"} {task.weightTier}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-medium text-foreground">
-                        {task.inputCount}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Input
-                          type="number"
-                          min={1}
-                          max={task.inputCount}
-                          value={qualified || ""}
-                          onChange={(e) =>
-                            handleCountChange(task.id, task.inputCount, parseInt(e.target.value, 10))
-                          }
-                          className="h-8 text-xs font-mono text-right font-bold w-24 ml-auto"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                        {lossCount} 只
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        <span
-                          className={
-                            isException
-                              ? "text-destructive font-semibold bg-destructive/10 px-1 py-0.5 rounded text-[11px]"
-                              : "text-muted-foreground"
-                          }
-                        >
-                          {lossRate}%{isException && " ⚠️"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* 综合指标汇总 */}
-          <div className="p-3 rounded-lg border bg-muted/20 space-y-2">
-            <div className="grid grid-cols-4 gap-2 text-center text-xs font-mono">
-              <div className="p-2 rounded bg-background border">
-                <span className="text-[11px] text-muted-foreground block">整批总投入</span>
-                <span className="text-sm font-bold text-foreground">{totalInput} 只</span>
-              </div>
-              <div className="p-2 rounded bg-background border">
-                <span className="text-[11px] text-muted-foreground block">整批总合格</span>
-                <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                  {totalQualified} 只
-                </span>
-              </div>
-              <div className="p-2 rounded bg-background border">
-                <span className="text-[11px] text-muted-foreground block">整批总损耗</span>
-                <span className="text-sm font-bold text-muted-foreground">{totalLoss} 只</span>
-              </div>
-              <div className="p-2 rounded bg-background border">
-                <span className="text-[11px] text-muted-foreground block">综合损耗率</span>
-                <span
-                  className={`text-sm font-bold ${
-                    isOverallHighLoss ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"
-                  }`}
-                >
-                  {overallLossRate}%
-                </span>
-              </div>
+        <Form {...timeForm}>
+          <form onSubmit={timeForm.handleSubmit(handleSubmit)} className="flex flex-col gap-4 flex-1 overflow-y-auto px-1">
+            <FormField
+              control={timeForm.control}
+              name="doneAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>分拣完成时间（北京时间）</FormLabel>
+                  <FormControl>
+                    <Input type="datetime-local" {...field} disabled={isPending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {/* 明细表格 */}
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-muted/50 text-muted-foreground border-b font-mono text-[11px]">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">任务号 / 规格</th>
+                    <th className="px-3 py-2 font-medium text-right w-[90px]">投入 (只)</th>
+                    <th className="px-3 py-2 font-medium text-right w-[130px]">合格只数 (入库)</th>
+                    <th className="px-3 py-2 font-medium text-right w-[90px]">机器分拣损耗</th>
+                    <th className="px-3 py-2 font-medium text-right w-[90px]">损耗率</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {rows.map(({ task, qualified, lossCount, lossRate, isException }) => {
+                    const isFemale = task.gender === "FEMALE";
+                    return (
+                      <tr key={task.id} className="hover:bg-muted/20">
+                        <td className="px-3 py-2">
+                          <div className="font-mono text-muted-foreground text-[11px]">{task.code}</div>
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium mt-0.5 ${
+                              isFemale
+                                ? "bg-secondary text-secondary-foreground"
+                                : "bg-primary/10 text-primary"
+                            }`}
+                          >
+                            {isFemale ? "母" : "公"} {task.weightTier}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-medium text-foreground">
+                          {task.inputCount}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={task.inputCount}
+                            value={qualified || ""}
+                            onChange={(e) =>
+                              handleCountChange(task.id, task.inputCount, parseInt(e.target.value, 10))
+                            }
+                            className="h-8 text-xs font-mono text-right font-bold w-24 ml-auto"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                          {lossCount} 只
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          <span
+                            className={
+                              isException
+                                ? "text-destructive font-semibold bg-destructive/10 px-1 py-0.5 rounded text-[11px]"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {lossRate}%{isException && " ⚠️"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            {(hasOverLimitLoss || isOverallHighLoss) && (
-              <div className="text-[11px] text-destructive flex items-center gap-1.5 font-medium px-1">
-                <AlertTriangle className="size-3.5 shrink-0" />
-                <span>存在分拣损耗率超过 5% 警戒线的规格，系统将在完成结算后自动标注并进入监控告警。</span>
+            {/* 综合指标汇总 */}
+            <div className="p-3 rounded-lg border bg-muted/20 flex flex-col gap-2">
+              <div className="grid grid-cols-4 gap-2 text-center text-xs font-mono">
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[11px] text-muted-foreground block">整批总投入</span>
+                  <span className="text-sm font-bold text-foreground">{totalInput} 只</span>
+                </div>
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[11px] text-muted-foreground block">整批总合格</span>
+                  <span className="text-sm font-bold text-primary">
+                    {totalQualified} 只
+                  </span>
+                </div>
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[11px] text-muted-foreground block">机器分拣总损耗</span>
+                  <span className="text-sm font-bold text-muted-foreground">{totalLoss} 只</span>
+                </div>
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[11px] text-muted-foreground block">综合损耗率</span>
+                  <span
+                    className={`text-sm font-bold ${
+                      isOverallHighLoss ? "text-destructive" : "text-primary"
+                    }`}
+                  >
+                    {overallLossRate}%
+                  </span>
+                </div>
               </div>
-            )}
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>
-              取消
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={isPending || totalQualified <= 0 || totalQualified > totalInput}
-              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-            >
-              {isPending && <Loader2 className="size-3.5 animate-spin" />}
-              确认整批入库 ({totalQualified} 只)
-            </Button>
-          </div>
-        </form>
+              {(hasOverLimitLoss || isOverallHighLoss) && (
+                <div className="text-[11px] text-destructive flex items-center gap-1.5 font-medium px-1">
+                  <AlertTriangle className="size-3.5 shrink-0" />
+                  <span>存在分拣损耗率超过 5% 警戒线的规格，系统将在完成结算后自动标注并进入监控告警。</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)} disabled={isPending}>
+                取消
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isPending || totalQualified <= 0 || totalQualified > totalInput}
+                className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+              >
+                {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                确认整批入库 ({totalQualified} 只)
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

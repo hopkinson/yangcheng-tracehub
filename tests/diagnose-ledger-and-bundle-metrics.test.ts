@@ -1,43 +1,7 @@
 import assert from "node:assert/strict";
 import { Invariants } from "../src/lib/invariants";
 
-// Invariant & Helper implementations to test
-function calculateFarmerLedgerRow(farmer: {
-  code: string;
-  name: string;
-  farmType: string;
-  enclosures: { code: string }[];
-  area: number;
-  quota: number;
-  batches: { inPoolCount: number }[];
-  tagClaims: { claimCount: number; boundCount: number; returnedCount: number; scrappedCount: number }[];
-}) {
-  const cumulativeClaimed = farmer.tagClaims.reduce((sum, claim) => sum + claim.claimCount, 0);
-  const cumulativeBound = farmer.tagClaims.reduce((sum, claim) => sum + claim.boundCount, 0);
-  const cumulativeScrapped = farmer.tagClaims.reduce((sum, claim) => sum + claim.scrappedCount, 0);
-  const cumulativeReturned = farmer.tagClaims.reduce((sum, claim) => sum + claim.returnedCount, 0);
-  const cumulativeInPool = farmer.batches.reduce((sum, batch) => sum + batch.inPoolCount, 0);
-  const cumulativeOutbound = 0;
-
-  const exportRow = [
-    farmer.code,
-    farmer.name,
-    farmer.farmType === "LAKE_CRAB" ? "湖蟹" : "塘蟹",
-    farmer.enclosures.map((item) => item.code).join(", ") || "—",
-    farmer.area,
-    farmer.quota,
-    cumulativeInPool,
-    cumulativeClaimed, // 累计领扣(只) -> 1200
-    cumulativeBound,   // 累计绑扎(只) -> 626
-    cumulativeScrapped, // 累计作废 -> 8
-    cumulativeReturned, // 累计回退 -> 66
-    cumulativeOutbound,
-    Math.max(0, farmer.quota - cumulativeBound), // 额度结余 -> 5374
-  ];
-
-  return { cumulativeClaimed, cumulativeBound, cumulativeScrapped, cumulativeReturned, exportRow };
-}
-
+// 养殖户主档汇总见 farmer-ledger.test.ts，直接验证生产查询和计算。
 function calculateTodayBundleTotalCount(bundleBatches: Array<{
   status: string;
   qualifiedCount?: number | null;
@@ -73,32 +37,6 @@ function calculateFarmerStats(farmer: {
 
 async function runRegressionTests() {
   console.log("=== Running Regression Test for Fixes ===");
-
-  // 1. Test Bug 1: Farmer Ledger Row
-  const mockFarmer = {
-    code: "JD-001",
-    name: "张三",
-    farmType: "LAKE_CRAB",
-    enclosures: [{ code: "W-01" }],
-    area: 10,
-    quota: 6000,
-    batches: [{ inPoolCount: 1000 }],
-    tagClaims: [
-      { claimCount: 700, boundCount: 626, returnedCount: 66, scrappedCount: 8 },
-      { claimCount: 500, boundCount: 0, returnedCount: 0, scrappedCount: 0 },
-    ],
-  };
-
-  const ledgerResult = calculateFarmerLedgerRow(mockFarmer);
-  console.log("Ledger calculation result:", ledgerResult);
-
-  assert.equal(ledgerResult.cumulativeClaimed, 1200, "台账累计领扣应为 1200 (700 + 500)");
-  assert.equal(ledgerResult.cumulativeBound, 626, "台账累计绑扎应为 626");
-  assert.equal(ledgerResult.cumulativeReturned, 66, "台账累计回退应为 66");
-  assert.equal(ledgerResult.cumulativeScrapped, 8, "台账累计作废应为 8");
-  // Invariant check: claimCount = bound + returned + scrapped for the completed batch
-  assert.equal(626 + 66 + 8, 700, "日结批次 626 + 66 + 8 == 700 守恒轧平");
-  assert.equal(ledgerResult.exportRow[12], 5374, "额度结余应为 6000 - 626 = 5374");
 
   // 2. Test Bug 1 part 2: Farmer Page remaining quota
   const farmerStats = calculateFarmerStats({

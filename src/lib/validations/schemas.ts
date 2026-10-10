@@ -1,5 +1,24 @@
 import { z } from "zod";
 import { validateEnclosureCodes } from "@/lib/enclosures";
+import { formatDateTime, parseBeijingDateTime } from "@/lib/utils";
+
+export const sortCompletionTimeSchema = z.object({
+  doneAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的分拣完成时间")
+    .refine((value) => formatDateTime(parseBeijingDateTime(value)).replace(" ", "T") === value, "请选择有效的分拣完成时间")
+    .refine((value) => parseBeijingDateTime(value).getTime() <= Date.now(), "分拣完成时间不能晚于当前时间"),
+});
+
+export const bundleCompletionTimeSchema = z.object({
+  doneAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的捆扎完成时间")
+    .refine((value) => formatDateTime(parseBeijingDateTime(value)).replace(" ", "T") === value, "请选择有效的捆扎完成时间")
+    .refine((value) => parseBeijingDateTime(value).getTime() <= Date.now(), "捆扎完成时间不能晚于当前时间"),
+});
+
+export const batchIntakeTimeSchema = z.object({
+  inPoolTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的入池时间")
+    .refine((value) => formatDateTime(parseBeijingDateTime(value)).replace(" ", "T") === value, "请选择有效的入池时间")
+    .refine((value) => parseBeijingDateTime(value).getTime() <= Date.now(), "入池时间不能晚于当前时间"),
+});
 
 export const phoneSchema = z
   .string()
@@ -186,14 +205,20 @@ export type ResubmitOutboundFormValues = z.infer<typeof resubmitOutboundFormSche
 /**
  * 蟹扣领用与重提校验
  */
+export const tagClaimTimeSchema = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的申领日期和时间")
+  .refine((value) => formatDateTime(parseBeijingDateTime(value)).replace(" ", "T") === value, "请选择有效的申领日期和时间");
+
 export const tagClaimFormSchema = z.object({
   farmerId: z.string().min(1, "请选择来源养殖户"),
   claimCount: positiveInt("领扣数量"),
+  claimDate: tagClaimTimeSchema,
 });
 export type TagClaimFormValues = z.infer<typeof tagClaimFormSchema>;
 
 export const resubmitTagClaimFormSchema = z.object({
   claimCount: positiveInt("修正领扣数量"),
+  claimDate: tagClaimTimeSchema,
 });
 export type ResubmitTagClaimFormValues = z.infer<typeof resubmitTagClaimFormSchema>;
 

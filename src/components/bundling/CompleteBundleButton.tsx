@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { bundleCompletionTimeSchema } from "@/lib/validations/schemas";
+import { formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -37,6 +42,10 @@ export function CompleteBundleButton({
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const timeForm = useForm<{ doneAt: string }>({
+    resolver: zodResolver(bundleCompletionTimeSchema),
+    defaultValues: { doneAt: "" },
+  });
 
   const [lineLossCounts, setLineLossCounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(lines.map((l) => [l.id, "0"]))
@@ -82,8 +91,7 @@ export function CompleteBundleButton({
     setLineLossCounts((prev) => ({ ...prev, [lineId]: String(maxCount - qualified) }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = ({ doneAt }: { doneAt: string }) => {
     if (lossRes.isException && !lossReason.trim()) {
       toast.error("损耗率已超 5% 阈值，请务必填写损耗原因说明");
       return;
@@ -95,7 +103,7 @@ export function CompleteBundleButton({
     }));
 
     startTransition(async () => {
-      const res = await completeBundleBatchAction(bundleId, payload, lossReason);
+      const res = await completeBundleBatchAction(bundleId, payload, lossReason, doneAt);
       if (res.success) {
         toast.success(res.message);
         setOpen(false);
@@ -106,7 +114,10 @@ export function CompleteBundleButton({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (nextOpen) timeForm.reset({ doneAt: formatDateTime(new Date()).replace(" ", "T") });
+      setOpen(nextOpen);
+    }}>
       <DialogTrigger asChild>
         <Button
           size="sm"
@@ -116,7 +127,7 @@ export function CompleteBundleButton({
           完成捆扎
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <CheckCircle2 className="size-5 text-emerald-600" />
@@ -127,7 +138,21 @@ export function CompleteBundleButton({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-1">
+        <Form {...timeForm}>
+        <form onSubmit={timeForm.handleSubmit(handleSubmit)} className="flex flex-col gap-4 py-1">
+          <FormField
+            control={timeForm.control}
+            name="doneAt"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>捆扎完成时间（北京时间）</FormLabel>
+                <FormControl>
+                  <Input type="datetime-local" step={60} disabled={isPending} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           {/* 明细行损耗扣减录入 */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
@@ -152,7 +177,7 @@ export function CompleteBundleButton({
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label htmlFor={`loss-${l.id}`} className="text-[11px] font-semibold text-destructive">
-                          本次损耗 / 剔除
+                          捆扎加工损耗 / 剔除
                         </Label>
                         <Input
                           id={`loss-${l.id}`}
@@ -196,7 +221,7 @@ export function CompleteBundleButton({
               <span className="font-bold text-primary">{totalQualified} 只</span>
             </div>
             <div className="flex items-center justify-between font-mono">
-              <span className="text-muted-foreground">本次损耗扣减：</span>
+              <span className="text-muted-foreground">捆扎加工损耗：</span>
               <span className="font-bold text-foreground">{lossRes.lossCount} 只</span>
             </div>
             <div className="flex items-center justify-between font-mono">
@@ -217,6 +242,7 @@ export function CompleteBundleButton({
               </div>
             )}
           </div>
+          <p className="text-xs text-muted-foreground">初始捆扎只数 − 捆扎完成只数 = 捆扎加工损耗</p>
 
           {/* 超过 5% 阈值必须录入原因 */}
           {lossRes.isException && (
@@ -256,6 +282,7 @@ export function CompleteBundleButton({
             </Button>
           </div>
         </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

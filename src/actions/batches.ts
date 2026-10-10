@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { getBeijingDateStr, getBeijingYear } from "@/lib/utils";
-import { batchEditFormSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
+import { getBeijingDateStr, getBeijingYear, parseBeijingDateTime } from "@/lib/utils";
+import { batchEditFormSchema, batchIntakeTimeSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
 import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 import { assertDailyCloseOpen } from "@/actions/daily-close";
 
@@ -163,6 +163,7 @@ export async function createBatchAction(data: {
 }
 
 export async function createMultiSpecBatchAction(data: {
+  inPoolTime?: string;
   farmerId: string;
   enclosureId: string;
   formNo?: string;
@@ -190,6 +191,12 @@ export async function createMultiSpecBatchAction(data: {
     await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
     await assertDailyCloseOpen("POOL");
 
+    const timeValidation = batchIntakeTimeSchema.safeParse({ inPoolTime: data.inPoolTime });
+    if (data.inPoolTime !== undefined && !timeValidation.success) {
+      throw new Error(timeValidation.error.issues[0]?.message || "入池时间无效");
+    }
+    const inPoolTime = data.inPoolTime === undefined ? new Date() : parseBeijingDateTime(data.inPoolTime);
+
     const batch = await prisma.$transaction(async (tx) => {
       const farmer = await tx.farmer.findUniqueOrThrow({
         where: { id: data.farmerId },
@@ -198,6 +205,10 @@ export async function createMultiSpecBatchAction(data: {
 
       if (farmer.status !== "ACTIVE") {
         throw new Error("该养殖户合作状态异常，禁止入池登记");
+      }
+
+      if (getBeijingYear(inPoolTime) !== farmer.year) {
+        throw new Error(`入池时间须属于养殖户档案年度 ${farmer.year} 年`);
       }
 
       const totalBatchCount = data.items.reduce((sum, it) => sum + it.inPoolCount, 0);
@@ -270,6 +281,7 @@ export async function createMultiSpecBatchAction(data: {
 
       const createdBatch = await tx.batch.create({
         data: {
+          inPoolTime,
           code: batchCode,
           farmerId: data.farmerId,
           enclosureId,
@@ -311,7 +323,7 @@ export async function createMultiSpecBatchAction(data: {
           action: "MULTI_SPEC_BATCH_INTAKE",
           entityType: "BATCH",
           entityId: createdBatch.id,
-          details: JSON.stringify({ batchCode, totalBatchCount, formNo: data.formNo, itemsCount: data.items.length }),
+          details: JSON.stringify({ batchCode, totalBatchCount, formNo: data.formNo, itemsCount: data.items.length, inPoolTime: inPoolTime.toISOString() }),
         },
       });
 
@@ -321,6 +333,7 @@ export async function createMultiSpecBatchAction(data: {
     try {
       revalidatePath("/batches");
       revalidatePath("/pools");
+      revalidatePath("/ledgers");
     } catch {}
 
     return { success: true, data: batch, code: batch.code };

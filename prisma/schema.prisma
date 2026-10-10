@@ -151,6 +151,9 @@ model Batch {
   lossRecords      LossRecord[]
   outboundOrders   OutboundOrder[]
   bundleBatches    BundleBatch[]
+  @@index([inPoolTime])
+  @@index([farmerId])
+
 }
 
 // 原料批次明细行 (一码单拆多规格入多池)
@@ -170,6 +173,8 @@ model BatchItem {
   
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  @@index([batchId])
+
 }
 
 // -------------------------------------------------------------
@@ -223,6 +228,9 @@ model TagClaim {
   updatedAt       DateTime        @updatedAt
 
   bundleBatches   BundleBatch[]
+  @@index([claimDate])
+  @@index([farmerId])
+
 }
 
 // -------------------------------------------------------------
@@ -266,6 +274,10 @@ model BundleBatch {
 
   lines           BundleLine[]
   sortTasks       SortTask[]
+  @@index([date])
+  @@index([sourceBatchId])
+  @@index([tagClaimId])
+
 }
 
 model BundleLine {
@@ -282,6 +294,8 @@ model BundleLine {
   lossCount       Int?            // 损耗只数
   
   createdAt       DateTime        @default(now())
+  @@index([bundleBatchId])
+
 }
 
 // -------------------------------------------------------------
@@ -326,6 +340,9 @@ model SortTask {
 
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+  @@index([date])
+  @@index([bundleBatchId])
+
 }
 
 // -------------------------------------------------------------
@@ -359,6 +376,9 @@ model ColdLog {
   outboundOrders  OutboundOrder[]
   outboundLines   OutboundLine[]
   outboundLosses  OutboundLossRecord[]
+  @@index([createdAt])
+  @@index([sortTaskId])
+
 }
 
 // -------------------------------------------------------------
@@ -386,6 +406,8 @@ model Order {
   updatedAt       DateTime        @updatedAt
 
   outboundLines   OutboundLine[]
+  @@index([type, deliveryDate, importTime])
+
 }
 
 // -------------------------------------------------------------
@@ -462,6 +484,11 @@ model OutboundOrder {
   updatedAt         DateTime        @updatedAt
 
   lines             OutboundLine[]
+  @@index([outboundTime])
+  @@index([createdAt])
+  @@index([approvedAt])
+  @@index([channelId])
+
 }
 
 model OutboundLine {
@@ -484,6 +511,10 @@ model OutboundLine {
   waybillNo         String?         // 快递运单号
   
   createdAt         DateTime        @default(now())
+  @@index([orderId])
+  @@index([outboundOrderId])
+  @@index([coldLogId])
+
 }
 
 // 发货环节损耗盘点：按规格扣减尚未被出库单占用的可发库存
@@ -574,6 +605,9 @@ model QCRecord {
   
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+  @@index([checkTime])
+  @@index([cat, checkTime])
+
 }
 
 // -------------------------------------------------------------

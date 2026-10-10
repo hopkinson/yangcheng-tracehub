@@ -4,14 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { formatISODate, getBeijingDateStr, getBeijingDayRange } from "@/lib/utils";
+import { formatDateTime, formatISODate, getBeijingDateStr, getBeijingDayRange, parseBeijingDateTime } from "@/lib/utils";
+import { tagClaimTimeSchema } from "@/lib/validations/schemas";
 
 export async function requestTagClaimAction(data: {
   farmerId: string;
   claimCount: number;
   applicantId: string;
+  claimDate?: string;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
+  const claimDate = parseBeijingDateTime(tagClaimTimeSchema.parse(data.claimDate ?? formatDateTime(new Date()).replace(" ", "T")));
   return await prisma.$transaction(async (tx) => {
     const farmer = await tx.farmer.findUniqueOrThrow({
       where: { id: data.farmerId },
@@ -59,7 +62,7 @@ export async function requestTagClaimAction(data: {
     const claim = await tx.tagClaim.create({
       data: {
         code,
-        claimDate: today,
+        claimDate,
         farmerId: data.farmerId,
         claimCount: data.claimCount,
         applicantId: data.applicantId,
@@ -73,7 +76,7 @@ export async function requestTagClaimAction(data: {
         action: "TAG_CLAIM_REQUEST",
         entityType: "TAG_CLAIM",
         entityId: claim.id,
-        details: JSON.stringify({ farmerCode: farmer.code, claimCount: data.claimCount }),
+        details: JSON.stringify({ farmerCode: farmer.code, claimCount: data.claimCount, claimDate: claimDate.toISOString() }),
       },
     });
 
@@ -81,6 +84,7 @@ export async function requestTagClaimAction(data: {
       revalidatePath("/tags");
       revalidatePath("/approvals");
       revalidatePath("/farmers");
+      revalidatePath("/ledgers");
     } catch {}
     return claim;
   });
@@ -90,6 +94,7 @@ export async function resubmitTagClaimAction(data: {
   claimId: string;
   claimCount: number;
   applicantId: string;
+  claimDate?: string;
 }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
   return await prisma.$transaction(async (tx) => {
@@ -121,12 +126,16 @@ export async function resubmitTagClaimAction(data: {
       throw new Error(tagCheck.reason);
     }
 
+    const claimDate = data.claimDate === undefined ? claim.claimDate : parseBeijingDateTime(tagClaimTimeSchema.parse(data.claimDate));
     const updated = await tx.tagClaim.update({
       where: { id: data.claimId },
       data: {
         claimCount: data.claimCount,
+        claimDate,
         status: "PENDING",
         approvalComment: null,
+        approverId: null,
+        approvedAt: null,
       },
     });
 
@@ -136,7 +145,7 @@ export async function resubmitTagClaimAction(data: {
         action: "RESUBMIT_TAG_CLAIM",
         entityType: "TAG_CLAIM",
         entityId: claim.id,
-        details: JSON.stringify({ farmerCode: claim.farmer.code, claimCount: data.claimCount }),
+        details: JSON.stringify({ farmerCode: claim.farmer.code, claimCount: data.claimCount, claimDate: claimDate.toISOString() }),
       },
     });
 
@@ -144,6 +153,7 @@ export async function resubmitTagClaimAction(data: {
       revalidatePath("/tags");
       revalidatePath("/approvals");
       revalidatePath("/farmers");
+      revalidatePath("/ledgers");
     } catch {}
     return updated;
   });

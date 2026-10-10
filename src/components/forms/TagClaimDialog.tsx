@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TagClaimTimeField } from "@/components/forms/TagClaimTimeField";
+import { formatDateTime } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { requestTagClaimAction } from "@/actions/tags";
@@ -38,6 +40,7 @@ export function TagClaimDialog({
     defaultValues: {
       farmerId: farmers[0]?.id || "",
       claimCount: undefined,
+      claimDate: formatDateTime(new Date()).replace(" ", "T"),
     },
   });
 
@@ -46,6 +49,7 @@ export function TagClaimDialog({
       form.reset({
         farmerId: farmers[0]?.id || "",
         claimCount: undefined,
+        claimDate: formatDateTime(new Date()).replace(" ", "T"),
       });
     }
   }, [open, farmers, form]);
@@ -74,6 +78,7 @@ export function TagClaimDialog({
         farmerId: data.farmerId,
         claimCount: count,
         applicantId: userId,
+        claimDate: data.claimDate,
       });
 
       toast.success("蟹扣领用申请已提交，等待审批");
@@ -101,6 +106,7 @@ export function TagClaimDialog({
             <Tag className="size-5 text-primary" />
             <DialogTitle>蟹扣领用申请</DialogTitle>
           </div>
+          <DialogDescription>填写申领时间和数量，提交后等待审批。</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -157,6 +163,7 @@ export function TagClaimDialog({
               </div>
             )}
 
+            <TagClaimTimeField />
             <FormField
               control={form.control}
               name="claimCount"
