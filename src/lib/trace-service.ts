@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/config/tenant";
-import { formatDate, formatDateTime, formatFullDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime, formatFullDateTime, formatOrderCode } from "@/lib/utils";
 import { Invariants } from "@/lib/invariants";
 
 export interface TraceQCBadge {
@@ -475,7 +475,7 @@ async function buildTraceFromOutbound(
       ? matchedLines.reduce((sum: number, l: any) => sum + (l.count || 0), 0)
       : outOrder.outboundCount);
   const specModel = formatOrderSpec(primaryOrder, relatedOrders);
-  const orderCode = relatedOrders?.map((o: any) => o.code).join(" / ") || primaryOrder?.code;
+  const orderCode = relatedOrders?.map((o: any) => formatOrderCode(o.code)).join(" / ") || formatOrderCode(primaryOrder?.code);
 
   return {
     found: true,
@@ -660,7 +660,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
         { label: "订单单号", value: ord.orderNo },
         { label: "发货去向", value: ord.storeName || "指定渠道门店" },
         { label: "订购数量", value: `${ord.count} 只` },
-        { label: "系统单号", value: ord.code },
+        { label: "系统单号", value: formatOrderCode(ord.code) },
         { label: "出库时间", value: `${formatDate(ord.deliveryDate)} (约定发货)` },
         { label: "履约状态", value: "待出库发货 (履约链路已预校验)" },
       ],
@@ -691,7 +691,7 @@ async function buildPreviewTraceFromOrders(orders: any[]): Promise<TraceQueryRes
     mode: "ORDER",
     isPreview: true,
     orderInfo: {
-      code: orders.map((o: any) => o.code).join(" / "),
+      code: orders.map((o: any) => formatOrderCode(o.code)).join(" / "),
       orderNo: primaryOrder.orderNo,
       type: primaryOrder.type,
       storeName: primaryOrder.storeName || getTenant().storeLabel,

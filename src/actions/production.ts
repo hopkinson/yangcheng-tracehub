@@ -1,6 +1,5 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
@@ -37,6 +36,13 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
 
     const dateStr = getBeijingDateStr();
     const importId = `IM${dateStr}${Math.floor(10 + Math.random() * 90)}`;
+    const prefix = `SO${dateStr}`;
+
+    const todayOrders = await prisma.order.findMany({
+      where: { code: { startsWith: prefix } },
+      select: { code: true },
+    });
+    let nextSeq = Math.max(0, ...todayOrders.map((o) => Number(o.code.match(/\d+$/)?.[0]) || 0)) + 1;
 
     const allStores = await prisma.store.findMany({
       select: { id: true, code: true, name: true },
@@ -83,7 +89,7 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
 
       ordersToCreate.push({
         importId,
-        code: `SO${dateStr}-${randomUUID()}`,
+        code: `${prefix}-${String(nextSeq++).padStart(4, "0")}`,
         orderNo,
         type: raw.type,
         storeId: matchedStore?.id || null,

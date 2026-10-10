@@ -7,7 +7,7 @@ import { Invariants } from "@/lib/invariants";
 import { calculateFarmerLedger, getFarmerLedgerRows } from "@/lib/farmer-ledger";
 import { calculateTagClaimLedger, getTagClaimLedgerHeaders } from "@/lib/tag-claim-ledger";
 import { SHOW_TAG_RETURN } from "@/lib/feature-flags";
-import { formatDate, formatTime, formatDateTime, getBeijingDayRange, getPreviewFileUrl } from "@/lib/utils";
+import { formatDate, formatTime, formatDateTime, getBeijingDayRange, getPreviewFileUrl, formatOrderCode } from "@/lib/utils";
 import { getLedgerRowPage, ledgerNumber, ledgerPaging, type LedgerParams } from "./ledger-pagination";
 import type { ReactNode } from "react";
 const toDisplayRow = (row: ExportValue[]): ReactNode[] => row.map((v) => v as ReactNode);
@@ -933,7 +933,7 @@ export async function getLedgerData(params: LedgerParams, exportAll = false) {
       return lines.map((line: any) => {
         const exportRow: ExportValue[] = [
           formatDate(order.deliveryDate),
-          order.code,
+          formatOrderCode(order.code),
           formatDate(order.importTime),
           formatTime(order.importTime),
           order.orderNo,

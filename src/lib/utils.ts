@@ -202,3 +202,10 @@ export function getFileDropHandlers(
     },
   };
 }
+
+/**
+ * 格式化订单单号：去除历史遗留的 UUID 乱码后缀，返回清爽的业务单号 (如 SO20261010-0001)
+ */
+export function formatOrderCode(code: string | null | undefined): string {
+  return code ? code.replace(/-[0-9a-f-]{36}$/i, "") : "—";
+}

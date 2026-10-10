@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { OrderDeleteButton } from "@/components/orders/OrderDeleteButton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { batchDeleteOrdersAction } from "@/actions/production";
-import { formatISODate } from "@/lib/utils";
+import { formatISODate, formatOrderCode } from "@/lib/utils";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -143,7 +143,7 @@ export function OrderTable({
                     </td>
                     <td className="px-3 py-2.5 font-mono">
                       <div className="font-bold text-foreground">
-                        {order.code}
+                        {formatOrderCode(order.code)}
                       </div>
                       <div className="text-[10px] text-muted-foreground">
                         {order.importId}
