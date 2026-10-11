@@ -20,6 +20,12 @@ export const batchIntakeTimeSchema = z.object({
     .refine((value) => parseBeijingDateTime(value).getTime() <= Date.now(), "入池时间不能晚于当前时间"),
 });
 
+export const coldIntakeTimeSchema = z.object({
+  intakeTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "请选择有效的入库时间")
+    .refine((value) => formatDateTime(parseBeijingDateTime(value)).replace(" ", "T") === value, "请选择有效的入库时间")
+    .refine((value) => parseBeijingDateTime(value).getTime() <= Date.now(), "入库时间不能晚于当前时间"),
+});
+
 export const phoneSchema = z
   .string()
   .trim()

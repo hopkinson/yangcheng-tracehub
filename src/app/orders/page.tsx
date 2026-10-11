@@ -208,7 +208,11 @@ export default async function OrdersPage({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs font-mono pt-1 border-t border-border/50">
+                    <div className="grid grid-cols-3 gap-2 text-xs font-mono pt-1 border-t border-border/50">
+                      <div>
+                        <span className="text-[11px] text-muted-foreground block">已发数量</span>
+                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{dem.shippedCount} 只</span>
+                      </div>
                       <div>
                         <span className="text-[11px] text-muted-foreground block">待发需求</span>
                         <span className="text-sm font-bold text-foreground">{dem.pendingCount} 只</span>

@@ -94,6 +94,7 @@ export default async function ColdStoragePage({
       qualifiedCount: t.qualifiedCount,
       alreadyIntakeCount,
       availableCount,
+      doneAt: t.doneAt ? t.doneAt.toISOString() : null,
       sourceBatchId: t.bundleBatch?.sourceBatchId || null,
       sourceBatchCode: t.bundleBatch?.sourceBatch?.code || null,
       sourceInPoolTime: t.bundleBatch?.sourceBatch?.inPoolTime || null,

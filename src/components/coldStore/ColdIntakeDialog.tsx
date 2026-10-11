@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ThermometerSnowflake, Plus, Loader2, AlertCircle, Layers } from "lucide-react";
 import { createBatchColdIntakeAction } from "@/actions/production";
+import { formatDateTime } from "@/lib/utils";
 
 export interface ColdStoreOption {
   id: string;
@@ -31,6 +32,7 @@ export interface SortTaskOption {
   qualifiedCount: number;
   alreadyIntakeCount: number;
   availableCount: number;
+  doneAt?: string | null;
 }
 
 export interface SourceBatchOption {
@@ -38,6 +40,11 @@ export interface SourceBatchOption {
   code: string;
   availableCount: number;
   tasks: SortTaskOption[];
+}
+
+function getDefaultIntakeTime(batch?: SourceBatchOption): string {
+  const latest = batch?.tasks.map((t) => t.doneAt).filter(Boolean).sort().at(-1);
+  return formatDateTime(latest ? new Date(latest) : new Date()).replace(" ", "T");
 }
 
 export function ColdIntakeDialog({
@@ -62,6 +69,7 @@ export function ColdIntakeDialog({
   const [selectedTaskIds, setSelectedTaskIds] = useState<Record<string, boolean>>({});
   const [genderFilter, setGenderFilter] = useState<"ALL" | "MALE" | "FEMALE">("ALL");
   const [operator, setOperator] = useState("库管员");
+  const [intakeTime, setIntakeTime] = useState<string>(() => getDefaultIntakeTime(initialSourceBatch));
 
   // 如果当前选中的批次已无可入库余量，且存在待入库优先批次，自动切换至优先批次
   const currentBatch = sourceBatches.find((b) => b.id === selectedSourceBatchId);
@@ -84,6 +92,8 @@ export function ColdIntakeDialog({
     setSelectedSourceBatchId(batchId);
     setSelectedTaskIds({});
     setGenderFilter("ALL");
+    const nextBatch = sourceBatches.find((b) => b.id === batchId);
+    setIntakeTime(getDefaultIntakeTime(nextBatch));
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -92,6 +102,7 @@ export function ColdIntakeDialog({
       setSelectedSourceBatchId(activeSource?.id || "");
       setSelectedTaskIds({});
       setGenderFilter("ALL");
+      setIntakeTime(getDefaultIntakeTime(activeSource));
     }
     setOpen(nextOpen);
   };
@@ -124,12 +135,17 @@ export function ColdIntakeDialog({
       toast.error("请填写经手入库员姓名");
       return;
     }
+    if (!intakeTime) {
+      toast.error("请选择入库时间");
+      return;
+    }
 
     startTransition(async () => {
       const res = await createBatchColdIntakeAction({
         storeId: currentStoreId,
         sortTaskIds: taskIds,
         operator,
+        intakeTime,
       });
 
       if (res.success) {
@@ -164,8 +180,8 @@ export function ColdIntakeDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 flex-1 overflow-y-auto px-1">
-          {/* 1. 顶部配置区：目标保鲜库、原料批次与经手人 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* 1. 顶部配置区：目标保鲜库、原料批次、入库时间与经手人 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">目标保鲜库</Label>
               <Select value={defaultStoreId || storeId} onValueChange={setStoreId} disabled={!!defaultStoreId}>
@@ -217,6 +233,20 @@ export function ColdIntakeDialog({
                   )}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">入库时间</Label>
+                <span className="text-[10px] text-muted-foreground">默认分拣完成时间，可修改</span>
+              </div>
+              <Input
+                type="datetime-local"
+                value={intakeTime}
+                onChange={(e) => setIntakeTime(e.target.value)}
+                className="h-9 text-xs font-mono"
+                required
+              />
             </div>
 
             <div className="space-y-1.5">

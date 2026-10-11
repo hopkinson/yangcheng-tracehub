@@ -9,7 +9,7 @@ import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 import { assertDailyCloseOpen } from "@/actions/daily-close";
 
 import { getBeijingDateStr, parseBeijingDateTime } from "@/lib/utils";
-import { bundleCompletionTimeSchema, sortCompletionTimeSchema } from "@/lib/validations/schemas";
+import { bundleCompletionTimeSchema, sortCompletionTimeSchema, coldIntakeTimeSchema } from "@/lib/validations/schemas";
 
 function revalidate(path: string) {
   try {
@@ -1321,12 +1321,18 @@ export async function createColdIntakeAction(data: {
   count: number;
   sortTaskId: string;
   operator: string;
+  intakeTime?: string;
 }) {
   try {
     await assertDailyCloseOpen("COLD");
     if (!data.storeId) return { success: false, message: "请选择目标保鲜库" };
     if (!data.count || data.count <= 0) return { success: false, message: "入库只数必须大于 0" };
     if (!data.sortTaskId) return { success: false, message: "必须选择关联的分拣批次任务" };
+    if (data.intakeTime !== undefined) {
+      const parsed = coldIntakeTimeSchema.safeParse({ intakeTime: data.intakeTime });
+      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    }
+    const intakeDate = data.intakeTime ? parseBeijingDateTime(data.intakeTime) : new Date();
 
     const result = await prisma.$transaction(async (tx) => {
       const sortTask = await tx.sortTask.findUnique({
@@ -1378,6 +1384,7 @@ export async function createColdIntakeAction(data: {
           count: data.count,
           sortTaskId: sortTask.id,
           operator: data.operator?.trim() || "库管员",
+          createdAt: intakeDate,
         },
       });
 
@@ -1403,6 +1410,7 @@ export async function createBatchColdIntakeAction(data: {
   storeId: string;
   sortTaskIds: string[];
   operator?: string;
+  intakeTime?: string;
 }) {
   try {
     await assertDailyCloseOpen("COLD");
@@ -1410,6 +1418,11 @@ export async function createBatchColdIntakeAction(data: {
     if (!data.sortTaskIds || data.sortTaskIds.length === 0) {
       return { success: false, message: "请至少勾选一个待入库的分拣批次" };
     }
+    if (data.intakeTime !== undefined) {
+      const parsed = coldIntakeTimeSchema.safeParse({ intakeTime: data.intakeTime });
+      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    }
+    const intakeDate = data.intakeTime ? parseBeijingDateTime(data.intakeTime) : new Date();
 
     const result = await prisma.$transaction(async (tx) => {
       const sortTasks = await tx.sortTask.findMany({
@@ -1486,6 +1499,7 @@ export async function createBatchColdIntakeAction(data: {
             count: intakeCount,
             sortTaskId: task.id,
             operator: data.operator?.trim() || "库管员",
+            createdAt: intakeDate,
           },
         });
 
