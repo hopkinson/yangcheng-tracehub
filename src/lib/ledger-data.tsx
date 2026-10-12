@@ -757,7 +757,6 @@ export async function getLedgerData(params: LedgerParams, exportAll = false) {
   const sortingRows = (validTab === "ledger6" ? sortTasks : []).map((task: any) => {
     const exportRow: ExportValue[] = [
       formatDate(task.date),
-      formatTime(task.date),
       task.status === "COMPLETED" && task.doneAt ? formatDateTime(task.doneAt) : "—",
       task.code,
       task.machine.name || "—",
@@ -956,7 +955,7 @@ export async function getLedgerData(params: LedgerParams, exportAll = false) {
     l3: getTagClaimLedgerHeaders(showTagLedgerReturns),
     l4: ["入池日期", "入池时间", "池名", "池号", "原料批次", "养殖户", "围网", "入池数量", "绑扎数量", "在池数量", "暂养损耗", "损耗率"],
     l5: ["捆扎日期", "捆扎完成时间", "捆扎批次", "班组", "班组编号", "原料批次", "蟹扣批次", "蟹绳批次", "养殖户", "池名", "池号", "规格", "状态", "初始捆扎只数", "捆扎完成只数", "捆扎加工损耗", "损耗率"],
-    l6: ["分拣日期", "分拣时间", "分拣完成时间", "分拣批次", "设备名", "设备编号", "原料批次", "绑扎批次", "规格", "状态", "初始分拣只数", "分拣完成只数", "机器分拣损耗(只)", "损耗率"],
+    l6: ["分拣日期", "分拣完成时间", "分拣批次", "设备名", "设备编号", "原料批次", "绑扎批次", "规格", "状态", "初始分拣只数", "分拣完成只数", "机器分拣损耗(只)", "损耗率"],
     l7: ["日期", "入库时间", "入库单号", "库名", "库位", "原料批次", "捆扎批次", "分拣任务", "规格", "入库(只)", "已发货(只)", "包装损耗(只)", "清库损耗(只)", "当前余量", "经手人"],
     l8: ["出库单申请日期", "申请时间", "出库时间", "出库批次", "出库类型", "合计数量(只)", "承运物流公司", "联系人", "联系方式", "出库申请人", "复核人"],
     l9: ["申请日期", "申请时间", "出库时间", "出库单号", "原料批次", "捆扎批次", "分拣任务", "预冷单", "规格", "数量(只)", "来源池名", "来源池编号", "养殖户", "围网"],

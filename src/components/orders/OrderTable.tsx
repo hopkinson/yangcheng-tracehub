@@ -13,9 +13,11 @@ import { toast } from "sonner";
 export function OrderTable({
   orders,
   targetDateStr,
+  targetDateLabel,
 }: {
   orders: any[];
   targetDateStr: string;
+  targetDateLabel?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -110,7 +112,7 @@ export function OrderTable({
                 >
                   {targetDateStr === "all"
                     ? "暂无订单数据，请点击右上角「Excel 批量导入订单」"
-                    : `所选发货日期（${targetDateStr}）暂无订单明细，可点击「全部」切换查看`}
+                    : `所选发货范围（${targetDateLabel || targetDateStr}）暂无订单明细`}
                 </td>
               </tr>
             ) : (

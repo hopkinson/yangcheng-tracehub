@@ -12,12 +12,10 @@ export function OrderDateFilter({
   currentDate,
   todayStr,
   tomorrowStr,
-  availableDates = [],
 }: {
   currentDate: string;
   todayStr: string;
   tomorrowStr: string;
-  availableDates?: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -25,12 +23,21 @@ export function OrderDateFilter({
 
   const [open, setOpen] = React.useState(false);
 
+  const presets = [
+    { label: `当日 (${todayStr.slice(5)})`, key: todayStr },
+    { label: `次日 (${tomorrowStr.slice(5)})`, key: tomorrowStr },
+    { label: "本周", key: "week" },
+    { label: "本月", key: "month" },
+    { label: "本年", key: "year" },
+  ];
+  const isCustomDate = currentDate !== "all" && presets.every((p) => p.key !== currentDate);
+
   const selectedDateObj =
-    currentDate && currentDate !== "all" ? new Date(`${currentDate}T00:00:00`) : undefined;
+    isCustomDate && currentDate ? new Date(`${currentDate}T00:00:00`) : undefined;
 
   const applyDate = (dateStr: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (!dateStr || dateStr === "all") {
+    if (!dateStr || dateStr === "year") {
       params.delete("date");
     } else {
       params.set("date", dateStr);
@@ -41,46 +48,17 @@ export function OrderDateFilter({
     setOpen(false);
   };
 
-  // 快捷展示订单中存在的其他日期（除今日、次日外，最多取 3 个）
-  const otherDates = availableDates.filter((d) => d !== todayStr && d !== tomorrowStr).slice(0, 3);
-  const isCustomDate = !["all", todayStr, tomorrowStr, ...otherDates].includes(currentDate);
-
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Button
-        variant={currentDate === "all" ? "default" : "outline"}
-        size="sm"
-        className="h-7 text-xs px-2.5"
-        onClick={() => applyDate("all")}
-      >
-        全部
-      </Button>
-      <Button
-        variant={currentDate === todayStr ? "default" : "outline"}
-        size="sm"
-        className="h-7 text-xs px-2.5"
-        onClick={() => applyDate(todayStr)}
-      >
-        当日 ({todayStr.slice(5)})
-      </Button>
-      <Button
-        variant={currentDate === tomorrowStr ? "default" : "outline"}
-        size="sm"
-        className="h-7 text-xs px-2.5"
-        onClick={() => applyDate(tomorrowStr)}
-      >
-        次日 ({tomorrowStr.slice(5)})
-      </Button>
-
-      {otherDates.map((d) => (
+      {presets.map(({ label, key }) => (
         <Button
-          key={d}
-          variant={currentDate === d ? "default" : "outline"}
+          key={key}
+          variant={currentDate === key ? "default" : "outline"}
           size="sm"
           className="h-7 text-xs px-2.5"
-          onClick={() => applyDate(d)}
+          onClick={() => applyDate(key)}
         >
-          {d.slice(5)}
+          {label}
         </Button>
       ))}
 

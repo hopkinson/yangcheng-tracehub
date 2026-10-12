@@ -6,7 +6,13 @@ import { OrderTable } from "@/components/orders/OrderTable";
 import { OrderDateFilter } from "@/components/orders/OrderDateFilter";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { ShoppingBag, Calendar, AlertTriangle, CheckCircle2, TrendingUp, Layers } from "lucide-react";
-import { formatISODate, getBeijingDayRange } from "@/lib/utils";
+import {
+  formatISODate,
+  getBeijingDayRange,
+  getBeijingWeekRange,
+  getBeijingMonthRange,
+  getBeijingYearRange,
+} from "@/lib/utils";
 import { Invariants } from "@/lib/invariants";
 import { aggregatePipelineStocks } from "@/lib/order-stock";
 
@@ -30,12 +36,26 @@ export default async function OrdersPage({
   const todayStr = formatISODate(now);
   const tomorrow = new Date(now.getTime() + 86400000);
   const tomorrowStr = formatISODate(tomorrow);
-  const targetDateStr = params.date || "all";
-  const orderDateFilter = targetDateStr === "all" ? undefined : { deliveryDate: getBeijingDayRange(targetDateStr) };
+  const targetDateStr = params.date || "year";
 
-  // 1. 并行查询日期维度、分页订单列表、需求汇总与全流程工序数据
+  const isAll = targetDateStr === "all";
+  const preset =
+    targetDateStr === "week"
+      ? (() => { const r = getBeijingWeekRange(todayStr); return { ...r, label: `本周：${r.startStr} ~ ${r.endStr}`, display: `本周 (${r.startStr} ~ ${r.endStr})` }; })()
+      : targetDateStr === "month"
+      ? (() => { const r = getBeijingMonthRange(todayStr); return { ...r, label: `本月：${r.startStr} ~ ${r.endStr}`, display: `本月 (${r.startStr.slice(0, 7)})` }; })()
+      : targetDateStr === "year"
+      ? (() => { const r = getBeijingYearRange(todayStr); return { ...r, label: `本年：${r.startStr} ~ ${r.endStr}`, display: `本年 (${r.startStr.slice(0, 4)}年)` }; })()
+      : null;
+
+  const orderDateFilter = isAll
+    ? undefined
+    : { deliveryDate: preset ? { gte: preset.gte, lte: preset.lte } : getBeijingDayRange(targetDateStr) };
+  const dateTitleLabel = isAll ? "全部发货日" : preset ? preset.label : `发货日：${targetDateStr}`;
+  const targetDateDisplay = isAll ? "全部" : preset ? preset.display : targetDateStr;
+
+  // 1. 并行查询分页订单列表、需求汇总与全流程工序数据
   const [
-    distinctDates,
     totalOrders,
     pagedOrders,
     demandOrders,
@@ -47,12 +67,6 @@ export default async function OrdersPage({
     outboundLines,
     outboundLosses,
   ] = await Promise.all([
-    // 可用发货日期精简获取 (仅查日期字段去重)
-    prisma.order.findMany({
-      select: { deliveryDate: true },
-      distinct: ["deliveryDate"],
-      orderBy: { deliveryDate: "asc" },
-    }),
     // 数据库级总数统计与原生分页
     prisma.order.count({ where: orderDateFilter }),
     prisma.order.findMany({
@@ -95,10 +109,6 @@ export default async function OrdersPage({
     }),
   ]);
 
-  const availableDates = Array.from(
-    new Set(distinctDates.map((o) => formatISODate(o.deliveryDate)))
-  ).sort();
-
   const pipelineStocks = aggregatePipelineStocks({
     batches,
     batchItems,
@@ -136,6 +146,9 @@ export default async function OrdersPage({
   }
 
   const demandSummaries = Object.values(demandSummaryMap);
+  const totalDemandCount = demandSummaries.reduce((sum, d) => sum + d.totalNeeded, 0);
+  const totalShippedCount = demandSummaries.reduce((sum, d) => sum + d.shippedCount, 0);
+  const totalPendingCount = demandSummaries.reduce((sum, d) => sum + d.pendingCount, 0);
 
   return (
     <div className="space-y-5">
@@ -152,24 +165,40 @@ export default async function OrdersPage({
 
       {/* 发货日期切换与需求缺口对照 */}
       <Card className="border-border/80 shadow-xs">
-        <CardHeader className="py-3 px-4 border-b bg-muted/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Calendar className="size-4 text-primary" />
-            <CardTitle className="text-sm font-semibold">
-              发货需求汇总对照（{targetDateStr === "all" ? "全部发货日" : `发货日：${targetDateStr}`}）
-            </CardTitle>
+        <CardHeader className="py-3 px-4 border-b bg-muted/30 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-2">
+              <Calendar className="size-4 text-primary shrink-0" />
+              <CardTitle className="text-sm font-semibold">
+                发货需求汇总对照（{dateTitleLabel}）
+              </CardTitle>
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-xs text-primary font-medium">
+              <span>共计发货需求</span>
+              <span className="font-bold font-mono text-sm">
+                {totalDemandCount.toLocaleString()}
+              </span>
+              <span>只</span>
+              <span className="text-muted-foreground/50 text-[11px] mx-0.5">·</span>
+              <span className="text-muted-foreground text-[11px]">
+                待发 <strong className="font-mono text-foreground font-semibold">{totalPendingCount.toLocaleString()}</strong> 只
+              </span>
+              <span className="text-muted-foreground/50 text-[11px] mx-0.5">·</span>
+              <span className="text-muted-foreground text-[11px]">
+                已发 <strong className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{totalShippedCount.toLocaleString()}</strong> 只
+              </span>
+            </div>
           </div>
           <OrderDateFilter
             currentDate={targetDateStr}
             todayStr={todayStr}
             tomorrowStr={tomorrowStr}
-            availableDates={availableDates}
           />
         </CardHeader>
         <CardContent className="p-4">
           {demandSummaries.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">
-              所选发货日期（{targetDateStr}）暂无订单排产需求。
+              所选发货范围（{targetDateDisplay}）暂无订单排产需求。
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -258,12 +287,12 @@ export default async function OrdersPage({
             <CardTitle className="text-sm font-semibold">
               {targetDateStr === "all"
                 ? `全量订单台账（共 ${totalOrders} 条需求明细）`
-                : `订单台账明细（发货日：${targetDateStr}，共 ${totalOrders} 条需求明细）`}
+                : `订单台账明细（${dateTitleLabel}，共 ${totalOrders} 条需求明细）`}
             </CardTitle>
           </div>
           {targetDateStr !== "all" && (
             <Badge variant="outline" className="text-xs font-mono">
-              已过滤: {targetDateStr}
+              已过滤: {targetDateDisplay}
             </Badge>
           )}
         </CardHeader>
@@ -271,6 +300,7 @@ export default async function OrdersPage({
           key={`${targetDateStr}-${page}`}
           orders={pagedOrders}
           targetDateStr={targetDateStr}
+          targetDateLabel={targetDateDisplay}
         />
         {totalOrders > 0 && (
           <div className="p-4 border-t border-border/60">

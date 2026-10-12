@@ -169,6 +169,41 @@ export function getBeijingDayRange(dateStr: string): { gte: Date; lte: Date } {
   };
 }
 
+const toDateRange = (startStr: string, endStr: string) => ({
+  gte: new Date(`${startStr}T00:00:00.000+08:00`),
+  lte: new Date(`${endStr}T23:59:59.999+08:00`),
+  startStr,
+  endStr,
+});
+
+/**
+ * 获取北京时间自然周范围 (周一 00:00:00.000 至 周日 23:59:59.999)
+ */
+export function getBeijingWeekRange(baseDateStr: string = formatISODate()) {
+  const [y, m, d] = (baseDateStr || formatISODate()).trim().split("-").map(Number);
+  const diff = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  return toDateRange(
+    new Date(Date.UTC(y, m - 1, d - diff)).toISOString().slice(0, 10),
+    new Date(Date.UTC(y, m - 1, d - diff + 6)).toISOString().slice(0, 10)
+  );
+}
+
+/**
+ * 获取北京时间自然月范围 (1号 00:00:00.000 至 月末 23:59:59.999)
+ */
+export function getBeijingMonthRange(baseDateStr: string = formatISODate()) {
+  const [y, m] = (baseDateStr || formatISODate()).trim().split("-").map(Number);
+  return toDateRange(`${y}-${String(m).padStart(2, "0")}-01`, new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10));
+}
+
+/**
+ * 获取北京时间自然年范围 (1月1日 00:00:00.000 至 12月31日 23:59:59.999)
+ */
+export function getBeijingYearRange(baseDateStr: string = formatISODate()) {
+  const y = (baseDateStr || formatISODate()).trim().slice(0, 4);
+  return toDateRange(`${y}-01-01`, `${y}-12-31`);
+}
+
 /**
  * 构造轻量化拖拽文件上传事件绑定
  */

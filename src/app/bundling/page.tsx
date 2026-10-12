@@ -25,7 +25,7 @@ import {
   X,
   Pencil,
 } from "lucide-react";
-import { formatDateTime, cn, getBeijingDayRange } from "@/lib/utils";
+import { formatDateTime, formatISODate, cn, getBeijingDayRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -51,14 +51,24 @@ export default async function BundlingPage({
   const currentUser = await getCurrentUser();
   const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role || "");
 
+  const todayStr = formatISODate();
+  const activeDateStr = selectedDateStr || todayStr;
+  const activeDayRange = getBeijingDayRange(activeDateStr);
+  const isViewingToday = !selectedDateStr || selectedDateStr === todayStr;
   const dateFilter = selectedDateStr ? getBeijingDayRange(selectedDateStr) : undefined;
 
-  // 1. 查询捆扎组与批次统计
+  // 1. 查询捆扎组与工位批次统计 (工位概览卡片主要展示今日数据，同时保留作业中状态)
   const groups = await prisma.bundleGroup.findMany({
     orderBy: { code: "asc" },
     include: {
       _count: { select: { batches: true } },
       batches: {
+        where: {
+          OR: [
+            { date: activeDayRange },
+            { status: "BUNDLING" },
+          ],
+        },
         include: { lines: true },
       },
     },
@@ -167,17 +177,23 @@ export default async function BundlingPage({
   const pagedBatches = batches.slice((page - 1) * pageSize, page * pageSize);
   const pagedBundleQCs = bundleQCs.slice((qcPage - 1) * qcPageSize, qcPage * qcPageSize);
 
-  const isBundlingActive = batches.some((b: any) => b.status === "BUNDLING");
+  const isBundlingActive = groups.some((g: any) => g.batches.some((b: any) => b.status === "BUNDLING"));
   const getBatchCrabs = (b: any) =>
     b.status === "COMPLETED" && b.qualifiedCount != null
       ? b.qualifiedCount
-      : b.lines.reduce((acc: number, l: any) => acc + l.count, 0);
+      : (b.lines?.reduce((acc: number, l: any) => acc + l.count, 0) || 0);
 
-  const totalBatchesAll = groups.reduce((acc: number, g: any) => acc + g.batches.length, 0);
-  const totalCrabsAll = groups.reduce(
-    (acc: number, g: any) => acc + g.batches.reduce((bAcc: number, b: any) => bAcc + getBatchCrabs(b), 0),
-    0
-  );
+  const decoratedGroups = groups.map((g: any) => {
+    const activeBatches = g.batches.filter((b: any) => b.date >= activeDayRange.gte && b.date <= activeDayRange.lte);
+    return {
+      ...g,
+      activeBatches,
+      totalCrabs: activeBatches.reduce((acc: number, b: any) => acc + getBatchCrabs(b), 0),
+      isBundling: g.batches.some((b: any) => b.status === "BUNDLING"),
+    };
+  });
+  const totalBatchesAll = decoratedGroups.reduce((acc, g) => acc + g.activeBatches.length, 0);
+  const totalCrabsAll = decoratedGroups.reduce((acc, g) => acc + g.totalCrabs, 0);
 
   return (
     <div className="space-y-4">
@@ -265,11 +281,14 @@ export default async function BundlingPage({
                     <Users className="size-3.5 text-primary" />
                     班组工位概览
                   </span>
+                  <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground bg-muted/40 px-1.5 py-0 h-4">
+                    {isViewingToday ? "今日数据" : `${activeDateStr} 数据`}
+                  </Badge>
                   <span className="text-[11px]">（点击工位卡片联动筛选下方台账）</span>
                 </div>
-                {selectedGroupId && (
+                {(selectedGroupId || selectedDateStr) && (
                   <Link
-                    href={selectedDateStr ? `/bundling?date=${selectedDateStr}` : "/bundling"}
+                    href="/bundling"
                     className="text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-0.5 hover:underline font-medium"
                   >
                     <X className="size-3" /> 重置筛选
@@ -288,7 +307,7 @@ export default async function BundlingPage({
                       ? "bg-primary/10 border-primary shadow-xs ring-1 ring-primary"
                       : "bg-card border-border/80 hover:border-primary/50 hover:bg-muted/30"
                   )}
-                  title="查看所有班组台账"
+                  title={isViewingToday ? "查看所有班组台账（今日工位汇总）" : `查看所有班组台账（${activeDateStr} 工位汇总）`}
                 >
                   <div className="flex items-center justify-between gap-1 min-w-0">
                     <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
@@ -310,9 +329,7 @@ export default async function BundlingPage({
                 </Link>
 
                 {/* 2. 各班组工位卡 */}
-                {groups.map((g: any) => {
-                  const totalCrabs = g.batches.reduce((acc: number, b: any) => acc + getBatchCrabs(b), 0);
-                  const isBundling = g.batches.some((b: any) => b.status === "BUNDLING");
+                {decoratedGroups.map((g: any) => {
                   const isSelected = selectedGroupId === g.id;
                   const cleanName = g.name.replace(/-\d+_[a-z0-9]+$/i, "");
 
@@ -332,14 +349,14 @@ export default async function BundlingPage({
                           ? "bg-primary/10 border-primary shadow-xs ring-1 ring-primary"
                           : "bg-card border-border/80 hover:border-primary/50 hover:bg-muted/30"
                       )}
-                      title={g.name}
+                      title={`${g.name}（${isViewingToday ? "今日" : activeDateStr}: ${g.activeBatches.length} 批, ${g.totalCrabs.toLocaleString()} 只）`}
                     >
                       <div className="flex items-center justify-between gap-1.5 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span
                             className={cn(
                               "size-2 rounded-full shrink-0",
-                              isBundling
+                              g.isBundling
                                 ? "bg-amber-500 animate-pulse ring-2 ring-amber-500/20"
                                 : "bg-muted-foreground/30"
                             )}
@@ -357,16 +374,16 @@ export default async function BundlingPage({
 
                       <div className="flex items-center justify-between text-[11px] font-mono">
                         <span className="text-muted-foreground">
-                          {isBundling ? (
+                          {g.isBundling ? (
                             <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium font-sans">
                               作业中
                             </span>
                           ) : (
-                            `${g.batches.length} 批`
+                            `${g.activeBatches.length} 批`
                           )}
                         </span>
-                        <span className={totalCrabs > 0 ? "text-primary font-semibold" : "text-muted-foreground"}>
-                          {totalCrabs.toLocaleString()} 只
+                        <span className={g.totalCrabs > 0 ? "text-primary font-semibold" : "text-muted-foreground"}>
+                          {g.totalCrabs.toLocaleString()} 只
                         </span>
                       </div>
                     </Link>
@@ -384,15 +401,18 @@ export default async function BundlingPage({
               捆扎批次台账（{selectedGroup ? `已筛选: ${selectedGroup.name.replace(/-\d+_[a-z0-9]+$/i, "")} · ` : ""}共 {batches.length} 批）
             </CardTitle>
           </div>
-          {selectedGroupId && (
-            <Link
-              href={selectedDateStr ? `/bundling?date=${selectedDateStr}` : "/bundling"}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground bg-background px-2 py-0.5 rounded border border-border/80 hover:border-border transition-colors"
-            >
-              <X className="size-3" />
-              清除班组筛选
-            </Link>
-          )}
+          <div className="flex items-center gap-2">
+            <LedgerDateFilter selectedDate={selectedDateStr} />
+            {selectedGroupId && (
+              <Link
+                href={selectedDateStr ? `/bundling?date=${selectedDateStr}` : "/bundling"}
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground bg-background px-2 py-0.5 rounded border border-border/80 hover:border-border transition-colors"
+              >
+                <X className="size-3" />
+                清除班组筛选
+              </Link>
+            )}
+          </div>
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1260px] text-xs text-left">
