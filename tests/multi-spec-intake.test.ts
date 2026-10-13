@@ -142,7 +142,7 @@ async function runTests() {
     data: { code: `ZY-EMP4-${timestamp}`, name: `空池4-${timestamp}`, status: "ACTIVE" },
   });
 
-  console.log("▶ [Test 4] 校验规格只能选择 2.5两至 6.0两的 0.5 档位");
+  console.log("▶ [Test 4] 校验规格只能选择 2.0两至 6.0两的 0.5 档位");
   const resInvalidSpec = await createMultiSpecBatchAction({
     farmerId: farmer.id,
     enclosureId: farmer.enclosures[0].id,
@@ -152,8 +152,20 @@ async function runTests() {
     createdById: admin.id,
   });
   assert.strictEqual(resInvalidSpec.success, false, "Should reject non-standard weight tier");
-  assert.match(resInvalidSpec.error || "", /规格无效|2\.5两至 6\.0两/, "Must report invalid weight tier");
+  assert.match(resInvalidSpec.error || "", /规格无效|2\.0两至 6\.0两/, "Must report invalid weight tier");
   console.log("  ✔ 非标准规格拦截通过:", resInvalidSpec.error);
+
+  console.log("▶ [Test 4.1] 校验支持 2.0两母蟹 规格正常入池");
+  const resValid20Female = await createMultiSpecBatchAction({
+    farmerId: farmer.id,
+    enclosureId: farmer.enclosures[0].id,
+    items: [
+      { poolId: poolEmpty4.id, gender: "FEMALE", weightTier: "2.0两", weight: 20, inPoolCount: 100 },
+    ],
+    createdById: admin.id,
+  });
+  assert.strictEqual(resValid20Female.success, true, `Should accept 2.0两母蟹: ${resValid20Female.error}`);
+  console.log("  ✔ 2.0两母蟹规格入池成功, 批次号:", resValid20Female.data?.code);
 
   console.log("▶ [Test 5] 校验超额入池拦截");
   const resOverQuota = await createMultiSpecBatchAction({

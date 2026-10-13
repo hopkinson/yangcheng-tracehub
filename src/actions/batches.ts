@@ -10,6 +10,7 @@ import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 import { assertDailyCloseOpen } from "@/actions/daily-close";
 
 const MULTI_SPEC_WEIGHT_TIERS = new Set<string>([
+  "2.0两",
   "2.5两",
   "3.0两",
   "3.5两",
@@ -249,7 +250,7 @@ export async function createMultiSpecBatchAction(data: {
         const activeInPool = Invariants.calculatePoolLiveCount(pool);
         const itNormWeightTier = Invariants.normalizeWeightTier(it.weightTier, "");
         if (!MULTI_SPEC_WEIGHT_TIERS.has(itNormWeightTier)) {
-          throw new Error(`第 ${i + 1} 行规格无效，请选择 2.5两至 6.0两（每 0.5两一档）`);
+          throw new Error(`第 ${i + 1} 行规格无效，请选择 2.0两至 6.0两（每 0.5两一档）`);
         }
         const poolCheck = Invariants.checkPoolSpec(
           { currentGender: pool.currentGender, currentWeightTier: pool.currentWeightTier, activeCount: activeInPool },

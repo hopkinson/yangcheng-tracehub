@@ -25,7 +25,7 @@ import { uploadFileAction } from "@/actions/upload";
 import { Invariants } from "@/lib/invariants";
 import { cn, formatDateTime, getFileDropHandlers, getPreviewFileUrl } from "@/lib/utils";
 
-const WEIGHT_TIERS: readonly string[] = ["2.5两", "3.0两", "3.5两", "4.0两", "4.5两", "5.0两", "5.5两", "6.0两"];
+const WEIGHT_TIERS: readonly string[] = ["2.0两", "2.5两", "3.0两", "3.5两", "4.0两", "4.5两", "5.0两", "5.5两", "6.0两"];
 
 export interface FarmerOption {
   id: string;
