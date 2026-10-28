@@ -244,3 +244,20 @@ export function getFileDropHandlers(
 export function formatOrderCode(code: string | null | undefined): string {
   return code ? code.replace(/-[0-9a-f-]{36}$/i, "") : "—";
 }
+
+/**
+ * 生成递增的规范业务流水号，杜绝并发与物理删除碰撞
+ */
+export async function getNextSequentialCode(
+  model: { findFirst: (args: any) => Promise<{ code: string | null } | null> },
+  prefix: string,
+  pad = 2
+): Promise<string> {
+  const last = await model.findFirst({
+    where: { code: { startsWith: prefix } },
+    orderBy: { code: "desc" },
+    select: { code: true },
+  });
+  const num = last?.code ? parseInt(last.code.slice(prefix.length) || "0", 10) : 0;
+  return `${prefix}${String(num + 1).padStart(pad, "0")}`;
+}

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { getBeijingDateStr, getBeijingYear, parseBeijingDateTime } from "@/lib/utils";
+import { getBeijingDateStr, getBeijingYear, getNextSequentialCode, parseBeijingDateTime } from "@/lib/utils";
 import { batchEditFormSchema, batchIntakeTimeSchema, type BatchEditFormValues } from "@/lib/validations/schemas";
 import { releasePoolSpecLockIfEmpty } from "@/lib/holding-pool";
 import { assertDailyCloseOpen } from "@/actions/daily-close";
@@ -103,10 +103,7 @@ export async function createBatchAction(data: {
       });
     }
 
-    const dateStr = getBeijingDateStr();
-    const prefix = `PC-${dateStr}-`;
-    const count = await tx.batch.count({ where: { code: { startsWith: prefix } } });
-    const batchCode = `${prefix}${String(count + 1).padStart(3, "0")}`;
+    const batchCode = await getNextSequentialCode(tx.batch, `PC-${getBeijingDateStr()}-`, 3);
 
     const validEnclosure = farmer.enclosures.find((e) => e.id === data.enclosureId) || farmer.enclosures[0];
     if (!validEnclosure) {
@@ -272,10 +269,7 @@ export async function createMultiSpecBatchAction(data: {
       }
       const enclosureId = validEnclosure.id;
 
-      const dateStr = getBeijingDateStr();
-      const prefix = `YL${dateStr}`;
-      const count = await tx.batch.count({ where: { code: { startsWith: prefix } } });
-      const batchCode = `${prefix}${String(count + 1).padStart(2, "0")}`;
+      const batchCode = await getNextSequentialCode(tx.batch, `YL${getBeijingDateStr()}`, 2);
 
       const firstItem = data.items[0];
       const firstItemNormTier = Invariants.normalizeWeightTier(firstItem?.weightTier);
@@ -536,8 +530,9 @@ export async function deleteBatchAction(data: { batchId: string; userId?: string
         },
       });
 
-      if (batch.outPoolCount > 0 || batch.outboundOrders.length > 0) {
-        throw new Error(`批次【${batch.code}】已有出库记录或关联出库单，禁止删除！`);
+      const bundleCount = await tx.bundleBatch.count({ where: { sourceBatchId: batch.id } });
+      if (batch.outPoolCount > 0 || batch.outboundOrders.length > 0 || bundleCount > 0) {
+        throw new Error(`批次【${batch.code}】已有出库记录、下游捆扎批次或关联出库单，禁止删除！`);
       }
 
       // 收集关联的暂养池 ID 以便删除后重置空池状态

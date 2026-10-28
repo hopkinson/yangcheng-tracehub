@@ -132,6 +132,7 @@ export async function importOrdersAction(rawOrders: RawImportOrder[]) {
 
 export async function deleteOrderBatchAction(importId: string, orderNo?: string) {
   try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
     const whereClause: any = { importId, status: "PENDING" };
     if (orderNo) {
       whereClause.orderNo = orderNo;
@@ -163,6 +164,7 @@ export async function deleteOrderBatchAction(importId: string, orderNo?: string)
 
 export async function batchDeleteOrdersAction(orderIds: string[]) {
   try {
+    await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
     if (!orderIds?.length) {
       return { success: false, message: "请勾选要删除的待发货订单" };
     }

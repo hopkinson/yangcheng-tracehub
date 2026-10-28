@@ -33,10 +33,7 @@ const FIXED_QC_TITLES: Record<string, string> = {
 
 export async function createQCRecordAction(data: CreateQCRecordData) {
   try {
-    const editor = data.id ? await requireRole(["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"]) : null;
-    if (data.refType === "BATCH" && (data.cat === "QUICK_CHECK" || data.cat === "TASTE_CHECK")) {
-      await requireRole(["QA_DIRECTOR", "ADMIN", "WAREHOUSE_ADMIN"]);
-    }
+    const editor = await requireRole(["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"]);
 
     if (!data.cat?.trim() || !data.refId?.trim() || !data.checkTime?.trim() || !data.uploader?.trim()) {
       return { success: false, message: "记录类别、关联对象、记录时间与质检人员均为必填项" };
@@ -188,6 +185,7 @@ export const saveQCRecordAction = createQCRecordAction;
 
 export async function deleteQCRecordAction(recordId: string) {
   try {
+    await requireRole(["QA_DIRECTOR", "ADMIN"]);
     await prisma.qCRecord.delete({ where: { id: recordId } });
     try {
       revalidatePath("/batches");

@@ -112,6 +112,7 @@ function LedgerTable({
 
 async function LedgerBadges({ params }: { params: Record<string, string | undefined> }) {
   const user = await getCurrentUser();
+  if (!user) return null;
   const counts = await Promise.all(ledgerNames.map((_, i) => countLedgerRows(prisma, i + 1, params, user)));
   return <LedgerTabCarousel ledgers={ledgerNames.map((name, i) => ({ key: `ledger${i + 1}`, no: i + 1, label: name, count: counts[i] }))} />;
 }

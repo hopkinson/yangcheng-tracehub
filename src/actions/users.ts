@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { hashPassword } from "@/lib/password";
 
 export async function createUserAction(data: {
   username: string;
@@ -47,7 +48,7 @@ export async function createUserAction(data: {
   }
 
   const defaultPassword = phone.slice(-6);
-  const passwordHash = data.password?.trim() || defaultPassword;
+  const passwordHash = hashPassword(data.password?.trim() || defaultPassword);
 
   const user = await prisma.user.create({
     data: {
@@ -164,7 +165,7 @@ export async function resetPasswordAction(data: {
 
   const updated = await prisma.user.update({
     where: { id: data.id },
-    data: { passwordHash: resetPassword },
+    data: { passwordHash: hashPassword(resetPassword) },
   });
 
   if (data.operatorId) {

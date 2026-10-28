@@ -311,6 +311,13 @@ export const Invariants = {
 
   // 6. 蟹扣逐日轧平对账: 领扣 = 绑扣 + 退回 + 作废
   checkDailyBalance: ({ claimedCount, boundCount, returnedCount, scrappedCount }: DailyTagBalanceCheck) => {
+    if (returnedCount < 0 || scrappedCount < 0 || boundCount < 0 || claimedCount < 0) {
+      return {
+        isBalanced: false,
+        diff: claimedCount - (boundCount + returnedCount + scrappedCount),
+        reason: "数量异常：领用、绑扎、退回和作废数量均不得为负数",
+      };
+    }
     const accounted = boundCount + returnedCount + scrappedCount;
     const diff = claimedCount - accounted;
     const isBalanced = diff === 0;

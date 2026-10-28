@@ -140,23 +140,33 @@ export async function approveOutboundOrderAction(data: {
       );
 
       for (const { gender, weightTier, count } of specDemands) {
-        const qualifiedAgg = await tx.sortTask.aggregate({
-          where: { status: "COMPLETED", gender, weightTier },
-          _sum: { qualifiedCount: true },
-        });
+        const [qualifiedAgg, otherOutboundAgg, lossAgg] = await Promise.all([
+          tx.sortTask.aggregate({
+            where: { status: "COMPLETED", gender, weightTier },
+            _sum: { qualifiedCount: true },
+          }),
+          tx.outboundLine.aggregate({
+            where: {
+              gender,
+              weightTier,
+              outboundOrderId: { not: order.id },
+              outboundOrder: { status: { not: "REJECTED" } },
+            },
+            _sum: { count: true },
+          }),
+          tx.outboundLossRecord.aggregate({
+            where: {
+              gender,
+              weightTier,
+              status: { not: "REJECTED" },
+            },
+            _sum: { count: true },
+          }),
+        ]);
         const totalQualified = qualifiedAgg._sum.qualifiedCount || 0;
-
-        const otherOutboundAgg = await tx.outboundLine.aggregate({
-          where: {
-            gender,
-            weightTier,
-            outboundOrderId: { not: order.id },
-            outboundOrder: { status: { not: "REJECTED" } },
-          },
-          _sum: { count: true },
-        });
         const otherUsed = otherOutboundAgg._sum.count || 0;
-        const availableStock = Math.max(0, totalQualified - otherUsed);
+        const totalLoss = lossAgg._sum.count || 0;
+        const availableStock = Math.max(0, totalQualified - otherUsed - totalLoss);
 
         if (availableStock < count) {
           const specLabel = `${gender === "MALE" ? "公蟹" : "母蟹"} ${weightTier}`;

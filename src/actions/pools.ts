@@ -5,11 +5,11 @@ import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Invariants } from "@/lib/invariants";
 import { releasePoolSpecLockIfEmpty, summarizeBatchItems } from "@/lib/holding-pool";
+import { getNextSequentialCode } from "@/lib/utils";
 
 export async function createPoolAction(data: { name: string; userId: string }) {
   await requireRole(["WAREHOUSE_ADMIN", "ADMIN"]);
-  const count = await prisma.holdingPool.count();
-  const code = `ZY-${String(count + 1).padStart(2, "0")}`;
+  const code = await getNextSequentialCode(prisma.holdingPool, "ZY-", 2);
 
   const pool = await prisma.holdingPool.create({
     data: {

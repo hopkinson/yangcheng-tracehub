@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { formatDateTime, formatISODate, getBeijingDateStr, getBeijingDayRange, parseBeijingDateTime } from "@/lib/utils";
+import { formatDateTime, formatISODate, getBeijingDateStr, getBeijingDayRange, getBeijingYear, getNextSequentialCode, parseBeijingDateTime } from "@/lib/utils";
 import { tagClaimTimeSchema } from "@/lib/validations/schemas";
 
 export async function requestTagClaimAction(data: {
@@ -55,9 +55,7 @@ export async function requestTagClaimAction(data: {
       throw new Error("该养殖户存在前日未轧平的蟹扣记录，须先完成退废核销方可再次领用");
     }
 
-    const prefix = `XK${getBeijingDateStr(today)}`;
-    const count = await tx.tagClaim.count({ where: { code: { startsWith: prefix } } });
-    const code = `${prefix}${String(count + 1).padStart(2, "0")}`;
+    const code = await getNextSequentialCode(tx.tagClaim, `XK${getBeijingDateStr(today)}`, 2);
 
     const claim = await tx.tagClaim.create({
       data: {
@@ -109,6 +107,10 @@ export async function resubmitTagClaimAction(data: {
         },
       },
     });
+
+    if (claim.status === "APPROVED") {
+      throw new Error("该蟹扣申领已通过审核，禁止重新提交；如需调整请由品控或管理员处理");
+    }
 
     const tagInboundCount = claim.farmer.batches.reduce((sum, b) => sum + b.inPoolCount, 0);
     const cumulativeClaimed = claim.farmer.tagClaims.reduce((sum, c) => sum + (c.id !== data.claimId ? c.claimCount : 0), 0);

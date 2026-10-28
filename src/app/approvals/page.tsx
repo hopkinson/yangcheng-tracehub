@@ -793,7 +793,7 @@ export default async function ApprovalsPage({
                                   batchId={batch.id}
                                   batchCode={batch.code}
                                   isFrozen={batch.status === "FROZEN"}
-                                  userId={currentUser.id}
+                                  userId={currentUser?.id || ""}
                                 />
                               </div>
                             </TableCell>

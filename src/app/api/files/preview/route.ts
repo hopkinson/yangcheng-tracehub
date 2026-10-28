@@ -81,6 +81,16 @@ export async function GET(req: NextRequest) {
     let targetUrl = rawUrl;
     const urlObj = new URL(rawUrl);
 
+    // SSRF 安全防御：白名单限定合法的云端对象存储域名，拒绝内网及未授权 Host
+    const allowedEndpoint = process.env.OSS_ENDPOINT?.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const isAllowedHost =
+      urlObj.hostname.includes("aliyuncs.com") ||
+      Boolean(allowedEndpoint && urlObj.hostname.includes(allowedEndpoint));
+
+    if (!isAllowedHost) {
+      return new NextResponse("Forbidden: Untrusted remote storage host", { status: 403 });
+    }
+
     // 核心自动纠错：
     // 若请求域名为 *.aliyuncs.com 且未包含当前配置的 Bucket (例如 oss-cn-shanghai.aliyuncs.com/reports/...)
     // 自动补齐 Bucket 前缀，将其转为标准的 https://${bucket}.${endpoint}/${objectKey}，杜绝 0003-00001403

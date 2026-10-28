@@ -3,6 +3,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   createSessionToken,
   SESSION_COOKIE_NAME,
@@ -38,7 +40,7 @@ export async function loginAction(formData: FormData) {
     include: { channel: true },
   });
 
-  if (!user || user.passwordHash !== password) {
+  if (!user || !verifyPassword(password, user.passwordHash)) {
     redirect(
       failRedirectBase +
         encodeURIComponent("手机号或密码错误 (初始密码为手机号后6位)")
@@ -66,6 +68,11 @@ export async function changePasswordAction(data: {
 }) {
   const { userId, currentPassword, newPassword, confirmPassword } = data;
 
+  const currentUser = await getCurrentUser();
+  if (!currentUser || (currentUser.id !== userId && currentUser.role !== "ADMIN")) {
+    throw new Error("无权修改该用户密码");
+  }
+
   if (!currentPassword || !newPassword || !confirmPassword) {
     throw new Error("所有密码字段均为必填");
   }
@@ -82,7 +89,7 @@ export async function changePasswordAction(data: {
     where: { id: userId },
   });
 
-  if (user.passwordHash !== currentPassword) {
+  if (!verifyPassword(currentPassword, user.passwordHash)) {
     throw new Error("原密码输入错误");
   }
 
@@ -92,7 +99,7 @@ export async function changePasswordAction(data: {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: newPassword },
+    data: { passwordHash: hashPassword(newPassword) },
   });
 
   await prisma.auditLog.create({

@@ -17,13 +17,11 @@ export async function updateApprovalSettingAction(data: {
   }
 
   const previous = await getApprovalSetting();
-  await prisma.$executeRaw`
-    INSERT INTO "ApprovalSetting" ("id", "tagClaimRole", "outboundRole")
-    VALUES ('default', ${data.tagClaimRole}, ${data.outboundRole})
-    ON CONFLICT ("id") DO UPDATE SET
-      "tagClaimRole" = excluded."tagClaimRole",
-      "outboundRole" = excluded."outboundRole"
-  `;
+  await prisma.approvalSetting.upsert({
+    where: { id: "default" },
+    create: { id: "default", tagClaimRole: data.tagClaimRole, outboundRole: data.outboundRole },
+    update: { tagClaimRole: data.tagClaimRole, outboundRole: data.outboundRole },
+  });
   const next = {
     tagClaimRole: data.tagClaimRole,
     outboundRole: data.outboundRole,

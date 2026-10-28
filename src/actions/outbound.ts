@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Invariants } from "@/lib/invariants";
 import { requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { getBeijingDateStr, parseBeijingDateTime } from "@/lib/utils";
+import { getBeijingDateStr, getNextSequentialCode, parseBeijingDateTime } from "@/lib/utils";
 
 type FifoColdLot = {
   coldLogId: string;
@@ -91,7 +91,7 @@ async function getFifoColdLots(
   );
 }
 
-async function getColdStorageStock(
+export async function getColdStorageStock(
   gender: string,
   rawWeightTier: string,
   db: any = prisma,
@@ -427,11 +427,7 @@ export async function batchRegisterPackagingLossAction(data: {
 }
 
 // 辅助：生成当日唯一的出库单号
-async function nextOutboundCode(tx: any): Promise<string> {
-  const prefix = `CK-${getBeijingDateStr()}-`;
-  const count = await tx.outboundOrder.count({ where: { code: { startsWith: prefix } } });
-  return `${prefix}${String(count + 1).padStart(3, "0")}`;
-}
+const nextOutboundCode = (tx: any) => getNextSequentialCode(tx.outboundOrder, `CK-${getBeijingDateStr()}-`, 3);
 
 /**
  * 门店订单出库申请 (合单)

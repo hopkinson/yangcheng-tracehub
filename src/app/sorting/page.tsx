@@ -52,7 +52,7 @@ export default async function SortingPage({
   const qcPage = Math.max(1, Number(params?.qcPage) || 1);
   const qcPageSize = Math.max(1, Number(params?.qcPageSize) || 10);
   const currentUser = await getCurrentUser();
-  const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role);
+  const canEditQc = Boolean(currentUser && ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser.role));
   // 1. 查询分拣设备列表
   const machines = await prisma.sortMachine.findMany({
     orderBy: { code: "asc" },

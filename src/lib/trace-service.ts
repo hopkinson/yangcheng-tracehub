@@ -142,6 +142,7 @@ export async function resolveTraceQuery(
       },
     },
     orderBy: { createdAt: "desc" },
+    take: 20,
   });
 
   if (orders.length > 0) {
@@ -197,6 +198,7 @@ export async function resolveTraceQuery(
       lines: { include: { order: true } },
     },
     orderBy: { createdAt: "desc" },
+    take: 20,
   });
 
   if (outboundOrders.length > 0) {

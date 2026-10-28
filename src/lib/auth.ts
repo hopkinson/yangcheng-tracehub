@@ -15,26 +15,17 @@ export async function getCurrentUser() {
       });
       if (user) return user;
     }
-
-    // 兼容直接设置 current_user_id 的场景
-    const currentUserId = cookieStore.get("current_user_id")?.value;
-    if (currentUserId) {
-      const user = await prisma.user.findUnique({
-        where: { id: currentUserId },
-        include: { channel: true },
-      });
-      if (user) return user;
-    }
+    return null;
   } catch {
     // cookies() called outside request scope (e.g. standalone test scripts)
+    if (process.env.NODE_ENV === "test" || !process.env.NEXT_RUNTIME) {
+      return prisma.user.findFirst({
+        where: { role: "ADMIN" },
+        include: { channel: true },
+      });
+    }
+    return null;
   }
-
-  // 默认管理员兜底
-  const defaultAdmin = await prisma.user.findFirst({
-    where: { role: "ADMIN" },
-    include: { channel: true },
-  });
-  return defaultAdmin!;
 }
 
 export async function requireRole(allowedRoles: string[]) {

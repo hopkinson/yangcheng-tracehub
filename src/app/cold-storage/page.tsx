@@ -24,7 +24,7 @@ export default async function ColdStoragePage({
   const qcPage = Math.max(1, Number(params?.qcPage) || 1);
   const qcPageSize = Math.max(1, Number(params?.qcPageSize) || 10);
   const currentUser = await getCurrentUser();
-  const canEditQc = ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser?.role);
+  const canEditQc = Boolean(currentUser && ["QA_DIRECTOR", "WAREHOUSE_ADMIN", "ADMIN"].includes(currentUser.role));
   // 1. 查询保鲜库及其入库流水
   const stores = await prisma.coldStore.findMany({
     orderBy: { code: "asc" },

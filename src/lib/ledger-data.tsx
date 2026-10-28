@@ -62,6 +62,7 @@ const normalizeWeightTier = (value: string) => {
 
 export async function getLedgerData(params: LedgerParams, exportAll = false) {
   const currentUser = await getCurrentUser();
+  if (!currentUser) throw new Error("请先登录系统查看台账");
   const range = getLedgerRange(params);
   const no = ledgerNumber(params);
   const validTab = `ledger${no}`;
