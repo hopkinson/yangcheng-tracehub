@@ -5,10 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { deleteFileFromStorage, uploadFileToStorage } from "@/lib/storage";
 import { inspectionReportFormSchema } from "@/lib/validations/schemas";
+import { REPORT_EXTENSIONS, REPORT_MIME_TYPES } from "@/lib/report-file-types";
 
 const REPORT_ROLES = ["QA_DIRECTOR", "ADMIN", "WAREHOUSE_ADMIN"];
-export const REPORT_EXTENSIONS = new Set(["pdf", "jpg", "jpeg", "png", "webp"]);
-export const REPORT_MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
 
 function validateAttachment(file: File, label: string) {
   if (file.size > 10 * 1024 * 1024) throw new Error(`${label}不能超过 10MB`);

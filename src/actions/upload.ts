@@ -2,7 +2,7 @@
 
 import { uploadFileToStorage } from "@/lib/storage";
 import { requireRole } from "@/lib/auth";
-import { REPORT_EXTENSIONS, REPORT_MIME_TYPES } from "./reports";
+import { REPORT_EXTENSIONS, REPORT_MIME_TYPES } from "@/lib/report-file-types";
 
 export interface UploadActionResult {
   success: boolean;
