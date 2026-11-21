@@ -1,141 +1,96 @@
 import assert from "node:assert/strict";
-import { Invariants } from "../src/lib/invariants";
+import { randomUUID } from "node:crypto";
+import { registerHooks } from "node:module";
+import { test } from "node:test";
+import { PrismaClient, type Prisma } from "@prisma/client";
+import { NextRequest } from "next/server";
+import * as XLSX from "xlsx";
 
-// 提取台账中的原料批次行计算逻辑进行单元回归测试
-function calculateRawMaterialLedgerMetrics(
-  batch: any,
-  item: any
-) {
-  const itemTier = Invariants.normalizeWeightTier(item.weightTier);
-  let downstreamShipped = 0;
-  let downstreamLoss = 0;
-  let hasDownstream = false;
+const prisma = new PrismaClient();
+const rollback = new Error("rollback raw material ledger fixtures");
 
-  if (batch.bundleBatches?.length) {
-    for (const bb of batch.bundleBatches) {
-      for (const line of bb.lines || []) {
-        if (line.gender === item.gender && Invariants.normalizeWeightTier(line.weightTier) === itemTier) {
-          hasDownstream = true;
-          const lineLoss = line.lossCount ?? (bb.lines.length === 1 ? bb.lossCount : 0);
-          downstreamLoss += lineLoss || 0;
-        }
+test("原料台账区分发货和两类损耗，分页与 Excel 导出顺序一致", async () => {
+  try {
+    await assert.rejects(prisma.$transaction(async (tx) => {
+      const key = `raw-ledger-${randomUUID()}`;
+      const date = "2091-01-15";
+      const user = await tx.user.create({ data: { username: key, phone: key, fullName: key, role: "ADMIN" } });
+      const farmer = await tx.farmer.create({ data: { code: key, name: key, phone: key, farmType: "LAKE_CRAB", year: 2091, area: 1, quota: 600 } });
+      const enclosure = await tx.enclosure.create({ data: { code: key, farmerId: farmer.id } });
+      const pool = await tx.holdingPool.create({ data: { code: key, name: key } });
+      const otherPool = await tx.holdingPool.create({ data: { code: `${key}-other`, name: `${key}-other` } });
+      const batchRefs = { farmerId: farmer.id, enclosureId: enclosure.id, poolId: pool.id, createdById: user.id };
+      const legacy = await tx.batch.create({ data: {
+        ...batchRefs, code: `${key}-legacy`, inPoolTime: new Date(`${date}T02:00:00Z`),
+        inPoolCount: 100, outPoolCount: 80, lossCount: 20,
+      } });
+      const batch = await tx.batch.create({ data: {
+        ...batchRefs, code: key, inPoolTime: new Date(`${date}T04:00:00Z`),
+        items: { create: [
+          { id: `${key}-0`, poolId: pool.id, gender: "MALE", weightTier: "3.5两", weight: 42, inPoolCount: 120, outPoolCount: 118, lossCount: 2 },
+          ...Array.from({ length: 9 }, (_, i) => ({
+            id: `${key}-${i + 1}`, poolId: otherPool.id, gender: "FEMALE", weightTier: "2.5两", weight: i + 1, inPoolCount: 10,
+          })).reverse(),
+        ] },
+      } });
+      const claim = await tx.tagClaim.create({ data: { farmerId: farmer.id, applicantId: user.id, claimCount: 120, claimDate: batch.inPoolTime } });
+      const group = await tx.bundleGroup.create({ data: { code: key, name: key } });
+      const bundle = await tx.bundleBatch.create({ data: {
+        code: key, groupId: group.id, sourceBatchId: batch.id, tagClaimId: claim.id, ropeBatch: key,
+        lines: { create: { poolId: pool.id, gender: "MALE", weightTier: "3.5两", count: 118, lossCount: 1 } },
+      } });
+      const machine = await tx.sortMachine.create({ data: { code: key, name: key } });
+      const task = await tx.sortTask.create({ data: {
+        code: key, machineId: machine.id, bundleBatchId: bundle.id,
+        gender: "MALE", weightTier: "3.5两", inputCount: 117, qualifiedCount: 115, lossCount: 2, status: "COMPLETED",
+      } });
+      const coldStore = await tx.coldStore.create({ data: { code: key, name: key } });
+      const cold = await tx.coldLog.create({ data: { code: key, storeId: coldStore.id, sortTaskId: task.id, count: 115, operator: key } });
+      const channel = await tx.channel.create({ data: { name: key } });
+      const store = await tx.store.create({ data: { code: key, name: key, channelId: channel.id } });
+      const orderRefs = { batchId: batch.id, storeId: store.id, channelId: channel.id, applicantId: user.id };
+      const line = { coldLogId: cold.id, orderNo: key, gender: "MALE", weightTier: "3.5两" };
+      await tx.outboundOrder.create({ data: { ...orderRefs, code: key, status: "APPROVED", lines: { create: { ...line, count: 108 } } } });
+      await tx.outboundOrder.create({ data: { ...orderRefs, code: `${key}-rejected`, status: "REJECTED", lines: { create: { ...line, count: 9 } } } });
+      await tx.outboundLossRecord.createMany({ data: [
+        { lossType: "PACKAGING", count: 3, status: "APPROVED" },
+        { lossType: "CLEARANCE", count: 4, status: "APPROVED" },
+        { lossType: "PACKAGING", count: 9, status: "REJECTED" },
+      ].map(loss => ({ ...loss, coldLogId: cold.id, gender: line.gender, weightTier: line.weightTier, reason: key, operatorId: user.id })) });
+
+      // Use Next's server-side alias and keep application queries inside the fixture transaction.
+      const hook = registerHooks({
+        resolve(specifier, context, nextResolve) {
+          return nextResolve(specifier === "server-only" ? "next/dist/compiled/server-only/empty" : specifier, context);
+        },
+      });
+      const prismaScope = globalThis as typeof globalThis & { prisma?: Prisma.TransactionClient };
+      const priorPrisma = prismaScope.prisma;
+      prismaScope.prisma = tx;
+      try {
+        const { getLedgerData } = await import("../src/lib/ledger-data");
+        const { GET } = await import("../src/app/api/ledgers/export/route");
+        const params = { tab: "ledger2", start: date, end: date };
+        const first = (await getLedgerData(params)).ledgers[1];
+        const second = (await getLedgerData({ ...params, l2Page: "2" })).ledgers[1];
+        assert.equal(first.count, 11);
+        assert.deepEqual(first.rows.map(row => row.rowKey), Array.from({ length: 10 }, (_, i) => `${key}-${i}`));
+        assert.deepEqual(second.rows.map(row => row.rowKey), [legacy.id]);
+        assert.deepEqual(first.rows[0].displayRow.slice(10, 16), [0, 108, 8, "6.67%", 12, "10.00%"]);
+        assert.deepEqual(second.rows[0].displayRow.slice(10, 16), [0, 80, 20, "20.00%", 20, "20.00%"]);
+
+        const response = await GET(new NextRequest(`http://localhost/api/ledgers/export?${new URLSearchParams({ ...params, l2Page: "2" })}`));
+        assert.equal(response.status, 200);
+        const workbook = XLSX.read(await response.arrayBuffer());
+        const exported = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets["02 原料批次台账"], { header: 1 });
+        assert.deepEqual(exported, [first.headers, ...[...first.rows, ...second.rows].map(row => row.exportRow)]);
+      } finally {
+        prismaScope.prisma = priorPrisma;
+        hook.deregister();
       }
-      for (const st of bb.sortTasks || []) {
-        if (st.gender === item.gender && Invariants.normalizeWeightTier(st.weightTier) === itemTier) {
-          hasDownstream = true;
-          downstreamLoss += st.lossCount || 0;
-          for (const cl of st.coldLogs || []) {
-            for (const ol of cl.outboundLines || []) {
-              downstreamShipped += ol.count || 0;
-            }
-            for (const loss of cl.outboundLosses || []) {
-              downstreamLoss += loss.count || 0;
-            }
-          }
-        }
-      }
-    }
+      throw rollback;
+    }, { timeout: 30_000 }), (error: unknown) => error === rollback);
+  } finally {
+    await prisma.$disconnect();
   }
-
-  const shipped = hasDownstream ? downstreamShipped : item.outPoolCount;
-  const totalLoss = hasDownstream ? item.lossCount + downstreamLoss : item.lossCount;
-  const inPoolRemaining = Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount);
-
-  return {
-    inPoolRemaining,
-    shipped,
-    totalLoss,
-    lossRateText: `${((totalLoss / item.inPoolCount) * 100).toFixed(2)}%`,
-  };
-}
-
-function testRawMaterialLedgerOutboundLossSeparation() {
-  console.log("▶ [Test] 原料批次台账：发货损耗与真实发货穿透计算解耦回归测试");
-
-  // 模拟用户截图中的实际业务场景：
-  // 1. 原料入池 120 只 (3.5两 公蟹)
-  // 2. 全量起池捆扎 120 只 (outPoolCount = 120)
-  // 3. 捆扎合格 120 只、分拣合格 120 只
-  // 4. 冷库发货 115 只，发货损耗 5 只
-  const mockBatch = {
-    code: "YL2026092102",
-    inPoolCount: 120,
-    outPoolCount: 120,
-    lossCount: 0,
-    bundleBatches: [
-      {
-        lines: [
-          { gender: "MALE", weightTier: "3.5两", count: 120, lossCount: 0 },
-        ],
-        sortTasks: [
-          {
-            gender: "MALE",
-            weightTier: "3.5两",
-            lossCount: 0,
-            coldLogs: [
-              {
-                outboundLines: [{ count: 115 }],
-                outboundLosses: [{ count: 5 }],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  };
-
-  const mockItem = {
-    gender: "MALE",
-    weightTier: "3.5两",
-    inPoolCount: 120,
-    outPoolCount: 120,
-    lossCount: 0,
-  };
-
-  const result = calculateRawMaterialLedgerMetrics(mockBatch, mockItem);
-
-  console.log("计算结果:", result);
-
-  // 守恒校验 1: 发货数必须为实际审核出库数 (115)，绝不得把 5 只发货损耗混入发货 (不能等于 120)
-  assert.equal(result.shipped, 115, "发货数应为真实出库发货数 115 只（发货损耗绝不能算在发货里）");
-
-  // 守恒校验 2: 累计损耗必须计入发货损耗 (5 只)
-  assert.equal(result.totalLoss, 5, "累计损耗必须准确归集后道冷库发货损耗 5 只");
-
-  // 守恒校验 3: 损耗率必须按真实总损耗计算 5 / 120 = 4.17%
-  assert.equal(result.lossRateText, "4.17%", "损耗率必须为 4.17%");
-
-  // 守恒校验 4: 在池数
-  assert.equal(result.inPoolRemaining, 0, "在池活蟹数量应为 0");
-
-  console.log("  ✔ 发货损耗准确归入累计损耗，真实发货与发货损耗严格分离校验通过\n");
-}
-
-function testLegacyDirectOutboundBatchCompatibility() {
-  console.log("▶ [Test] 历史无后道单据批次兼容性测试");
-
-  const legacyBatch = {
-    code: "YL-LEGACY-001",
-    inPoolCount: 100,
-    outPoolCount: 80,
-    lossCount: 20,
-    bundleBatches: [],
-  };
-
-  const legacyItem = {
-    gender: "FEMALE",
-    weightTier: "3.0两",
-    inPoolCount: 100,
-    outPoolCount: 80,
-    lossCount: 20,
-  };
-
-  const result = calculateRawMaterialLedgerMetrics(legacyBatch, legacyItem);
-  assert.equal(result.shipped, 80, "无后道单据时兼容历史直接出库数");
-  assert.equal(result.totalLoss, 20, "无后道单据时兼容历史暂养损耗数");
-  console.log("  ✔ 历史无工序单据兼容测试通过\n");
-}
-
-testRawMaterialLedgerOutboundLossSeparation();
-testLegacyDirectOutboundBatchCompatibility();
-console.log("🎉 全部原料台账发货损耗解耦测试通过！");
+});

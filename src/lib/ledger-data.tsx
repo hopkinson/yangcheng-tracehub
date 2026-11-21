@@ -60,6 +60,83 @@ const normalizeWeightTier = (value: string) => {
   return Number.isFinite(n) ? `${n.toFixed(1)}两` : value;
 };
 
+function buildRawMaterialBatchRows(batch: any) {
+  const items = batch.items?.length
+    ? batch.items
+    : [{
+        id: `${batch.id}-fallback`,
+        gender: batch.gender,
+        weightTier: batch.weightTier,
+        weight: 0,
+        inPoolCount: batch.inPoolCount,
+        outPoolCount: batch.outPoolCount,
+        lossCount: batch.lossCount,
+        pool: batch.pool,
+      }];
+  return items.map((item: any) => {
+    const itemTier = Invariants.normalizeWeightTier(item.weightTier);
+    let downstreamShipped = 0;
+    let downstreamProcessLoss = 0;
+    let clearanceLoss = 0;
+    let hasDownstream = false;
+
+    if (batch.bundleBatches?.length) {
+      for (const bb of batch.bundleBatches) {
+        for (const line of bb.lines) {
+          if (line.gender === item.gender && Invariants.normalizeWeightTier(line.weightTier) === itemTier) {
+            hasDownstream = true;
+            const lineLoss = line.lossCount ?? (bb.lines.length === 1 ? bb.lossCount : 0);
+            downstreamProcessLoss += lineLoss || 0;
+          }
+        }
+        for (const st of bb.sortTasks) {
+          if (st.gender === item.gender && Invariants.normalizeWeightTier(st.weightTier) === itemTier) {
+            hasDownstream = true;
+            downstreamProcessLoss += st.lossCount || 0;
+            for (const cl of st.coldLogs) {
+              for (const ol of cl.outboundLines) {
+                downstreamShipped += ol.count || 0;
+              }
+              for (const loss of cl.outboundLosses) {
+                if (loss.lossType === "PACKAGING") downstreamProcessLoss += loss.count || 0;
+                else clearanceLoss += loss.count || 0;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 穿透后道工序：工艺损耗含包装损耗但不含清库损耗，总损耗再加清库损耗。
+    const shipped = hasDownstream ? downstreamShipped : item.outPoolCount;
+    const processLoss = hasDownstream ? item.lossCount + downstreamProcessLoss : item.lossCount;
+    const totalLoss = processLoss + clearanceLoss;
+
+    const exportRow: ExportValue[] = [
+      formatDate(batch.inPoolTime),
+      formatTime(batch.inPoolTime),
+      batch.code,
+      batch.farmer.name,
+      weightNumber(item.weightTier),
+      genderText(item.gender),
+      item.inPoolCount,
+      item.weight,
+      item.pool.name || item.pool.code,
+      item.pool.code,
+      Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
+      shipped,
+      processLoss,
+      rateText(processLoss, item.inPoolCount),
+      totalLoss,
+      rateText(totalLoss, item.inPoolCount),
+      qcText(batch.quickCheck),
+      qcText(batch.sampleCheck),
+      batch.escort || "—",
+    ];
+    return { rowKey: item.id === `${batch.id}-fallback` ? batch.id : item.id, exportRow, displayRow: exportRow as ReactNode[] };
+  });
+}
+
 export async function getLedgerData(params: LedgerParams, exportAll = false) {
   const currentUser = await getCurrentUser();
   if (!currentUser) throw new Error("请先登录系统查看台账");
@@ -554,82 +631,7 @@ export async function getLedgerData(params: LedgerParams, exportAll = false) {
     return { rowKey: farmer.id, exportRow, displayRow };
   });
 
-  const rawMaterialRows = (validTab === "ledger2" ? batches : []).flatMap((batch: any) => {
-    const items = batch.items?.length
-      ? batch.items
-      : [{
-          id: `${batch.id}-fallback`,
-          gender: batch.gender,
-          weightTier: batch.weightTier,
-          weight: 0,
-          inPoolCount: batch.inPoolCount,
-          outPoolCount: batch.outPoolCount,
-          lossCount: batch.lossCount,
-          pool: batch.pool,
-        }];
-    return items.map((item: any) => {
-      const itemTier = Invariants.normalizeWeightTier(item.weightTier);
-      let downstreamShipped = 0;
-      let downstreamProcessLoss = 0;
-      let clearanceLoss = 0;
-      let hasDownstream = false;
-
-      if (batch.bundleBatches?.length) {
-        for (const bb of batch.bundleBatches) {
-          for (const line of bb.lines) {
-            if (line.gender === item.gender && Invariants.normalizeWeightTier(line.weightTier) === itemTier) {
-              hasDownstream = true;
-              const lineLoss = line.lossCount ?? (bb.lines.length === 1 ? bb.lossCount : 0);
-              downstreamProcessLoss += lineLoss || 0;
-            }
-          }
-          for (const st of bb.sortTasks) {
-            if (st.gender === item.gender && Invariants.normalizeWeightTier(st.weightTier) === itemTier) {
-              hasDownstream = true;
-              downstreamProcessLoss += st.lossCount || 0;
-              for (const cl of st.coldLogs) {
-                for (const ol of cl.outboundLines) {
-                  downstreamShipped += ol.count || 0;
-                }
-                for (const loss of cl.outboundLosses) {
-                  if (loss.lossType === "PACKAGING") downstreamProcessLoss += loss.count || 0;
-                  else clearanceLoss += loss.count || 0;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 穿透后道工序：工艺损耗含包装损耗但不含清库损耗，总损耗再加清库损耗。
-      const shipped = hasDownstream ? downstreamShipped : item.outPoolCount;
-      const processLoss = hasDownstream ? item.lossCount + downstreamProcessLoss : item.lossCount;
-      const totalLoss = processLoss + clearanceLoss;
-
-      const exportRow: ExportValue[] = [
-        formatDate(batch.inPoolTime),
-        formatTime(batch.inPoolTime),
-        batch.code,
-        batch.farmer.name,
-        weightNumber(item.weightTier),
-        genderText(item.gender),
-        item.inPoolCount,
-        item.weight,
-        item.pool.name || item.pool.code,
-        item.pool.code,
-        Math.max(0, item.inPoolCount - item.outPoolCount - item.lossCount),
-        shipped,
-        processLoss,
-        rateText(processLoss, item.inPoolCount),
-        totalLoss,
-        rateText(totalLoss, item.inPoolCount),
-        qcText(batch.quickCheck),
-        qcText(batch.sampleCheck),
-        batch.escort || "—",
-      ];
-      return { rowKey: item.id === `${batch.id}-fallback` ? batch.id : item.id, exportRow, displayRow: exportRow as ReactNode[] };
-    });
-  });
+  const rawMaterialRows = (validTab === "ledger2" ? batches : []).flatMap(buildRawMaterialBatchRows);
 
   const siblingClaims = validTab === "ledger3" ? await prisma.tagClaim.findMany({
     where: { OR: rawTagClaims.map((claim) => ({ farmerId: claim.farmerId, claimDate: getBeijingDayRange(formatDate(claim.claimDate)) })) },

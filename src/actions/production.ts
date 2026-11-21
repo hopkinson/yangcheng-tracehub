@@ -989,13 +989,41 @@ export async function createSortTasksAction(data: {
   }
 }
 
+function resolveSortCompletionTime(doneAt?: string): Date | string {
+  if (doneAt === undefined) return new Date();
+  const parsed = sortCompletionTimeSchema.safeParse({ doneAt });
+  if (!parsed.success) return parsed.error.issues[0].message;
+  return parseBeijingDateTime(doneAt);
+}
+
+function sortCompletionData(
+  qualifiedCount: number,
+  loss: { lossCount: number; lossRate: number },
+  doneAt: Date,
+) {
+  return {
+    qualifiedCount,
+    lossCount: loss.lossCount,
+    lossRate: loss.lossRate,
+    status: "COMPLETED" as const,
+    doneAt,
+  };
+}
+
+function revalidateSortCompletion() {
+  revalidate("/sorting");
+  revalidate("/ledgers");
+  revalidate("/cold-storage");
+  revalidate("/outbound");
+  revalidate("/");
+}
+
 export async function completeSortTaskAction(taskId: string, qualifiedCount: number, doneAt?: string) {
   try {
-    if (doneAt !== undefined) {
-      const parsed = sortCompletionTimeSchema.safeParse({ doneAt });
-      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    const completionTime = resolveSortCompletionTime(doneAt);
+    if (typeof completionTime === "string") {
+      return { success: false, message: completionTime };
     }
-    const completionTime = doneAt === undefined ? new Date() : parseBeijingDateTime(doneAt);
     const task = await prisma.sortTask.findUnique({ where: { id: taskId } });
     if (!task) return { success: false, message: "分拣任务未找到" };
 
@@ -1010,20 +1038,10 @@ export async function completeSortTaskAction(taskId: string, qualifiedCount: num
 
     await prisma.sortTask.update({
       where: { id: taskId },
-      data: {
-        qualifiedCount,
-        lossCount: lossRes.lossCount,
-        lossRate: lossRes.lossRate,
-        status: "COMPLETED",
-        doneAt: completionTime,
-      },
+      data: sortCompletionData(qualifiedCount, lossRes, completionTime),
     });
 
-    revalidate("/sorting");
-    revalidate("/ledgers");
-    revalidate("/cold-storage");
-    revalidate("/outbound");
-    revalidate("/");
+    revalidateSortCompletion();
     return {
       success: true,
       isException: lossRes.isException,
@@ -1040,11 +1058,10 @@ export async function batchCompleteSortTasksAction(
   doneAt?: string
 ) {
   try {
-    if (doneAt !== undefined) {
-      const parsed = sortCompletionTimeSchema.safeParse({ doneAt });
-      if (!parsed.success) return { success: false, message: parsed.error.issues[0].message };
+    const completionTime = resolveSortCompletionTime(doneAt);
+    if (typeof completionTime === "string") {
+      return { success: false, message: completionTime };
     }
-    const completionTime = doneAt === undefined ? new Date() : parseBeijingDateTime(doneAt);
     if (!items || items.length === 0) {
       return { success: false, message: "请提供至少一个需要结算的分拣任务" };
     }
@@ -1061,9 +1078,7 @@ export async function batchCompleteSortTasksAction(
     const taskMap = new Map(tasks.map((t) => [t.id, t]));
     const updates: Array<{
       id: string;
-      qualifiedCount: number;
-      lossCount: number;
-      lossRate: number;
+      data: ReturnType<typeof sortCompletionData>;
     }> = [];
 
     let totalInput = 0;
@@ -1086,9 +1101,7 @@ export async function batchCompleteSortTasksAction(
 
       updates.push({
         id: task.id,
-        qualifiedCount: item.qualifiedCount,
-        lossCount: lossRes.lossCount,
-        lossRate: lossRes.lossRate,
+        data: sortCompletionData(item.qualifiedCount, lossRes, completionTime),
       });
 
       totalInput += task.inputCount;
@@ -1097,25 +1110,15 @@ export async function batchCompleteSortTasksAction(
     }
 
     await prisma.$transaction(
-      updates.map((u) =>
+      updates.map(({ id, data }) =>
         prisma.sortTask.update({
-          where: { id: u.id },
-          data: {
-            qualifiedCount: u.qualifiedCount,
-            lossCount: u.lossCount,
-            lossRate: u.lossRate,
-            status: "COMPLETED",
-            doneAt: completionTime,
-          },
+          where: { id },
+          data,
         })
       )
     );
 
-    revalidate("/sorting");
-    revalidate("/ledgers");
-    revalidate("/cold-storage");
-    revalidate("/outbound");
-    revalidate("/");
+    revalidateSortCompletion();
 
     const overallLossRate = totalInput > 0 ? Number(((totalLoss / totalInput) * 100).toFixed(2)) : 0;
     return {
